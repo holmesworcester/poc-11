@@ -1,0 +1,26 @@
+[package]
+name = "linktoy"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "linktoy"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lk"
+path = "src/bin/lk.rs"
+
+[features]
+# Declared for Stage 1 (cargo-verus integration). In Stage 0 the proofs are
+# verified standalone via scripts/run_verus.sh, so cargo never compiles
+# `verus!` syntax and the toy stays dependency-light.
+verus = []
+
+[dependencies]
+blake3 = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"

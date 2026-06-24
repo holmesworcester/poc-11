@@ -1,0 +1,3 @@
+# Integration tests spawn real daemons binding loopback TCP ports; run serially.
+[env]
+RUST_TEST_THREADS = { value = "1", force = true }
