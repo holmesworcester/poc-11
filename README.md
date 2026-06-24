@@ -14,6 +14,11 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
   demand by `play()` — a demand-driven recursion where the call stack *is* the
   queue: to project an item, resolve and play its context first (pulling old facts
   in via the index), then project it.
+- **Queue engine model**: `EngineState` makes the live split explicit with
+  `to_admit` (load/decode/index facts in memory), `to_project` (validate admitted
+  facts), need queries (pull stored offerers), and offer queries (wake stored/local
+  needers). Validated offers carry their owner so the core invariant is concrete:
+  every context offer came from a fact already projected valid.
 - **Both directions are engine operations**: `replay(seeds)` does the backward
   **need→offer** pull (a bounded seed drags in its dependency closure); `wake(arrived)`
   does the forward **offer→need** cascade (a newly-available fact re-derives everyone
@@ -31,7 +36,7 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
 
 | path | role |
 |------|------|
-| `src/core/` | **protocol-agnostic runtime + playback**: `item` (content addressing), `offer` (`Offer<V>`), `typestate` (`Asserted`/`Validated`/`Context`), `projector` (the trait), `admit` (Pass 1), `index` (`Index` trait + `SqliteIndex`), `play` (`play`/`replay`/`wake`, Pass 2), `net`, `runtime` (the generic daemon `serve<P>`) |
+| `src/core/` | **protocol-agnostic runtime + playback**: `item` (content addressing), `offer` (`Offer<V>`), `typestate` (`Asserted`/`Validated`/`Context`), `projector` (the trait), `admit` (Pass 1), `index` (`Index` trait + `SqliteIndex`), `engine` (typed in-memory queues), `play` (`play`/`replay`/`wake`, Pass 2), `net`, `runtime` (the generic daemon `serve<P>`) |
 | `src/protocol/` | **item families + projectors**: `link` (the one fact family) |
 | `src/cli.rs` | the thin **app layer** wiring a protocol family into the core runtime |
 | `src/proof.rs` | Verus source, verified standalone (see `scripts/run_verus.sh`) |
@@ -69,13 +74,22 @@ cargo test
   parent arrives, the engine's `wake` (offer→need) re-derives and validates it. Plus a
   fabricated suppression cycle (built against an in-memory `Index`, since honest
   content-addressed facts can't form one) raises a located `SuppressionCycle`.
+- `engine_queues` — the proof-facing queue split against the SQLite-backed storage
+  contract: demanding only a head pulls the stored parent chain into memory, and a
+  later in-memory parent admission wakes a stored child. Both assert validated-offer
+  provenance.
 
 ## Verify (Verus)
 
 ```sh
-./scripts/run_verus.sh    # Stage-0 placeholder proves the pipeline; Stage-1 lands
-                          # the real link-projector proofs in src/proof.rs
+./scripts/run_verus.sh    # real link-projector and transitive-chain proofs
 ```
+
+`src/proof.rs` abstracts crypto and durable storage behind typed contracts, then
+proves: link extraction shape, root/child projector behavior, context soundness
+(`validated_offers` only come from valid owners), offer provenance, invariant
+preservation for projection, and transitive validity for any root-to-head chain
+projected through valid edges.
 
 ## Review gates
 

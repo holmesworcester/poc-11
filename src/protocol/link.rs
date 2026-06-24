@@ -32,6 +32,26 @@ pub struct LinkState {
 
 pub struct LinkProjector;
 
+pub fn link_id(l: &Link) -> FactId {
+    fact_id(&LinkProjector::encode(l))
+}
+
+pub fn link_edges(l: &Link) -> Vec<Offer<Asserted>> {
+    let mut edges = vec![Offer::offer(LINK, Key(link_id(l)))];
+    if let Some(p) = l.prev {
+        edges.push(Offer::need(LINK, Key(p)));
+    }
+    edges
+}
+
+pub fn link_project_validity(prev: Option<FactId>, parent_validated: bool) -> Validity {
+    match prev {
+        None => Validity::Valid,
+        Some(_) if parent_validated => Validity::Valid,
+        Some(_) => Validity::Invalid,
+    }
+}
+
 impl Projector for LinkProjector {
     type Item = Link;
     type State = LinkState;
@@ -76,26 +96,15 @@ impl Projector for LinkProjector {
     }
 
     fn extract(l: &Link) -> Vec<Offer<Asserted>> {
-        // The self-id is a pure function of content (the closure rule, §5).
-        let id = fact_id(&Self::encode(l));
-        let mut edges = vec![Offer::offer(LINK, Key(id))];
-        if let Some(p) = l.prev {
-            edges.push(Offer::need(LINK, Key(p)));
-        }
-        edges
+        link_edges(l)
     }
 
     fn project(item: &Admitted<Link>, ctx: Context, st: &mut LinkState) -> ProjectOutcome {
-        let validity = match item.item().prev {
-            None => Validity::Valid,
-            Some(p) => {
-                if ctx.has_offer(LINK, &Key(p)) {
-                    Validity::Valid
-                } else {
-                    Validity::Invalid
-                }
-            }
-        };
+        let parent_validated = item
+            .item()
+            .prev
+            .is_some_and(|p| ctx.has_offer(LINK, &Key(p)));
+        let validity = link_project_validity(item.item().prev, parent_validated);
         st.seen.insert(item.id(), validity);
         ProjectOutcome {
             validity,

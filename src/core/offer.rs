@@ -11,11 +11,11 @@ use std::marker::PhantomData;
 use super::typestate::{Asserted, Validated};
 
 /// The match namespace (poc-10's "role"). The toy uses one: [`crate::protocol::link::LINK`].
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Role(pub &'static str);
 
 /// Match scope. The toy is single-scope; real families add workspace/etc.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Scope {
     Local,
 }
@@ -32,7 +32,7 @@ impl Scope {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Key(pub [u8; 32]);
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum EdgeKind {
     Need,
     Offer,
@@ -40,14 +40,14 @@ pub enum EdgeKind {
 
 /// Additive (toy) vs suppressing (tombstones — Stage 2). The marker rides on the
 /// edge so the projector *proves* it, rather than a registration flag (§5).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Polarity {
     Additive,
     Suppressing,
 }
 
 /// Forward / closure-carried (toy) vs late-binding / reverse-keyed (Stage 2).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Binding {
     Forward,
     LateBound,

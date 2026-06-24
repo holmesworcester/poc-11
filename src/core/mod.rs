@@ -4,6 +4,7 @@
 //! index, playback (`play`, Pass 2), transport, and the daemon runtime. It must
 //! NOT know any item family — those live in [`crate::protocol`].
 pub mod admit;
+pub mod engine;
 pub mod index;
 pub mod item;
 pub mod net;

@@ -14,6 +14,10 @@ pub struct Admitted<I> {
 }
 
 impl<I> Admitted<I> {
+    pub(crate) fn from_parts(item: I, id: FactId) -> Self {
+        Self { item, id }
+    }
+
     pub fn item(&self) -> &I {
         &self.item
     }

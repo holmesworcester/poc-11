@@ -13,9 +13,9 @@ name = "lk"
 path = "src/bin/lk.rs"
 
 [features]
-# Declared for Stage 1 (cargo-verus integration). In Stage 0 the proofs are
-# verified standalone via scripts/run_verus.sh, so cargo never compiles
-# `verus!` syntax and the toy stays dependency-light.
+# Declared for future cargo-verus integration. Proofs are verified standalone via
+# scripts/run_verus.sh, so cargo never compiles `verus!` syntax and the toy stays
+# dependency-light.
 verus = []
 
 [dependencies]
