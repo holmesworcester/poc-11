@@ -1,7 +1,8 @@
-// Verus model for poc-11's queue-oriented link projector. This file is compiled
-// standalone by scripts/run_verus.sh and intentionally stays out of cargo's
-// module tree. Crypto and durable storage are abstract contracts here; the proof
-// is over typed in-memory facts, needs/offers, validated offers, and projection.
+// Verus model for poc-11's queue-oriented projection core. This file is
+// compiled standalone by scripts/run_verus.sh and intentionally stays out of
+// cargo's module tree. Crypto and durable storage are abstract contracts here;
+// the proof is over typed in-memory facts, needs/offers, validated offers, and
+// projection.
 #![allow(unused)]
 use vstd::prelude::*;
 
@@ -15,10 +16,14 @@ pub enum Validity {
     Invalid,
 }
 
-#[derive(Copy, Clone)]
-pub struct LinkSpec {
+// -------------------------------------------------------------------------
+// Generic positive projection calculus.
+// -------------------------------------------------------------------------
+
+pub struct SpecFact {
     pub id: Id,
-    pub prev: Option<Id>,
+    pub needs: Seq<Id>,
+    pub offers: Seq<Id>,
 }
 
 pub struct MemIndex {
@@ -41,54 +46,12 @@ pub struct EngineState {
     pub offer_queries: Seq<Id>,
 }
 
-pub open spec fn link_self_offer(link: LinkSpec) -> (Id, Id) {
-    (link.id, link.id)
-}
-
-pub open spec fn link_parent_need(link: LinkSpec) -> Option<(Id, Id)> {
-    match link.prev {
-        None => None,
-        Some(parent) => Some((link.id, parent)),
-    }
-}
-
-pub open spec fn link_project_validity(prev: Option<Id>, parent_validated: bool) -> Validity {
-    match prev {
-        None => Validity::Valid,
-        Some(_) => if parent_validated { Validity::Valid } else { Validity::Invalid },
-    }
-}
-
-pub proof fn link_projector_extracts_self_offer(link: LinkSpec)
-    ensures link_self_offer(link) == (link.id, link.id)
-{
-}
-
-pub proof fn link_projector_extracts_parent_need(link: LinkSpec, parent: Id)
-    requires link.prev == Some(parent)
-    ensures link_parent_need(link) == Some((link.id, parent))
-{
-}
-
-pub proof fn link_projector_root_is_valid(link: LinkSpec)
-    requires link.prev == Option::<Id>::None
-    ensures link_project_validity(link.prev, false) == Validity::Valid
-{
-}
-
-pub proof fn link_projector_child_valid_iff_parent_offer(link: LinkSpec, parent_validated: bool)
-    requires link.prev != Option::<Id>::None
-    ensures (link_project_validity(link.prev, parent_validated) == Validity::Valid) == parent_validated
-{
-}
-
-pub open spec fn mem_index_admits_link(mem: MemIndex, link: LinkSpec) -> bool {
-    mem.facts.contains(link.id)
-        && mem.offers.contains(link_self_offer(link))
-        && match link_parent_need(link) {
-            None => true,
-            Some(need) => mem.needs.contains(need),
-        }
+pub open spec fn mem_index_admits_fact(mem: MemIndex, fact: SpecFact) -> bool {
+    mem.facts.contains(fact.id)
+        && (forall|i: int| 0 <= i < fact.offers.len() ==>
+            #[trigger] mem.offers.contains((fact.id, fact.offers[i])))
+        && (forall|i: int| 0 <= i < fact.needs.len() ==>
+            #[trigger] mem.needs.contains((fact.id, fact.needs[i])))
 }
 
 pub open spec fn projection_context_sound(proj: Projection) -> bool {
@@ -107,36 +70,48 @@ pub open spec fn engine_invariant(e: EngineState) -> bool {
         && projected_offer_has_provenance(e.mem, e.projection)
 }
 
-pub open spec fn parent_offer_validated(proj: Projection, parent: Id) -> bool {
-    proj.validated_offers.contains((parent, parent))
+pub open spec fn need_satisfied(proj: Projection, key: Id) -> bool {
+    exists|owner: Id| proj.validated_offers.contains((owner, key))
 }
 
-pub open spec fn link_can_project(proj: Projection, link: LinkSpec) -> bool {
-    match link.prev {
-        None => true,
-        Some(parent) => parent_offer_validated(proj, parent),
-    }
+pub open spec fn fact_can_project(proj: Projection, fact: SpecFact) -> bool {
+    forall|i: int| 0 <= i < fact.needs.len() ==>
+        need_satisfied(proj, #[trigger] fact.needs[i])
 }
 
-pub open spec fn promote_self_offer(proj: Projection, id: Id) -> Projection {
+pub open spec fn promote_one_offer(proj: Projection, owner: Id, key: Id) -> Projection {
     Projection {
-        valid: proj.valid.insert(id),
-        validated_offers: proj.validated_offers.insert((id, id)),
+        valid: proj.valid.insert(owner),
+        validated_offers: proj.validated_offers.insert((owner, key)),
     }
 }
 
-pub open spec fn project_link_projection(proj: Projection, link: LinkSpec) -> Projection {
-    if link_can_project(proj, link) {
-        promote_self_offer(proj, link.id)
+pub open spec fn promote_offers(proj: Projection, owner: Id, offers: Seq<Id>) -> Projection
+    decreases offers.len()
+{
+    if offers.len() == 0 {
+        Projection {
+            valid: proj.valid.insert(owner),
+            validated_offers: proj.validated_offers,
+        }
+    } else {
+        let after_first = promote_one_offer(proj, owner, offers[0]);
+        promote_offers(after_first, owner, offers.subrange(1, offers.len() as int))
+    }
+}
+
+pub open spec fn project_fact_projection(proj: Projection, fact: SpecFact) -> Projection {
+    if fact_can_project(proj, fact) {
+        promote_offers(proj, fact.id, fact.offers)
     } else {
         proj
     }
 }
 
-pub open spec fn project_link(e: EngineState, link: LinkSpec) -> EngineState {
+pub open spec fn project_fact(e: EngineState, fact: SpecFact) -> EngineState {
     EngineState {
         mem: e.mem,
-        projection: project_link_projection(e.projection, link),
+        projection: project_fact_projection(e.projection, fact),
         to_admit: e.to_admit,
         to_project: e.to_project,
         need_queries: e.need_queries,
@@ -144,157 +119,449 @@ pub open spec fn project_link(e: EngineState, link: LinkSpec) -> EngineState {
     }
 }
 
-pub proof fn promotion_preserves_context_sound(proj: Projection, id: Id)
+pub proof fn promote_one_preserves_context_sound(proj: Projection, owner: Id, key: Id)
     requires projection_context_sound(proj)
-    ensures projection_context_sound(promote_self_offer(proj, id))
+    ensures projection_context_sound(promote_one_offer(proj, owner, key))
 {
-    assert forall|owner: Id, key: Id|
-        promote_self_offer(proj, id).validated_offers.contains((owner, key))
-            implies promote_self_offer(proj, id).valid.contains(owner)
+    assert forall|o: Id, k: Id|
+        promote_one_offer(proj, owner, key).validated_offers.contains((o, k))
+            implies promote_one_offer(proj, owner, key).valid.contains(o)
     by {
-        if (owner, key) == (id, id) {
-            assert(owner == id);
+        if (o, k) == (owner, key) {
+            assert(o == owner);
         } else {
-            assert(proj.validated_offers.contains((owner, key)));
-            assert(proj.valid.contains(owner));
+            assert(proj.validated_offers.contains((o, k)));
+            assert(proj.valid.contains(o));
         }
     }
 }
 
-pub proof fn promotion_records_offer_provenance(mem: MemIndex, proj: Projection, id: Id)
+pub proof fn promote_one_records_offer_provenance(
+    mem: MemIndex,
+    proj: Projection,
+    owner: Id,
+    key: Id,
+)
     requires
         projected_offer_has_provenance(mem, proj),
-        mem.offers.contains((id, id)),
-    ensures projected_offer_has_provenance(mem, promote_self_offer(proj, id))
+        mem.offers.contains((owner, key)),
+    ensures projected_offer_has_provenance(mem, promote_one_offer(proj, owner, key))
 {
-    assert forall|owner: Id, key: Id|
-        promote_self_offer(proj, id).validated_offers.contains((owner, key))
-            implies #[trigger] mem.offers.contains((owner, key))
+    assert forall|o: Id, k: Id|
+        promote_one_offer(proj, owner, key).validated_offers.contains((o, k))
+            implies #[trigger] mem.offers.contains((o, k))
     by {
-        if (owner, key) == (id, id) {
+        if (o, k) == (owner, key) {
         } else {
-            assert(proj.validated_offers.contains((owner, key)));
-            assert(mem.offers.contains((owner, key)));
+            assert(proj.validated_offers.contains((o, k)));
+            assert(mem.offers.contains((o, k)));
         }
     }
 }
 
-pub proof fn project_link_preserves_engine_invariant(e: EngineState, link: LinkSpec)
-    requires
-        engine_invariant(e),
-        mem_index_admits_link(e.mem, link),
-    ensures engine_invariant(project_link(e, link))
+pub proof fn promote_offers_preserves_context_sound(
+    proj: Projection,
+    owner: Id,
+    offers: Seq<Id>,
+)
+    requires projection_context_sound(proj)
+    ensures projection_context_sound(promote_offers(proj, owner, offers))
+    decreases offers.len()
 {
-    if link_can_project(e.projection, link) {
-        promotion_preserves_context_sound(e.projection, link.id);
-        promotion_records_offer_provenance(e.mem, e.projection, link.id);
+    if offers.len() == 0 {
+        assert forall|o: Id, k: Id|
+            promote_offers(proj, owner, offers).validated_offers.contains((o, k))
+                implies promote_offers(proj, owner, offers).valid.contains(o)
+        by {
+            assert(proj.validated_offers.contains((o, k)));
+            assert(proj.valid.contains(o));
+        }
+    } else {
+        let after_first = promote_one_offer(proj, owner, offers[0]);
+        promote_one_preserves_context_sound(proj, owner, offers[0]);
+        promote_offers_preserves_context_sound(
+            after_first,
+            owner,
+            offers.subrange(1, offers.len() as int),
+        );
     }
 }
 
-pub proof fn valid_projection_promotes_only_valid_offer(proj: Projection, link: LinkSpec)
+pub proof fn promote_offers_records_offer_provenance(
+    mem: MemIndex,
+    proj: Projection,
+    owner: Id,
+    offers: Seq<Id>,
+)
+    requires
+        projected_offer_has_provenance(mem, proj),
+        forall|i: int| 0 <= i < offers.len() ==>
+            #[trigger] mem.offers.contains((owner, offers[i])),
+    ensures projected_offer_has_provenance(mem, promote_offers(proj, owner, offers))
+    decreases offers.len()
+{
+    if offers.len() == 0 {
+        assert forall|o: Id, k: Id|
+            promote_offers(proj, owner, offers).validated_offers.contains((o, k))
+                implies #[trigger] mem.offers.contains((o, k))
+        by {
+            assert(proj.validated_offers.contains((o, k)));
+            assert(mem.offers.contains((o, k)));
+        }
+    } else {
+        let first = offers[0];
+        let tail = offers.subrange(1, offers.len() as int);
+        let after_first = promote_one_offer(proj, owner, first);
+        assert(mem.offers.contains((owner, first)));
+        promote_one_records_offer_provenance(mem, proj, owner, first);
+        assert forall|i: int| 0 <= i < tail.len() implies
+            #[trigger] mem.offers.contains((owner, tail[i]))
+        by {
+            assert(tail[i] == offers[i + 1]);
+            assert(0 <= i + 1 < offers.len());
+        }
+        promote_offers_records_offer_provenance(mem, after_first, owner, tail);
+    }
+}
+
+pub proof fn promote_offers_marks_owner_valid(proj: Projection, owner: Id, offers: Seq<Id>)
+    ensures promote_offers(proj, owner, offers).valid.contains(owner)
+    decreases offers.len()
+{
+    if offers.len() == 0 {
+    } else {
+        let after_first = promote_one_offer(proj, owner, offers[0]);
+        promote_offers_marks_owner_valid(after_first, owner, offers.subrange(1, offers.len() as int));
+    }
+}
+
+pub proof fn promote_offers_preserves_valid_fact(
+    proj: Projection,
+    owner: Id,
+    offers: Seq<Id>,
+    id: Id,
+)
+    requires proj.valid.contains(id)
+    ensures promote_offers(proj, owner, offers).valid.contains(id)
+    decreases offers.len()
+{
+    if offers.len() == 0 {
+    } else {
+        let after_first = promote_one_offer(proj, owner, offers[0]);
+        promote_offers_preserves_valid_fact(
+            after_first,
+            owner,
+            offers.subrange(1, offers.len() as int),
+            id,
+        );
+    }
+}
+
+pub proof fn project_fact_preserves_valid_fact(proj: Projection, fact: SpecFact, id: Id)
+    requires proj.valid.contains(id)
+    ensures project_fact_projection(proj, fact).valid.contains(id)
+{
+    if fact_can_project(proj, fact) {
+        promote_offers_preserves_valid_fact(proj, fact.id, fact.offers, id);
+    }
+}
+
+pub proof fn project_schedule_preserves_valid_fact(
+    proj: Projection,
+    facts: Seq<SpecFact>,
+    id: Id,
+)
+    requires proj.valid.contains(id)
+    ensures project_schedule(proj, facts).valid.contains(id)
+    decreases facts.len()
+{
+    if facts.len() == 0 {
+    } else {
+        let first = facts[0];
+        let after_first = project_fact_projection(proj, first);
+        project_fact_preserves_valid_fact(proj, first, id);
+        project_schedule_preserves_valid_fact(after_first, facts.subrange(1, facts.len() as int), id);
+    }
+}
+
+pub proof fn project_fact_preserves_engine_invariant(e: EngineState, fact: SpecFact)
+    requires
+        engine_invariant(e),
+        mem_index_admits_fact(e.mem, fact),
+    ensures engine_invariant(project_fact(e, fact))
+{
+    if fact_can_project(e.projection, fact) {
+        promote_offers_preserves_context_sound(e.projection, fact.id, fact.offers);
+        promote_offers_records_offer_provenance(e.mem, e.projection, fact.id, fact.offers);
+    }
+}
+
+pub proof fn project_fact_when_ready_marks_valid(proj: Projection, fact: SpecFact)
+    requires fact_can_project(proj, fact)
+    ensures project_fact_projection(proj, fact).valid.contains(fact.id)
+{
+    promote_offers_marks_owner_valid(proj, fact.id, fact.offers);
+}
+
+pub open spec fn schedule_ready(proj: Projection, facts: Seq<SpecFact>) -> bool
+    decreases facts.len()
+{
+    if facts.len() == 0 {
+        true
+    } else {
+        fact_can_project(proj, facts[0])
+            && schedule_ready(
+                project_fact_projection(proj, facts[0]),
+                facts.subrange(1, facts.len() as int),
+            )
+    }
+}
+
+pub open spec fn project_schedule(proj: Projection, facts: Seq<SpecFact>) -> Projection
+    decreases facts.len()
+{
+    if facts.len() == 0 {
+        proj
+    } else {
+        let after_first = project_fact_projection(proj, facts[0]);
+        project_schedule(after_first, facts.subrange(1, facts.len() as int))
+    }
+}
+
+pub proof fn project_schedule_preserves_context_sound(proj: Projection, facts: Seq<SpecFact>)
+    requires projection_context_sound(proj)
+    ensures projection_context_sound(project_schedule(proj, facts))
+    decreases facts.len()
+{
+    if facts.len() == 0 {
+    } else {
+        let first = facts[0];
+        let after_first = project_fact_projection(proj, first);
+        if fact_can_project(proj, first) {
+            promote_offers_preserves_context_sound(proj, first.id, first.offers);
+        }
+        project_schedule_preserves_context_sound(after_first, facts.subrange(1, facts.len() as int));
+    }
+}
+
+pub proof fn ready_schedule_validates_all_facts(proj: Projection, facts: Seq<SpecFact>)
     requires
         projection_context_sound(proj),
-        link_can_project(proj, link),
+        schedule_ready(proj, facts),
     ensures
-        promote_self_offer(proj, link.id).valid.contains(link.id),
-        promote_self_offer(proj, link.id).validated_offers.contains((link.id, link.id)),
-        projection_context_sound(promote_self_offer(proj, link.id)),
+        forall|i: int| 0 <= i < facts.len() ==>
+            project_schedule(proj, facts).valid.contains(#[trigger] facts[i].id),
+        projection_context_sound(project_schedule(proj, facts)),
+    decreases facts.len()
 {
-    promotion_preserves_context_sound(proj, link.id);
+    if facts.len() == 0 {
+        project_schedule_preserves_context_sound(proj, facts);
+    } else {
+        let first = facts[0];
+        let after_first = project_fact_projection(proj, first);
+        let tail = facts.subrange(1, facts.len() as int);
+
+        project_fact_when_ready_marks_valid(proj, first);
+        assert(after_first.valid.contains(first.id));
+        promote_offers_preserves_context_sound(proj, first.id, first.offers);
+        assert(projection_context_sound(after_first));
+
+        ready_schedule_validates_all_facts(after_first, tail);
+
+        assert forall|i: int| 0 <= i < facts.len() implies
+            #[trigger] project_schedule(proj, facts).valid.contains(facts[i].id)
+        by {
+            if i == 0 {
+                assert(facts[i].id == first.id);
+                project_schedule_preserves_valid_fact(after_first, tail, first.id);
+            } else {
+                assert(0 <= i - 1 < tail.len());
+                assert(tail[i - 1] == facts[i]);
+            }
+        }
+        project_schedule_preserves_context_sound(proj, facts);
+    }
 }
 
-pub proof fn project_link_preserves_valid_fact(proj: Projection, link: LinkSpec, id: Id)
-    requires proj.valid.contains(id)
-    ensures project_link_projection(proj, link).valid.contains(id)
-{
+// -------------------------------------------------------------------------
+// Link projector as an instance of the generic calculus.
+// -------------------------------------------------------------------------
+
+#[derive(Copy, Clone)]
+pub struct LinkSpec {
+    pub id: Id,
+    pub prev: Option<Id>,
 }
 
-pub proof fn project_chain_preserves_valid_fact(proj: Projection, chain: Seq<LinkSpec>, id: Id)
-    requires proj.valid.contains(id)
-    ensures project_chain(proj, chain).valid.contains(id)
+pub open spec fn link_self_offer(link: LinkSpec) -> (Id, Id) {
+    (link.id, link.id)
+}
+
+pub open spec fn link_parent_need(link: LinkSpec) -> Option<(Id, Id)> {
+    match link.prev {
+        None => None,
+        Some(parent) => Some((link.id, parent)),
+    }
+}
+
+pub open spec fn link_project_validity(prev: Option<Id>, parent_validated: bool) -> Validity {
+    match prev {
+        None => Validity::Valid,
+        Some(_) => if parent_validated { Validity::Valid } else { Validity::Invalid },
+    }
+}
+
+pub open spec fn link_needs(link: LinkSpec) -> Seq<Id> {
+    match link.prev {
+        None => Seq::empty(),
+        Some(parent) => Seq::empty().push(parent),
+    }
+}
+
+pub open spec fn link_offers(link: LinkSpec) -> Seq<Id> {
+    Seq::empty().push(link.id)
+}
+
+pub open spec fn link_fact(link: LinkSpec) -> SpecFact {
+    SpecFact {
+        id: link.id,
+        needs: link_needs(link),
+        offers: link_offers(link),
+    }
+}
+
+pub open spec fn project_link_schedule(proj: Projection, chain: Seq<LinkSpec>) -> Projection
     decreases chain.len()
 {
     if chain.len() == 0 {
+        proj
     } else {
-        let first = chain[0];
-        let after_first = project_link_projection(proj, first);
-        project_link_preserves_valid_fact(proj, first, id);
-        project_chain_preserves_valid_fact(after_first, chain.subrange(1, chain.len() as int), id);
+        let after_first = project_fact_projection(proj, link_fact(chain[0]));
+        project_link_schedule(after_first, chain.subrange(1, chain.len() as int))
     }
+}
+
+pub proof fn link_projector_extracts_self_offer(link: LinkSpec)
+    ensures
+        link_self_offer(link) == (link.id, link.id),
+        link_fact(link).offers.len() == 1,
+        link_fact(link).offers[0] == link.id,
+{
+}
+
+pub proof fn link_projector_extracts_parent_need(link: LinkSpec, parent: Id)
+    requires link.prev == Some(parent)
+    ensures
+        link_parent_need(link) == Some((link.id, parent)),
+        link_fact(link).needs.len() == 1,
+        link_fact(link).needs[0] == parent,
+{
+}
+
+pub proof fn link_projector_root_is_valid(link: LinkSpec)
+    requires link.prev == Option::<Id>::None
+    ensures
+        link_project_validity(link.prev, false) == Validity::Valid,
+        fact_can_project(Projection { valid: Set::empty(), validated_offers: Set::empty() }, link_fact(link)),
+{
+}
+
+pub proof fn link_projector_child_valid_iff_parent_offer(link: LinkSpec, parent_validated: bool)
+    requires link.prev != Option::<Id>::None
+    ensures (link_project_validity(link.prev, parent_validated) == Validity::Valid) == parent_validated
+{
 }
 
 pub open spec fn chain_connected_from(chain: Seq<LinkSpec>, proj: Projection) -> bool {
     if chain.len() == 0 {
         true
     } else {
-        link_can_project(proj, chain[0])
+        fact_can_project(proj, link_fact(chain[0]))
             && (forall|i: int| 1 <= i < chain.len() ==>
                 #[trigger] chain[i].prev == Some(chain[i - 1].id))
     }
 }
 
-pub open spec fn all_admitted(mem: MemIndex, chain: Seq<LinkSpec>) -> bool {
-    forall|i: int| 0 <= i < chain.len() ==> mem_index_admits_link(mem, #[trigger] chain[i])
+pub proof fn link_project_promotes_self_offer(proj: Projection, link: LinkSpec)
+    requires fact_can_project(proj, link_fact(link))
+    ensures
+        project_fact_projection(proj, link_fact(link)).valid.contains(link.id),
+        project_fact_projection(proj, link_fact(link)).validated_offers.contains((link.id, link.id)),
+{
+    let fact = link_fact(link);
+    assert(fact.offers.len() == 1);
+    assert(fact.offers[0] == link.id);
+    project_fact_when_ready_marks_valid(proj, fact);
+    let after_one = promote_one_offer(proj, link.id, link.id);
+    assert(fact.offers.subrange(1, fact.offers.len() as int) == Seq::<Id>::empty());
+    assert(after_one.validated_offers.contains((link.id, link.id)));
+    assert(promote_offers(after_one, link.id, Seq::empty()).validated_offers.contains((link.id, link.id)));
 }
 
-pub open spec fn project_chain(proj: Projection, chain: Seq<LinkSpec>) -> Projection
+pub proof fn project_link_schedule_preserves_valid_fact(
+    proj: Projection,
+    chain: Seq<LinkSpec>,
+    id: Id,
+)
+    requires proj.valid.contains(id)
+    ensures project_link_schedule(proj, chain).valid.contains(id)
     decreases chain.len()
 {
     if chain.len() == 0 {
-        proj
     } else {
         let first = chain[0];
-        let after_first = project_link_projection(proj, first);
-        project_chain(after_first, chain.subrange(1, chain.len() as int))
+        let after_first = project_fact_projection(proj, link_fact(first));
+        project_fact_preserves_valid_fact(proj, link_fact(first), id);
+        project_link_schedule_preserves_valid_fact(after_first, chain.subrange(1, chain.len() as int), id);
     }
 }
 
-pub proof fn project_chain_preserves_context_sound(proj: Projection, chain: Seq<LinkSpec>)
+pub proof fn project_link_schedule_preserves_context_sound(proj: Projection, chain: Seq<LinkSpec>)
     requires projection_context_sound(proj)
-    ensures projection_context_sound(project_chain(proj, chain))
+    ensures projection_context_sound(project_link_schedule(proj, chain))
     decreases chain.len()
 {
     if chain.len() == 0 {
     } else {
         let first = chain[0];
-        let after_first = project_link_projection(proj, first);
-        if link_can_project(proj, first) {
-            promotion_preserves_context_sound(proj, first.id);
+        let after_first = project_fact_projection(proj, link_fact(first));
+        if fact_can_project(proj, link_fact(first)) {
+            promote_offers_preserves_context_sound(proj, first.id, link_fact(first).offers);
         }
-        project_chain_preserves_context_sound(after_first, chain.subrange(1, chain.len() as int));
+        project_link_schedule_preserves_context_sound(after_first, chain.subrange(1, chain.len() as int));
     }
 }
 
-pub proof fn project_chain_validates_connected_chain(proj: Projection, chain: Seq<LinkSpec>)
+pub proof fn project_link_chain_validates_connected_chain(proj: Projection, chain: Seq<LinkSpec>)
     requires
         projection_context_sound(proj),
         chain_connected_from(chain, proj),
     ensures
         forall|i: int| 0 <= i < chain.len() ==>
-            project_chain(proj, chain).valid.contains(#[trigger] chain[i].id),
-        projection_context_sound(project_chain(proj, chain)),
+            project_link_schedule(proj, chain).valid.contains(#[trigger] chain[i].id),
+        projection_context_sound(project_link_schedule(proj, chain)),
     decreases chain.len()
 {
     if chain.len() == 0 {
-        project_chain_preserves_context_sound(proj, chain);
+        project_link_schedule_preserves_context_sound(proj, chain);
     } else {
         let first = chain[0];
-        let after_first = project_link_projection(proj, first);
+        let after_first = project_fact_projection(proj, link_fact(first));
         let tail = chain.subrange(1, chain.len() as int);
 
-        if link_can_project(proj, first) {
-            valid_projection_promotes_only_valid_offer(proj, first);
-        }
+        assert(fact_can_project(proj, link_fact(first)));
+        link_project_promotes_self_offer(proj, first);
         assert(after_first.valid.contains(first.id));
         assert(after_first.validated_offers.contains((first.id, first.id)));
+        promote_offers_preserves_context_sound(proj, first.id, link_fact(first).offers);
         assert(projection_context_sound(after_first));
 
         if tail.len() > 0 {
             assert(tail[0] == chain[1]);
             assert(chain[1].prev == Some(chain[0].id));
             assert(chain[0].id == first.id);
-            assert(parent_offer_validated(after_first, first.id));
-            assert(link_can_project(after_first, tail[0]));
+            assert(need_satisfied(after_first, first.id));
+            assert(fact_can_project(after_first, link_fact(tail[0])));
             assert forall|k: int| 1 <= k < tail.len() implies
                 #[trigger] tail[k].prev == Some(tail[k - 1].id)
             by {
@@ -304,20 +571,20 @@ pub proof fn project_chain_validates_connected_chain(proj: Projection, chain: Se
             }
         }
         assert(chain_connected_from(tail, after_first));
-        project_chain_validates_connected_chain(after_first, tail);
+        project_link_chain_validates_connected_chain(after_first, tail);
 
         assert forall|i: int| 0 <= i < chain.len() implies
-            #[trigger] project_chain(proj, chain).valid.contains(chain[i].id)
+            #[trigger] project_link_schedule(proj, chain).valid.contains(chain[i].id)
         by {
             if i == 0 {
                 assert(chain[i].id == first.id);
-                project_chain_preserves_valid_fact(after_first, tail, first.id);
+                project_link_schedule_preserves_valid_fact(after_first, tail, first.id);
             } else {
                 assert(0 <= i - 1 < tail.len());
                 assert(tail[i - 1] == chain[i]);
             }
         }
-        project_chain_preserves_context_sound(proj, chain);
+        project_link_schedule_preserves_context_sound(proj, chain);
     }
 }
 
@@ -329,15 +596,15 @@ pub proof fn root_to_head_chain_projects_transitively(chain: Seq<LinkSpec>)
             #[trigger] chain[i].prev == Some(chain[i - 1].id),
     ensures
         forall|i: int| 0 <= i < chain.len() ==>
-            project_chain(
+            project_link_schedule(
                 Projection { valid: Set::empty(), validated_offers: Set::empty() },
-                chain
+                chain,
             ).valid.contains(#[trigger] chain[i].id),
 {
     let empty = Projection { valid: Set::empty(), validated_offers: Set::empty() };
     assert(projection_context_sound(empty));
     assert(chain_connected_from(chain, empty));
-    project_chain_validates_connected_chain(empty, chain);
+    project_link_chain_validates_connected_chain(empty, chain);
 }
 
 } // verus!

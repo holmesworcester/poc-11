@@ -86,10 +86,13 @@ cargo test
 ```
 
 `src/proof.rs` abstracts crypto and durable storage behind typed contracts, then
-proves: link extraction shape, root/child projector behavior, context soundness
-(`validated_offers` only come from valid owners), offer provenance, invariant
-preservation for projection, and transitive validity for any root-to-head chain
-projected through valid edges.
+proves a generic positive projection calculus: admitted facts have typed needs and
+offers, ready facts promote only owner-bearing validated offers, context soundness
+(`validated_offers` only come from valid owners) and offer provenance are preserved,
+and any dependency-respecting projection schedule validates all scheduled facts.
+The link projector is then an instance of that calculus, proving root/child
+behavior and transitive validity for any root-to-head chain projected through valid
+edges.
 
 ## Review gates
 
