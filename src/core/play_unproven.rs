@@ -5,6 +5,18 @@
 //!
 //! Durable storage is read-only here. Facts loaded from storage are decoded and
 //! indexed in memory, but their already-persisted bytes/edges are not re-written.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] Replay seeds only enqueue admission; they do not create validity.
+//! - [ ] Replay and wake drive the same proven turn transition as live draining.
+//! - [ ] Storage facts pulled during replay are admitted read-only through the
+//!       engine's canonical load/decode path.
+//! - [ ] The returned memo contains only facts projected by the engine.
+//! - [ ] A successful replay proves each requested seed is admitted and projected.
+//! - [ ] A step bound can stop liveness/completeness, but it cannot create an
+//!       unsound valid fact.
+//! - [ ] Wake is the offer-to-need direction: it validates the arrived fact, then
+//!       relies on core offer-query turns to discover needers.
 
 use std::collections::HashMap;
 

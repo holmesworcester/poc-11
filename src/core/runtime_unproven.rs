@@ -3,6 +3,18 @@
 //! over any [`Projector`]. Ingress classifies a frame by trying `P::decode`
 //! (bytes `P` rejects are dropped, volatile, §5); egress ships raw fact bytes to
 //! peers and reconciles a volatile sent-set each turn (recurrence = liveness).
+//!
+//! Invariant checklist (Verus):
+//! - [ ] Runtime ingress never projects directly; accepted frames go through
+//!       decode plus core admission.
+//! - [ ] Frames rejected by the route decoder create no durable or validated
+//!       state.
+//! - [ ] Runtime egress sends stored bytes only; sending a fact is not evidence
+//!       that it is valid.
+//! - [ ] Socket, clock, and SQLite failures cannot create validated state.
+//! - [ ] Recurring egress is a liveness helper only and carries no authority.
+//! - [ ] Any deterministic runtime-turn logic that affects validity moves to
+//!       `core::turn` before being treated as proven.
 use std::collections::HashSet;
 use std::io::Write;
 use std::net::TcpListener;

@@ -85,3 +85,65 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         );
     }
 }
+
+#[test]
+fn proof_target_files_have_verus_invariant_checklists() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let files = [
+        "src/core/admit_unproven.rs",
+        "src/core/effects_unproven.rs",
+        "src/core/engine_unproven.rs",
+        "src/core/index_unproven.rs",
+        "src/core/item_unproven.rs",
+        "src/core/mod.rs",
+        "src/core/offer_unproven.rs",
+        "src/core/play_unproven.rs",
+        "src/core/projector_unproven.rs",
+        "src/core/runtime_unproven.rs",
+        "src/core/turn_unproven.rs",
+        "src/core/typestate_unproven.rs",
+        "src/facts/link/api_unproven.rs",
+        "src/facts/link/author_unproven.rs",
+        "src/facts/link/cli_unproven.rs",
+        "src/facts/link/mod.rs",
+        "src/facts/link/project_unproven.rs",
+    ];
+
+    for file in files {
+        let text = source_text(&root.join(file));
+        assert!(
+            text.contains("Invariant checklist (Verus):"),
+            "{file} is missing its Verus invariant checklist"
+        );
+    }
+
+    let engine = normalize_whitespace(&source_text(&root.join("src/core/engine_unproven.rs")));
+    for required in [
+        "Every promoted offer is an asserted offer of the promoted owner",
+        "Every promoted offer's owner is marked valid",
+        "The `Context` passed to a projector contains only validated offers",
+        "Drain/run safety follows by induction over the one-step transition",
+    ] {
+        assert!(
+            engine.contains(required),
+            "core engine checklist is missing {required:?}"
+        );
+    }
+
+    let link = normalize_whitespace(&source_text(
+        &root.join("src/facts/link/project_unproven.rs"),
+    ));
+    for required in [
+        "children encode a claimed root id",
+        "No cross-root splice validates",
+        "High-level link theorem depends on core",
+        "core proves validated context provenance, owner validity, asserted-to-validated promotion, and transitive validity",
+        "every valid child link is backed by a valid parent link in the same root/domain, transitively to an anchor",
+        "no global uniqueness of anchors is claimed",
+    ] {
+        assert!(
+            link.contains(required),
+            "link project checklist is missing {required:?}"
+        );
+    }
+}

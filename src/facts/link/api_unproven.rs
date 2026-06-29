@@ -1,5 +1,16 @@
 //! Link read/report helpers. These are app-facing and storage-backed, so they are
 //! unproven until the storage/result contract is moved behind verified effects.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] Reporting never creates facts, asserted edges, validity, or context.
+//! - [ ] A reported chain root/depth is derived only by decoding persisted link
+//!       bytes and following declared `prev` ids.
+//! - [ ] `complete == true` requires the walk to reach an anchor and replay to
+//!       project the requested head as valid.
+//! - [ ] Reported ids are display data only; authority still comes from core
+//!       validated context and link projection proofs.
+//! - [ ] After root/domain links land, reports must reject or mark incomplete any
+//!       chain whose decoded root ids disagree with validated projection state.
 use crate::core::index::Index;
 use crate::core::item::FactId;
 use crate::core::play::replay;

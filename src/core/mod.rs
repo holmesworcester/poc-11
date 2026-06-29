@@ -2,6 +2,13 @@
 //! labeled `_unproven` until their invariants move into executable Verus kernels.
 //! Public aliases preserve the existing API while making proof status visible in
 //! the source tree.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] This module remains re-export-only and contains no invariant-bearing
+//!       behavior.
+//! - [ ] Unsuffixed core modules are introduced only after their invariants are
+//!       covered by executable Verus proof or thin wrappers around proven code.
+//! - [ ] `_unproven` aliases stay explicit while proof obligations remain open.
 pub mod admit_unproven;
 pub mod effects_unproven;
 pub mod engine_unproven;

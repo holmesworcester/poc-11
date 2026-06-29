@@ -1,5 +1,16 @@
 //! Link authoring adapter. The command kernel is a future proof target; this file
 //! remains unproven while it performs storage admission directly.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] Authoring a root link sets `prev=None` and no encoded child root id.
+//! - [ ] Authoring a child link sets `prev=Some(parent_id)` and, after the
+//!       root/domain model lands, carries the intended root/domain id.
+//! - [ ] Authored content is deterministic from command inputs that should affect
+//!       the fact id.
+//! - [ ] The authored link is admitted only through core admission, so persisted
+//!       bytes and asserted edges match link extraction.
+//! - [ ] Authoring return values such as depth/root are report data only; they do
+//!       not establish validity.
 use crate::core::admit::admit;
 use crate::core::index::Index;
 use crate::core::item::FactId;

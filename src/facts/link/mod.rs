@@ -1,4 +1,11 @@
 //! Link fact family, kept in poc-10-style family-directory shape.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] This module remains re-export-only and contains no link semantics.
+//! - [ ] Link semantics stay in `project`; authoring/reporting/CLI files may call
+//!       it but must not duplicate projection rules.
+//! - [ ] The family directory remains the locus for all link-specific proof
+//!       obligations.
 pub mod api_unproven;
 pub mod author_unproven;
 pub mod cli_unproven;

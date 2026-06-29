@@ -1,5 +1,14 @@
 //! Link CLI formatting helpers. Parsing/formatting remains unproven; it delegates
 //! fact-family behavior to the link author/report/project modules.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] CLI parsing/formatting creates no validity or validated context.
+//! - [ ] CLI commands delegate all fact construction to link authoring and all
+//!       validity claims to replay/report helpers.
+//! - [ ] Hex input is only an app-facing representation and must become a
+//!       `FactId` before core/fact logic uses it.
+//! - [ ] Displayed `root_id`, `depth`, and `complete` values are reports, not
+//!       authority unless backed by replay/projection.
 use std::collections::HashSet;
 
 use crate::core::index::Index;

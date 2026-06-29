@@ -1,6 +1,19 @@
 //! Deterministic engine turn skeleton. This is the staging surface for a later
 //! unsuffixed `turn`: state plus one input produces state plus either a requested
 //! helper effect, an internal projection step, or idle.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] `turn` is deterministic for a given engine state.
+//! - [ ] `turn` emits at most one effect request or performs at most one internal
+//!       projection step.
+//! - [ ] Effect requests are selected only from queued work already present in
+//!       `EngineState`.
+//! - [ ] `apply_effect` interprets loaded facts only through canonical admission
+//!       and query results only as enqueue operations.
+//! - [ ] `turn_with_storage` preserves the engine invariant for every successful
+//!       step.
+//! - [ ] `drain` safety follows by induction over repeated `turn_with_storage`
+//!       steps; max-step exhaustion is a liveness failure, not a safety failure.
 use super::effects::{EffectRequest, EffectResult};
 use super::engine::{EngineState, Storage};
 use super::item::FactId;

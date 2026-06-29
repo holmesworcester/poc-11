@@ -3,6 +3,16 @@
 //! carries only validated offers — the sole inter-projector channel. The validity
 //! distinction lives on [`super::offer::Offer`]; `Context` holds only
 //! `Offer<Validated>`, so a projector physically cannot read unvalidated context.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] `Context` contains only `Offer<Validated>`.
+//! - [ ] The only source of `Offer<Validated>` in proven execution is core
+//!       promotion after owner validity.
+//! - [ ] `Context::has_offer` answers only exact role/key membership for
+//!       validated offers.
+//! - [ ] Projectors receive `Context` by value and receive no storage handle.
+//! - [ ] `Origin::Local` remains unforgeable outside engine-controlled
+//!       construction before any local-origin invariant depends on it.
 use super::offer::{Key, Offer, Role};
 
 /// The result of validating one item.

@@ -3,6 +3,17 @@
 //! durable bytes. Replay of already-stored facts uses the queue engine's
 //! read-only storage admission path instead, indexing decoded facts in memory
 //! without writing bytes or edges back to persistence.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] Admission computes `id == fact_id(P::encode(item))`.
+//! - [ ] Admission persists exactly `P::extract(item)` as asserted edges for
+//!       `id`, with no extra owners or edges.
+//! - [ ] Durable admission flushes exactly `P::encode(item)` under `id`; volatile
+//!       admission does not flush bytes.
+//! - [ ] Admission creates only an `Admitted` token and asserted storage state; it
+//!       never creates validity or validated context.
+//! - [ ] `Admitted` tokens cannot be fabricated outside core admission/loading
+//!       paths.
 use super::index::Index;
 use super::item::{fact_id, FactId};
 use super::projector::Projector;

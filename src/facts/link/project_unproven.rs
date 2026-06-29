@@ -4,6 +4,34 @@
 //! A link carries an optional `prev` -> a chain link0 <- link1 <- .... `extract`
 //! emits an OFFER on the link's own id and, if it has a parent, a NEED on `prev`.
 //! `project` makes a link valid iff its parent is valid; a root is valid by itself.
+//!
+//! Invariant checklist (Verus):
+//! - [ ] Link codec is canonical: `decode(encode(link)) == link`.
+//! - [ ] Link codec rejects malformed tags, malformed parent/root flags,
+//!       truncated ids, and non-canonical accepted bytes.
+//! - [ ] `link_id(link) == fact_id(encode(link))`.
+//! - [ ] Extraction emits exactly one self-offer for this link id.
+//! - [ ] Extraction emits exactly one parent need iff `prev=Some(parent_id)`.
+//! - [ ] Extraction emits no hidden needs or offers.
+//! - [ ] Current starter semantics: `prev=None` is an anchor root for its own
+//!       component, and multiple anchors are allowed.
+//! - [ ] Root/domain semantics after migration: roots emit
+//!       `valid_link(self_id, self_id)`.
+//! - [ ] Root/domain semantics after migration: children encode a claimed root id
+//!       and require validated context `valid_link(parent_id, claimed_root_id)`.
+//! - [ ] No cross-root splice validates: a child whose claimed root differs from
+//!       the validated parent's root is invalid.
+//! - [ ] Projection uses only the parent/root context address declared by
+//!       extraction.
+//! - [ ] Projection emits no facts in the starter model.
+//! - [ ] Link state records only this fact's computed validity or validated link
+//!       statement and does not mutate unrelated ids.
+//! - [ ] High-level link theorem depends on core: core proves validated context
+//!       provenance, owner validity, asserted-to-validated promotion, and
+//!       transitive validity over dependency edges.
+//! - [ ] Composition theorem: every valid child link is backed by a valid parent
+//!       link in the same root/domain, transitively to an anchor; no global
+//!       uniqueness of anchors is claimed.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
