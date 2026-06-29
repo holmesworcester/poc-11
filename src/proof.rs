@@ -1,8 +1,9 @@
-// Verus model for poc-11's queue-oriented projection core. This file is
-// compiled standalone by scripts/run_verus.sh and intentionally stays out of
-// cargo's module tree. Crypto and durable storage are abstract contracts here;
-// the proof is over typed in-memory facts, needs/offers, validated offers, and
-// projection.
+// Design-model Verus proof for poc-11's queue-oriented projection core. This
+// file is compiled standalone by scripts/run_verus.sh and intentionally stays
+// out of cargo's module tree. It is not a proof of running Rust code; the
+// executable proof-facing core lives in verus-core/. Crypto and durable storage
+// are abstract contracts here; the model is over typed in-memory facts,
+// needs/offers, validated offers, and projection.
 #![allow(unused)]
 use vstd::prelude::*;
 

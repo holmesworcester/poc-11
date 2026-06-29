@@ -21,6 +21,7 @@ verus = []
 [dependencies]
 blake3 = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
+linktoy-verus-core = { path = "verus-core" }
 
 [dev-dependencies]
 tempfile = "3"
