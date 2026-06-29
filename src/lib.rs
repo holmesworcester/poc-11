@@ -12,8 +12,8 @@
 //! The model in one screen: the durable side is a content-addressed fact log plus a
 //! *syntactic* needs/offers index (`extract`, Pass 1). The in-memory side is
 //! validated read-model state (`project`, Pass 2), rebuilt on demand by [`core::play`]
-//! — a demand-driven recursion where the call stack is the queue. Projectors are
-//! pure over `(item, context)` and never receive a storage/IO handle.
+//! as an explicit admit/project/query worklist. Projectors are pure over
+//! `(item, context)` and never receive a storage/IO handle.
 pub mod cli;
 pub mod core;
 pub mod protocol;

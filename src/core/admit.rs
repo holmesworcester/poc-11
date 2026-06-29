@@ -1,13 +1,14 @@
-//! Pass 1 (admission). [`admit`] is the ONLY way to mint an [`Admitted<I>`]:
-//! running it extracts the syntactic edges, persists them (`Asserted`), and
-//! flushes durable bytes. Because `project`/`play` require an `Admitted`, Pass 2
-//! is unreachable without Pass 1 — extract-before-project is a compile error.
+//! Pass 1 (admission). [`admit`] is the durable path for new/incoming facts:
+//! running it extracts syntactic edges, persists them (`Asserted`), and flushes
+//! durable bytes. Replay of already-stored facts uses the queue engine's
+//! read-only storage admission path instead, indexing decoded facts in memory
+//! without writing bytes or edges back to persistence.
 use super::index::Index;
 use super::item::{fact_id, FactId};
 use super::projector::Projector;
 
 /// A Pass-1 token. The fields are private, so no projector or emitted-fact path
-/// can fabricate one outside this module.
+/// can fabricate one outside the core admission/play modules.
 pub struct Admitted<I> {
     item: I,
     id: FactId,
@@ -26,9 +27,9 @@ impl<I> Admitted<I> {
     }
 }
 
-/// Admit one item: extract → persist edges (Asserted) → flush bytes if durable.
-/// Idempotent (the index inserts are `INSERT OR IGNORE`), so re-admitting a stored
-/// fact to obtain its token during `play` is safe.
+/// Admit one new/incoming item: extract → persist edges (Asserted) → flush bytes
+/// if durable. Idempotent writes make repeated network/local admission safe, but
+/// replay does not call this for facts already loaded from storage.
 pub fn admit<P: Projector>(
     item: P::Item,
     ts: u64,

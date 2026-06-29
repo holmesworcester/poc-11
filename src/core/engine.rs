@@ -95,9 +95,9 @@ impl<P: Projector> MemIndex<P> {
         self.edges.get(id).map(Vec::as_slice)
     }
 
-    fn insert(&mut self, id: FactId, item: P::Item, edges: Vec<Offer<Asserted>>) {
+    fn insert(&mut self, id: FactId, item: P::Item, edges: Vec<Offer<Asserted>>) -> bool {
         if self.facts.contains_key(&id) {
-            return;
+            return false;
         }
         for edge in &edges {
             let addr = EdgeAddr::from_offer(edge);
@@ -109,6 +109,7 @@ impl<P: Projector> MemIndex<P> {
         }
         self.facts.insert(id, item);
         self.edges.insert(id, edges);
+        true
     }
 
     fn offerers(&self, addr: EdgeAddr) -> Vec<FactId> {
@@ -137,6 +138,8 @@ pub struct EngineState<P: Projector> {
     pub projector_state: P::State,
     pub validity: HashMap<FactId, Validity>,
     pub validated: Vec<ValidatedOffer>,
+    validated_by_addr: HashMap<EdgeAddr, Vec<ValidatedOffer>>,
+    promoted_offers: HashSet<(FactId, EdgeAddr)>,
     to_admit: VecDeque<FactId>,
     to_project: VecDeque<FactId>,
     need_queries: VecDeque<EdgeAddr>,
@@ -154,6 +157,8 @@ impl<P: Projector> Default for EngineState<P> {
             projector_state: P::State::default(),
             validity: HashMap::new(),
             validated: Vec::new(),
+            validated_by_addr: HashMap::new(),
+            promoted_offers: HashSet::new(),
             to_admit: VecDeque::new(),
             to_project: VecDeque::new(),
             need_queries: VecDeque::new(),
@@ -199,7 +204,7 @@ where
     }
 
     /// Admit an already-decoded local item into memory. This is the non-storage
-    /// path for newly-authored items.
+    /// path for facts that should not be written to durable storage by this pass.
     pub fn admit_item(&mut self, item: P::Item) -> FactId {
         let id = fact_id(&P::encode(&item));
         self.index_item(id, item);
@@ -207,11 +212,12 @@ where
     }
 
     /// Load a content-addressed fact from storage, decode it, and index its
-    /// asserted needs/offers in memory.
-    pub fn admit_from_storage(
+    /// asserted needs/offers in memory. This deliberately does not call
+    /// `admit`: storage already owns the persisted bytes and asserted edge rows.
+    pub fn admit_from_storage<S: Storage + ?Sized>(
         &mut self,
         id: FactId,
-        storage: &dyn Storage,
+        storage: &S,
     ) -> Result<bool, String> {
         if self.mem.contains(&id) {
             return Ok(false);
@@ -232,7 +238,10 @@ where
 
     fn index_item(&mut self, id: FactId, item: P::Item) {
         let edges = P::extract(&item);
-        self.mem.insert(id, item, edges.clone());
+        if !self.mem.insert(id, item, edges.clone()) {
+            self.enqueue_project_if_not_valid(id);
+            return;
+        }
         self.enqueue_project(id);
         for need in edges.iter().filter(|edge| edge.is_need()) {
             self.enqueue_need_query(EdgeAddr::from_offer(need));
@@ -240,6 +249,9 @@ where
     }
 
     pub fn project_one(&mut self, id: FactId) -> Result<Option<Validity>, String> {
+        if self.validity.get(&id) == Some(&Validity::Valid) {
+            return Ok(Some(Validity::Valid));
+        }
         let Some(item) = self.mem.item(&id).cloned() else {
             self.enqueue_admit(id);
             return Ok(None);
@@ -252,7 +264,7 @@ where
         for need in edges.iter().filter(|edge| edge.is_need()) {
             let addr = EdgeAddr::from_offer(need);
             for provider in self.mem.offerers(addr) {
-                if self.validity.get(&provider) != Some(&Validity::Valid) {
+                if !self.validity.contains_key(&provider) {
                     self.enqueue_project(provider);
                 }
             }
@@ -268,21 +280,42 @@ where
         if out.validity == Validity::Valid {
             for offer in edges.iter().copied().filter(|edge| edge.is_offer()) {
                 let addr = EdgeAddr::from_offer(&offer);
-                self.validated.push(ValidatedOffer {
+                if !self.promoted_offers.insert((id, addr)) {
+                    continue;
+                }
+                let validated = ValidatedOffer {
                     owner: id,
                     offer: offer.validate(),
-                });
+                };
+                self.validated.push(validated);
+                self.validated_by_addr
+                    .entry(addr)
+                    .or_default()
+                    .push(validated);
                 for needer in self.mem.needers(addr) {
-                    self.enqueue_project(needer);
+                    self.enqueue_project_if_not_valid(needer);
                 }
                 self.enqueue_offer_query(addr);
             }
         }
 
+        for emitted in out.emitted {
+            let id = fact_id(&emitted.bytes);
+            let item = P::decode(&emitted.bytes)?;
+            if P::encode(&item) != emitted.bytes {
+                return Err("projector emitted non-canonical bytes".to_string());
+            }
+            self.index_item(id, item);
+        }
+
         Ok(Some(out.validity))
     }
 
-    pub fn drain(&mut self, storage: &dyn Storage, max_steps: usize) -> Result<usize, String> {
+    pub fn drain<S: Storage + ?Sized>(
+        &mut self,
+        storage: &S,
+        max_steps: usize,
+    ) -> Result<usize, String> {
         let mut steps = 0;
         while steps < max_steps {
             if let Some(id) = self.to_admit.pop_front() {
@@ -292,7 +325,7 @@ where
                 self.queued_need_queries.remove(&addr);
                 for id in storage.offerers_for(addr)? {
                     self.enqueue_admit(id);
-                    self.enqueue_project(id);
+                    self.enqueue_project_if_unseen(id);
                 }
             } else if let Some(id) = self.to_project.pop_front() {
                 self.queued_project.remove(&id);
@@ -301,7 +334,7 @@ where
                 self.queued_offer_queries.remove(&addr);
                 for id in storage.needers_for(addr)? {
                     self.enqueue_admit(id);
-                    self.enqueue_project(id);
+                    self.enqueue_project_if_not_valid(id);
                 }
             } else {
                 break;
@@ -309,6 +342,13 @@ where
             steps += 1;
         }
         Ok(steps)
+    }
+
+    pub fn has_pending_work(&self) -> bool {
+        !self.to_admit.is_empty()
+            || !self.to_project.is_empty()
+            || !self.need_queries.is_empty()
+            || !self.offer_queries.is_empty()
     }
 
     fn enqueue_need_query(&mut self, addr: EdgeAddr) {
@@ -323,21 +363,29 @@ where
         }
     }
 
+    fn enqueue_project_if_unseen(&mut self, id: FactId) {
+        if !self.validity.contains_key(&id) {
+            self.enqueue_project(id);
+        }
+    }
+
+    fn enqueue_project_if_not_valid(&mut self, id: FactId) {
+        if self.validity.get(&id) != Some(&Validity::Valid) {
+            self.enqueue_project(id);
+        }
+    }
+
     fn has_validated_offer(&self, addr: EdgeAddr) -> bool {
-        self.validated.iter().any(|vo| {
-            vo.offer.role == addr.role && vo.offer.scope == addr.scope && vo.offer.key == addr.key
-        })
+        self.validated_by_addr
+            .get(&addr)
+            .is_some_and(|offers| !offers.is_empty())
     }
 
     fn collect(&self, edges: &[Offer<Asserted>]) -> Context {
         let mut offers = vec![];
         for need in edges.iter().filter(|edge| edge.is_need()) {
             let addr = EdgeAddr::from_offer(need);
-            for vo in self.validated.iter().filter(|vo| {
-                vo.offer.role == addr.role
-                    && vo.offer.scope == addr.scope
-                    && vo.offer.key == addr.key
-            }) {
+            for vo in self.validated_by_addr.get(&addr).into_iter().flatten() {
                 offers.push(vo.offer);
             }
         }

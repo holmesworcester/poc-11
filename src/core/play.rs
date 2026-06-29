@@ -1,160 +1,118 @@
-//! Pass 2 (validation / projection): the §3 "queue that gets played" realized as
-//! demand-driven recursion — the call stack IS the queue. To project an item,
-//! ensure everything it depends on is projected first (resolve its needs to
-//! offerers via the index, pulling in old facts), then `project` it, then play
-//! anything it emits. `memo` makes each item project once; `on_stack` locates a
-//! suppression/stratification cycle at the exact offending item.
-use std::collections::{HashMap, HashSet};
+//! Pass 2 (validation / projection): drive the §3 "queue that gets played" as
+//! an explicit worklist over in-memory admitted facts. Replay starts from a
+//! bounded seed/window, pulls stored offerers for unmet needs, promotes only
+//! validated offers, and wakes matching needers until the queues reach a fixpoint.
+//!
+//! Durable storage is read-only here. Facts loaded from storage are decoded and
+//! indexed in memory, but their already-persisted bytes/edges are not re-written.
 
-use super::admit::admit;
+use std::collections::HashMap;
+
+use super::engine::EngineState;
 use super::index::Index;
 use super::item::{to_hex, FactId};
-use super::offer::{Key, Offer, Role, Scope};
 use super::projector::Projector;
-use super::typestate::{Context, Validated, Validity};
+use super::typestate::Validity;
 
-pub struct Replay<'a, P: Projector> {
+const DEFAULT_MAX_STEPS: usize = 1_000_000;
+
+pub struct Replay<'a, P: Projector>
+where
+    P::Item: Clone,
+{
     idx: &'a dyn Index,
-    /// The projector's private read-model, built this pass.
-    pub state: P::State,
-    /// item → result, this pass; "in memo" == "fully projected".
-    pub memo: HashMap<FactId, Validity>,
-    /// cycle detection.
-    on_stack: HashSet<FactId>,
-    /// promoted offers — the validated-context bus.
-    validated: Vec<Offer<Validated>>,
-    /// synthetic ts for the idempotent re-admits this pass performs.
-    next_ts: u64,
+    pub engine: EngineState<P>,
+    max_steps: usize,
 }
 
-impl<'a, P: Projector> Replay<'a, P> {
+impl<'a, P: Projector> Replay<'a, P>
+where
+    P::Item: Clone,
+{
     pub fn new(idx: &'a dyn Index) -> Self {
         Self {
             idx,
-            state: P::State::default(),
-            memo: HashMap::new(),
-            on_stack: HashSet::new(),
-            validated: Vec::new(),
-            next_ts: 0,
+            engine: EngineState::new(),
+            max_steps: DEFAULT_MAX_STEPS,
         }
     }
 
-    /// Play one §3 queue item, recursing into its context first.
+    #[cfg(test)]
+    pub fn with_max_steps(idx: &'a dyn Index, max_steps: usize) -> Self {
+        Self {
+            idx,
+            engine: EngineState::new(),
+            max_steps,
+        }
+    }
+
+    /// Queue one item and drain all discovered admission/projection work.
     pub fn play(&mut self, id: FactId) -> Result<Validity, String> {
-        if let Some(v) = self.memo.get(&id) {
-            return Ok(*v);
-        }
-        if !self.on_stack.insert(id) {
-            return Err(format!("SuppressionCycle at {}", to_hex(&id)));
-        }
-
-        // resolve(addr) → Admitted: load the body and re-admit (idempotent).
-        let bytes = self
-            .idx
-            .load_fact(&id)?
-            .ok_or_else(|| format!("missing body {}", to_hex(&id)))?;
-        self.next_ts += 1;
-        let admitted = admit::<P>(P::decode(&bytes)?, self.next_ts, self.idx)?;
-        let edges = P::extract(admitted.item());
-
-        // Context first: for each need, play its offerers (pulling old facts in).
-        for need in edges.iter().copied().filter(|o| o.is_need()) {
-            for provider in self.idx.offers_for_key(need.role, need.scope, &need.key)? {
-                self.play(provider)?;
-            }
-        }
-
-        // Project with validated context now ready.
-        let out = P::project(&admitted, self.collect(&edges), &mut self.state);
-
-        // Promote this item's offers to Validated iff it projected valid.
-        if out.validity == Validity::Valid {
-            for offer in edges.iter().copied().filter(|o| o.is_offer()) {
-                self.validated.push(offer.validate());
-            }
-        }
-
-        // Emitted facts re-enter the pipeline (the link emits none).
-        for ef in out.emitted {
-            self.next_ts += 1;
-            let a = admit::<P>(P::decode(&ef.bytes)?, self.next_ts, self.idx)?;
-            self.play(a.id())?;
-        }
-
-        self.on_stack.remove(&id);
-        self.memo.insert(id, out.validity);
-        Ok(out.validity)
+        self.engine.enqueue_admit(id);
+        self.drain()?;
+        self.validity_for(id)
     }
 
-    /// Build `Context` from the validated offers this item's needs name.
-    fn collect(&self, edges: &[Offer<super::typestate::Asserted>]) -> Context {
-        let mut offers = vec![];
-        for need in edges.iter().filter(|o| o.is_need()) {
-            for v in self
-                .validated
-                .iter()
-                .filter(|v| v.role == need.role && v.key == need.key)
-            {
-                offers.push(*v);
-            }
+    pub fn memo(&self) -> &HashMap<FactId, Validity> {
+        &self.engine.validity
+    }
+
+    fn drain(&mut self) -> Result<usize, String> {
+        let steps = self.engine.drain(self.idx, self.max_steps)?;
+        if self.engine.has_pending_work() {
+            return Err(format!(
+                "replay did not drain within {} engine steps",
+                self.max_steps
+            ));
         }
-        Context::from(offers)
+        Ok(steps)
+    }
+
+    fn validity_for(&self, id: FactId) -> Result<Validity, String> {
+        if !self.engine.mem.contains(&id) {
+            return Err(format!("missing body {}", to_hex(&id)));
+        }
+        self.engine
+            .validity
+            .get(&id)
+            .copied()
+            .ok_or_else(|| format!("unprojected fact {}", to_hex(&id)))
     }
 }
 
-/// One Pass-2 run from a bounded seed. Fresh memo each call: confluence makes the
-/// outer order irrelevant. Returns the projected set (the observable).
+/// One Pass-2 run from a bounded seed. The input set grows while the worklist
+/// resolves unmet needs through storage and wakes needers from validated offers.
+/// Returns the projected set (the observable).
 pub fn replay<P: Projector>(
     idx: &dyn Index,
     seeds: &[FactId],
-) -> Result<HashMap<FactId, Validity>, String> {
+) -> Result<HashMap<FactId, Validity>, String>
+where
+    P::Item: Clone,
+{
     let mut r = Replay::<P>::new(idx);
-    for s in seeds {
-        r.play(*s)?;
+    for seed in seeds {
+        r.engine.enqueue_admit(*seed);
     }
-    Ok(r.memo)
+    r.drain()?;
+    for seed in seeds {
+        r.validity_for(*seed)?;
+    }
+    Ok(r.engine.validity)
 }
 
-/// Live offer→need wake (§5 "re-demand wavefront"): the forward dual of `replay`.
-/// A newly-available fact can validate facts that NEED what it offers, and those,
-/// once present, wake *their* needers — one hop per level. We discover that
-/// affected set by following offer→need links through the index (the reverse key),
-/// then re-derive it in one fresh confluent pass.
+/// Live offer→need wake (§5 "re-demand wavefront"): validate the arrived fact,
+/// promote its offers if valid, then follow offer queries to stored/local needers.
 pub fn wake<P: Projector>(
     idx: &dyn Index,
     arrived: FactId,
-) -> Result<HashMap<FactId, Validity>, String> {
-    let mut affected = vec![arrived];
-    let mut seen: HashSet<FactId> = HashSet::new();
-    seen.insert(arrived);
-    let mut queue = vec![arrived];
-    while let Some(f) = queue.pop() {
-        for (role, scope, key) in offered_keys::<P>(idx, f)? {
-            for needer in idx.needs_for_key(role, scope, &key)? {
-                if seen.insert(needer) {
-                    affected.push(needer);
-                    queue.push(needer);
-                }
-            }
-        }
-    }
-    replay::<P>(idx, &affected)
-}
-
-/// The (role, scope, key) of every offer `f` makes — its syntactic offers, used to
-/// find who needs `f`. Validity-free, so the affected set may slightly
-/// over-approximate; re-deriving an unaffected fact is a harmless no-op.
-fn offered_keys<P: Projector>(
-    idx: &dyn Index,
-    f: FactId,
-) -> Result<Vec<(Role, Scope, Key)>, String> {
-    let bytes = idx
-        .load_fact(&f)?
-        .ok_or_else(|| format!("missing body {}", to_hex(&f)))?;
-    let item = P::decode(&bytes)?;
-    Ok(P::extract(&item)
-        .into_iter()
-        .filter(|o| o.is_offer())
-        .map(|o| (o.role, o.scope, o.key))
-        .collect())
+) -> Result<HashMap<FactId, Validity>, String>
+where
+    P::Item: Clone,
+{
+    let mut r = Replay::<P>::new(idx);
+    r.engine.enqueue_admit(arrived);
+    r.drain()?;
+    r.validity_for(arrived)?;
+    Ok(r.engine.validity)
 }

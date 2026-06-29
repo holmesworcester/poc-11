@@ -3,10 +3,9 @@
 //!    its parent is Invalid; once the parent arrives, `play::wake` follows the
 //!    reverse key (offer→need) and re-derives the affected set, validating the
 //!    child (§3 Fact 2 / the cascade).
-//!  - Cycle guard: a fabricated suppression cycle (impossible to author honestly,
-//!    since `prev` is in the hash) must raise a located `SuppressionCycle`. It runs
-//!    against an in-memory fake `Index` so the real content-addressed SQLite path
-//!    keeps its `id == hash(bytes)` invariant.
+//!  - Replay over a read-only fake `Index`: stored facts are decoded into memory,
+//!    not re-admitted back into persistence.
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use linktoy::core::admit::admit;
@@ -72,6 +71,17 @@ fn out_of_order_child_before_parent_wakes_via_engine() {
 struct FakeIndex {
     facts: HashMap<FactId, Vec<u8>>,
     offerers: HashMap<[u8; 32], Vec<FactId>>,
+    writes: Cell<usize>,
+}
+
+impl FakeIndex {
+    fn new(facts: HashMap<FactId, Vec<u8>>, offerers: HashMap<[u8; 32], Vec<FactId>>) -> Self {
+        Self {
+            facts,
+            offerers,
+            writes: Cell::new(0),
+        }
+    }
 }
 
 impl Index for FakeIndex {
@@ -81,9 +91,11 @@ impl Index for FakeIndex {
         _edges: &[Offer<Asserted>],
         _ts: u64,
     ) -> Result<(), String> {
+        self.writes.set(self.writes.get() + 1);
         Ok(())
     }
     fn flush_fact(&self, _id: FactId, _bytes: &[u8], _ts: u64) -> Result<(), String> {
+        self.writes.set(self.writes.get() + 1);
         Ok(())
     }
     fn load_fact(&self, id: &FactId) -> Result<Option<Vec<u8>>, String> {
@@ -107,35 +119,31 @@ impl Index for FakeIndex {
 }
 
 #[test]
-fn fabricated_suppression_cycle_is_located() {
-    let id_a = [0xAAu8; 32];
-    let id_b = [0xBBu8; 32];
+fn replay_consumes_stored_edges_without_rewriting_index() {
+    let root = Link {
+        content: b"root".to_vec(),
+        prev: None,
+    };
+    let root_id = fact_id(&LinkProjector::encode(&root));
+    let child = Link {
+        content: b"child".to_vec(),
+        prev: Some(root_id),
+    };
+    let child_id = fact_id(&LinkProjector::encode(&child));
 
-    // Bodies point at each other; each fabricated id offers itself, so the needs
-    // resolve into a cycle a -> b -> a.
     let mut facts = HashMap::new();
-    facts.insert(
-        id_a,
-        LinkProjector::encode(&Link {
-            content: vec![1],
-            prev: Some(id_b),
-        }),
-    );
-    facts.insert(
-        id_b,
-        LinkProjector::encode(&Link {
-            content: vec![2],
-            prev: Some(id_a),
-        }),
-    );
+    facts.insert(root_id, LinkProjector::encode(&root));
+    facts.insert(child_id, LinkProjector::encode(&child));
     let mut offerers = HashMap::new();
-    offerers.insert(id_a, vec![id_a]);
-    offerers.insert(id_b, vec![id_b]);
-    let idx = FakeIndex { facts, offerers };
+    offerers.insert(root_id, vec![root_id]);
+    let idx = FakeIndex::new(facts, offerers);
 
-    let err = replay::<LinkProjector>(&idx, &[id_a]).unwrap_err();
-    assert!(
-        err.contains("SuppressionCycle"),
-        "expected located cycle, got: {err}"
+    let memo = replay::<LinkProjector>(&idx, &[child_id]).unwrap();
+    assert_eq!(memo.get(&root_id), Some(&Validity::Valid));
+    assert_eq!(memo.get(&child_id), Some(&Validity::Valid));
+    assert_eq!(
+        idx.writes.get(),
+        0,
+        "replay should not persist facts or asserted edges it loaded from storage"
     );
 }

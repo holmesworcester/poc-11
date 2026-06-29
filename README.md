@@ -11,9 +11,9 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
   context-free `extract` (Pass 1 = admission). The index is **never windowed** and
   serves both match directions via one reverse key.
 - **In memory**: validated read-model state from `project` (Pass 2), rebuilt on
-  demand by `play()` — a demand-driven recursion where the call stack *is* the
-  queue: to project an item, resolve and play its context first (pulling old facts
-  in via the index), then project it.
+  demand by `play()`/`replay()` as an explicit queue/worklist: admit seed facts
+  into memory, query stored offerers for unmet needs, project admitted facts, and
+  wake needers when validated offers appear.
 - **Queue engine model**: `EngineState` makes the live split explicit with
   `to_admit` (load/decode/index facts in memory), `to_project` (validate admitted
   facts), need queries (pull stored offerers), and offer queries (wake stored/local
@@ -71,13 +71,14 @@ cargo test
 - `network_roundtrip` — **Test C**: a chain authored on daemon A is reconstructed
   and validated on daemon B over a real TCP socket.
 - `reverse_key` — **Test D**: a child admitted before its parent is Invalid; once the
-  parent arrives, the engine's `wake` (offer→need) re-derives and validates it. Plus a
-  fabricated suppression cycle (built against an in-memory `Index`, since honest
-  content-addressed facts can't form one) raises a located `SuppressionCycle`.
+  parent arrives, the engine's `wake` (offer→need) re-derives and validates it. A
+  read-only fake index also proves replay loads stored facts into memory without
+  writing their bytes or asserted edges back to persistence.
 - `engine_queues` — the proof-facing queue split against the SQLite-backed storage
   contract: demanding only a head pulls the stored parent chain into memory, and a
-  later in-memory parent admission wakes a stored child. Both assert validated-offer
-  provenance.
+  later in-memory parent admission wakes a stored child. These tests also assert
+  validated-offer provenance and that requeued valid facts do not duplicate
+  promoted offers.
 
 ## Verify (Verus)
 
