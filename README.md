@@ -93,6 +93,18 @@ ready only when every asserted need address `(role, scope, key)` has a matching
 validated offer, and that a valid projection plan promotes only offers/fields
 copied from the projected fact under that fact's owner.
 
+Proof goals:
+
+- Verify executable core gates, not parallel proof-only models.
+- Verify protocol kernels: codec canonicality, extraction, projection, emitted
+  facts, and authoring commands.
+- Verify IO/storage interaction contracts around sockets, filesystem, and SQLite:
+  accepted network frames go through verified decode/admission, persisted asserted
+  edges are exactly verified extraction output, successful lookups satisfy the
+  stated storage contract, and errors cannot create validated state. The OS,
+  TCP, filesystem, and SQLite implementations remain trusted components unless
+  replaced by verified implementations.
+
 ## Review gates
 
 `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, and

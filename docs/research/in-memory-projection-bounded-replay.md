@@ -647,6 +647,12 @@ signatures, checkpoint-facts) were kept in §6.
    `(fact, context)`; `extract`'s signature enforces syntactic purity; routing,
    edge properties, and persistence are projector proofs rather than trusted
    framework code; the typestate makes validate-before-use a compile error.
+   IO-facing code is also a proof target at its contract boundary: verify that
+   socket, filesystem, and SQLite wrappers feed bytes through verified
+   decode/admission, persist exactly verified extraction output, expose lookups
+   matching the storage contract, and cannot create validated state on errors.
+   The OS, TCP, filesystem, and SQLite engines remain trusted components unless
+   replaced by verified implementations.
 4. **Easier versioning.** Two replay modes (§5): projection-logic change → Pass 2
    only; extraction-schema change → re-extract (parallel map) then Pass 2. Free
    replay-versioning for the read model; the index is re-extracted, not re-derived
@@ -690,6 +696,10 @@ signatures, checkpoint-facts) were kept in §6.
   persistence decision; core admission should index every item in memory, persist
   bytes + asserted edges only for durable items, and keep replay of already-stored
   facts read-only.
+- TODO: prove IO/storage interaction contracts around sockets, filesystem, and
+  SQLite wrappers: accepted frames must pass verified codec/admission, persisted
+  asserted edges must equal verified extraction output, successful lookups must
+  satisfy the stated storage contract, and errors must not create validated state.
 - How large is the index over a multi-year workspace? `O(fact-count)`,
   horizon-bounded — the real memory/disk ceiling. Measure before assuming bounded.
 - How large is the closure-carried portion of `context_have` — how much body-axis

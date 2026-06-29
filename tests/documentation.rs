@@ -27,6 +27,8 @@ fn in_memory_projection_note_records_extract_project_boundary() {
         "A forged child can dirty the syntactic index with useless edges, but it cannot create validated state",
         "The index is the `Asserted` (dirty) layer",
         "They promote to **`Validated`** only when `project` validates the item in Pass 2",
+        "socket, filesystem, and SQLite wrappers feed bytes through verified decode/admission",
+        "errors must not create validated state",
     ] {
         assert!(
             normalized.contains(required),
