@@ -18,6 +18,17 @@
 //! - [ ] Displayed ids, roots, depths, and completeness are reports only; they do
 //!       not affect future validity.
 //! - [ ] CLI code cannot construct `Validity`, `Context`, or `Offer<Validated>`.
+//! Imported theorems:
+//! - `facts::link::project`: `link_from_params` owns link construction semantics.
+//! - `core::admit`: admission creates only asserted state.
+//! - `facts::link::api` and `core::play`: reports/replay are observations of
+//!   projected state.
+//! Proof strategy:
+//! - Prove CLI functions delegate construction to `link_from_params`, admission
+//!   to `core::admit`, and report fields to `chain_report`/`replay`.
+//! - Prove no CLI function calls storage write methods directly or constructs
+//!   validity/context/validated offers.
+//! - Prove formatted strings are output-only and are not consumed by projection.
 use std::collections::HashSet;
 
 use crate::core::admit::admit;

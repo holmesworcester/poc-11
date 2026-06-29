@@ -8,8 +8,13 @@
 //!       same fact id, and hashing the same bytes is deterministic.
 //! - [ ] Hex is display/input syntax only; it is never evidence of validity,
 //!       ownership, or authority.
-//! - [ ] Other modules may depend on this theorem, but should prove only that
-//!       they preserve the id/body relation at their own boundary.
+//! Imported theorems:
+//! - None. This file is the root assumption for content-addressed identity.
+//! Proof strategy:
+//! - Model `FactId` as a 32-byte value and `fact_id(bytes)` as an uninterpreted,
+//!   deterministic, collision-resistant function over canonical byte strings.
+//! - Keep hex helpers out of proven paths; prove display/input round trips only
+//!   as app-boundary tests, not as validity evidence.
 
 pub type FactId = [u8; 32];
 

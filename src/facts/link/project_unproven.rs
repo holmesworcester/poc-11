@@ -30,12 +30,28 @@
 //!       exactly when validated context contains its parent offer.
 //! - [ ] No state authority leak: starter projection records only this link's
 //!       validity and emits no new facts.
-//! - [ ] Root/domain migration: once links carry a root/domain id, roots emit
-//!       `valid_link(self,self)`, children require `valid_link(parent, root)`, and
-//!       cross-root splices are invalid.
 //! - [ ] Composition with core: using `core::engine` validated-context
-//!       provenance, every valid child link has a valid same-domain parent chain
-//!       to an anchor; no theorem here claims anchor uniqueness.
+//!       provenance, every valid child link has a valid parent chain to an
+//!       anchor; no theorem here claims anchor uniqueness.
+//! Imported theorems:
+//! - `core::item`: fact ids are content addresses for canonical bytes.
+//! - `core::offer`: asserted edge constructors and match addresses have fixed
+//!   meaning.
+//! - `core::typestate`: `Context::has_offer` is exact validated-offer lookup.
+//! - `core::engine`: context offers have valid owners.
+//! - `core::projector`: the generic projector interface enforces confinement.
+//! Proof strategy:
+//! - Prove codec round trips and rejection cases for the current tag/prev/content
+//!   layout.
+//! - Prove `link_from_params` constructs only `content` and `prev`, leaving id,
+//!   edges, and validity to core/projector paths.
+//! - Prove `extract` is exactly `link_edges`: one self-offer plus one parent need
+//!   iff `prev` is present.
+//! - Prove `project` implements `link_project_validity`, writes only this link's
+//!   validity into `LinkState`, and emits no facts.
+//! - Compose with the engine provenance theorem to prove parent-chain
+//!   transitivity for the current prev-only model. Root/domain preservation is a
+//!   future proof after the link shape carries a root/domain id.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;

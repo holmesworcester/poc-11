@@ -17,6 +17,19 @@
 //!       work queue drains; bounded drain exhaustion is an error.
 //! - [ ] Soundness of each drain prefix belongs to `core::engine` and
 //!       `core::turn`.
+//! Imported theorems:
+//! - `core::turn`: draining preserves the engine invariant and applies helper
+//!   results through the engine.
+//! - `core::engine`: validity maps and validated offers are sound for every drain
+//!   prefix.
+//! - `core::index`: storage lookups return only untrusted discovery data.
+//! Proof strategy:
+//! - Prove `replay` and `wake` are thin API wrappers: they enqueue seeds/arrivals,
+//!   call drain, and report the resulting validity map.
+//! - Prove they do not directly write durable storage or construct validated
+//!   state.
+//! - Prove bounded exhaustion returns an error instead of reporting partial work
+//!   as complete.
 
 use std::collections::HashMap;
 

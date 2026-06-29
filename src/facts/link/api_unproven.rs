@@ -21,6 +21,16 @@
 //!       validated the requested head.
 //! - [ ] Reporting code does not construct, admit, project, or create validated
 //!       context.
+//! Imported theorems:
+//! - `facts::link::project`: link bytes decode to the link semantic shape.
+//! - `core::play`: replay soundness gives the validity result for `complete`.
+//! - `core::index`: storage reads are untrusted observations.
+//! Proof strategy:
+//! - Prove `walk` is read-only and follows only decoded `prev` pointers.
+//! - Prove `chain_report.complete` is true only when the walk reaches `prev=None`
+//!   and replay reports the head valid.
+//! - Prove report fields are returned as display/report data and never fed back
+//!   into core projection.
 use crate::core::index::Index;
 use crate::core::item::FactId;
 use crate::core::play::replay;

@@ -12,6 +12,17 @@
 //! - [ ] Runtime transport never validates or projects facts directly.
 //! - [ ] Successful send, failed send, and wall-clock time do not influence
 //!       validity.
+//! Imported theorems:
+//! - `core::projector`: accepted frames have fact-family meaning only after
+//!   canonical decode.
+//! - `core::admit`: accepted inbound items create only asserted state.
+//! - `core::play`: reads derive validity by replay/projection, not by transport.
+//! Proof strategy:
+//! - Prove ingress calls core admission only on frames decoded by `P::decode` and
+//!   drops decode failures.
+//! - Prove this module contains no path to `P::project`, `Context`, or
+//!   `Offer<Validated>`.
+//! - Prove egress and clock effects only influence retry/liveness state.
 use std::collections::HashSet;
 use std::io::Write;
 use std::net::TcpListener;

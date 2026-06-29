@@ -18,6 +18,13 @@
 //! - [ ] All link-specific meaning lives in `project`.
 //! - [ ] App/report modules cannot define link semantics or proof evidence.
 //! - [ ] This module is re-export-only; it adds no behavior to prove.
+//! Imported theorems:
+//! - `facts::link::project`, `facts::link::api`, and `facts::link::cli` own their
+//!   local invariants.
+//! Proof strategy:
+//! - Prove by source inspection/contract test that this file contains only module
+//!   declarations and re-exports.
+//! - Prove no functions or data constructors are defined here.
 pub mod api_unproven;
 pub mod cli_unproven;
 pub mod project_unproven;

@@ -14,6 +14,19 @@
 //!       extraction exactness is proved by the fact-family projector.
 //! - [ ] Fact bytes are requested to be written to durable storage only when the
 //!       fact-family durability predicate says this item is durable.
+//! Imported theorems:
+//! - `core::item`: fact ids are content addresses of canonical bytes.
+//! - `core::projector`: encoding, extraction, and durability are content-pure for
+//!   the selected fact family.
+//! - `core::index`: storage writes preserve asserted facts/edges as discovery
+//!   data and do not create validated state.
+//! Proof strategy:
+//! - Symbolically execute `admit`: compute bytes, compute id from bytes, compute
+//!   asserted edges from the item, request asserted-edge persistence, and request
+//!   a durable byte write only under `P::durable`.
+//! - Prove the returned token contains exactly the original item and computed id.
+//! - Prove by type inspection that this function constructs no `Validity`,
+//!   `Context`, or `Offer<Validated>`.
 use super::index::Index;
 use super::item::{fact_id, FactId};
 use super::projector::Projector;
@@ -26,7 +39,7 @@ pub struct Admitted<I> {
 }
 
 impl<I> Admitted<I> {
-    pub(in crate::core) fn from_parts(item: I, id: FactId) -> Self {
+    pub(in crate::core) fn from_engine_memory(item: I, id: FactId) -> Self {
         Self { item, id }
     }
 

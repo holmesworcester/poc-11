@@ -73,9 +73,17 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Link proofs live in `src/facts/link/project.rs` because only the link family defines what roots, parents, and ancestry mean",
         "Source-file invariant checklists should state user-significant or threat-model-significant properties first",
         "Avoid checklists that are only call traces",
+        "Each checklist should be followed by",
+        "`Imported theorems`: the external facts this proof depends on",
+        "`Proof strategy`: the local argument needed in this file",
         "Each invariant has one proof owner",
-        "`core::engine` | Validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety.",
-        "`facts::link::project` | Link-family implementation of the projector contract and link-specific validity/root/domain theorems.",
+        "`core::engine` | In-memory id/body relation, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety.",
+        "`facts::link::project` | Link-family implementation of the projector contract and current parent-chain validity theorem; root/domain theorems move here after the link shape carries root/domain ids.",
+        "In the current prev-only model, a child link is valid only when validated context proves its declared parent is valid",
+        "Root/domain preservation is a future link theorem after the link shape carries a root/domain id",
+        "The current composition theorem is",
+        "link's parent projection contract",
+        "After the link shape carries a root/domain id, the stronger composition theorem becomes",
         "Multiple anchors are allowed; the starter model does not prove global root uniqueness",
         "valid_link(link_id, root_id)",
         "no cross-root splice validates",
@@ -133,16 +141,26 @@ fn proof_target_files_have_verus_invariant_checklists() {
             text.contains("Owned invariant:"),
             "{file} must name the invariant owned by that file"
         );
+        assert!(
+            text.contains("Imported theorems:"),
+            "{file} must list imported theorem dependencies"
+        );
+        assert!(
+            text.contains("Proof strategy:"),
+            "{file} must describe a local proof strategy"
+        );
     }
 
     let engine = normalize_whitespace(&source_text(&root.join("src/core/engine_unproven.rs")));
     for required in [
         "Owned invariant: validated-context provenance and ongoing engine safety",
-        "Every in-memory fact is paired with the id derived from its canonical bytes",
+        "Every in-memory fact is paired with the id derived from its canonical bytes before the engine hands it to a projector",
         "A projector receives only validated offers",
         "Every validated offer is owned by a fact already projected valid",
-        "Emission does not inherit authority",
-        "This proof depends on `core::item`",
+        "Raw bytes returned in `ProjectOutcome.emitted` do not inherit authority",
+        "Imported theorems:",
+        "`core::item`: fact ids identify canonical bytes",
+        "Proof strategy:",
     ] {
         assert!(
             engine.contains(required),
@@ -156,6 +174,8 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "creates no validity, validated offer, or validated context",
         "The admitted token's id/body relation is derived from `core::item`",
         "extraction exactness is proved by the fact-family projector",
+        "Imported theorems:",
+        "Proof strategy:",
     ] {
         assert!(
             admit.contains(required),
@@ -172,11 +192,13 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "Project-owned construction",
         "Extraction honesty",
         "Starter validity rule",
-        "Root/domain migration",
         "Composition with core",
         "using `core::engine` validated-context provenance",
-        "valid same-domain parent chain to an anchor",
+        "valid parent chain to an anchor",
         "no theorem here claims anchor uniqueness",
+        "future proof after the link shape carries a root/domain id",
+        "Imported theorems:",
+        "Proof strategy:",
     ] {
         assert!(
             link.contains(required),

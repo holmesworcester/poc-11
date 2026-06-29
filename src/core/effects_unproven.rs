@@ -8,7 +8,13 @@
 //! - [ ] Effect results carry only untrusted bytes, ids, and addresses.
 //! - [ ] `Validity`, `Context`, and `Offer<Validated>` never cross the helper
 //!       boundary in an effect payload.
-//! - [ ] Safety of interpreting helper results belongs to `core::turn`.
+//! Imported theorems:
+//! - `core::engine::EdgeAddr`: effect query addresses have the same address
+//!   representation the engine uses.
+//! Proof strategy:
+//! - Prove by enum inspection that every request/result variant carries only
+//!   `FactId`, `EdgeAddr`, raw bytes, or lists of ids.
+//! - Leave semantic interpretation of effect results to `core::turn`.
 use super::engine::EdgeAddr;
 use super::item::FactId;
 

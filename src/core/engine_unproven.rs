@@ -12,22 +12,43 @@
 //! Invariant checklist (Verus):
 //! Owned invariant: validated-context provenance and ongoing engine safety.
 //! - [ ] Every in-memory fact is paired with the id derived from its canonical
-//!       bytes before `Admitted::from_parts` may be used for projection.
-//! - [ ] Loaded facts and query results can schedule work, but they cannot mark a
-//!       fact valid or promote an offer.
+//!       bytes before the engine hands it to a projector as an `Admitted` token.
+//! - [ ] Storage lookup results are discovery hints only; they cannot mark a fact
+//!       valid or promote an offer.
 //! - [ ] A projector receives only validated offers whose addresses match needs
 //!       asserted by the fact being projected.
 //! - [ ] Every validated offer is owned by a fact already projected valid and was
 //!       asserted by that same owner.
 //! - [ ] One owner contributes at most one validated offer for a given match
 //!       address.
-//! - [ ] Emitted bytes do not inherit authority; they must re-enter decode,
-//!       admission, and projection before becoming valid.
+//! - [ ] Raw bytes returned in `ProjectOutcome.emitted` do not inherit authority
+//!       from the emitting fact; they must re-enter decode, admission, and
+//!       projection before becoming valid.
 //! - [ ] Every admit/query/project/wake step preserves these invariants, so every
 //!       prefix of a drain is sound.
-//! - [ ] This proof depends on `core::item` for fact-id meaning, `core::offer` and
-//!       `core::typestate` for representation gates, and each fact-family
-//!       projector for codec/extraction/projection contracts.
+//! Imported theorems:
+//! - `core::item`: fact ids identify canonical bytes.
+//! - `core::offer`: asserted-to-validated promotion preserves edge address and
+//!   metadata.
+//! - `core::typestate`: `Context` contains only validated offers and exact match
+//!   lookup has no storage/body access.
+//! - `core::projector`: the selected fact family supplies canonical codec,
+//!   extraction, durability, projection contracts, and emitted bytes as raw
+//!   `EmittedFact` payloads.
+//! - `linktoy-verus-core`: readiness and promotion gates preserve the abstract
+//!   dependency/provenance relation.
+//! Proof strategy:
+//! - Define a state predicate over memory facts, asserted edges, validity,
+//!   validated offers, promoted offer keys, and queues.
+//! - Prove each transition preserves the predicate: in-memory admission, storage
+//!   load result, need-query result, projection, raw emitted-byte admission, and
+//!   offer-query result. The load/query transitions may enqueue additional ids or
+//!   addresses to inspect, but they do not mutate validity or validated offers.
+//! - For projection, use readiness to build context only from matching validated
+//!   offers, run the projector, then promote only asserted offers owned by a fact
+//!   whose effective validity is `Valid`.
+//! - Prove drain safety by induction over transition steps; prove completeness or
+//!   liveness separately from safety.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -316,7 +337,7 @@ where
             return Ok(Some(Validity::Invalid));
         }
 
-        let admitted = Admitted::from_parts(item, id);
+        let admitted = Admitted::from_engine_memory(item, id);
         let out = P::project(&admitted, self.collect(&edges), &mut self.projector_state);
         let plan = project_fact_core(&core_fact, &core_ctx, core_validity(out.validity));
         let effective_validity = if plan.valid {

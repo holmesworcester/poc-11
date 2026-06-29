@@ -10,6 +10,13 @@
 //!       until executable Verus proof covers their invariants.
 //! - [ ] Unsuffixed core files are either proven executable code or thin wrappers
 //!       around proven executable code.
+//! Imported theorems:
+//! - None. This module owns only source-tree shape.
+//! Proof strategy:
+//! - Prove by source inspection/contract test that this file contains only module
+//!   declarations and re-exports.
+//! - Prove no fact, storage, context, offer, or validity constructors are defined
+//!   here.
 pub mod admit_unproven;
 pub mod effects_unproven;
 pub mod engine_unproven;

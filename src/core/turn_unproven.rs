@@ -12,6 +12,17 @@
 //! - [ ] Queue ordering affects scheduling and liveness only; it is not authority.
 //! - [ ] Drain safety is induction over turns that each preserve the
 //!       `core::engine` invariant.
+//! Imported theorems:
+//! - `core::effects`: helper payloads carry no validated state.
+//! - `core::engine`: each engine mutation preserves validated-context provenance
+//!   and ongoing safety.
+//! - `core::index`: helper calls satisfy the abstract storage lookup contract.
+//! Proof strategy:
+//! - Prove `turn` is deterministic case analysis over queue priority and returns
+//!   at most one request, one projection result, or idle.
+//! - Prove `apply_effect` dispatches each effect result to exactly the matching
+//!   engine handler and never constructs validity itself.
+//! - Prove `drain` by induction over bounded repetitions of `turn_with_storage`.
 use super::effects::{EffectRequest, EffectResult};
 use super::engine::{EngineState, Storage};
 use super::item::FactId;

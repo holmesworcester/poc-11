@@ -12,18 +12,27 @@
 //!       not storage, clocks, peers, or validation state.
 //! - [ ] Projection is confined to the admitted fact, validated context, and the
 //!       family-private state it owns.
-//! - [ ] Core proves where context came from; each fact-family implementation
-//!       proves what that context means for its own validity rules.
+//! Imported theorems:
+//! - `core::typestate`: `Context` contains only validated offers.
+//! - `core::admit` and `core::engine`: projectors receive an `Admitted` token only
+//!   after the id/body relation has been established.
+//! Proof strategy:
+//! - Verify this trait as a contract surface, then require each fact-family
+//!   implementation to prove codec canonicality, extraction exactness, durability
+//!   purity, and projection semantics for its own item type.
+//! - Prove confinement by signature: no projector method receives storage, clock,
+//!   socket, filesystem, or effect handles.
 use super::admit::Admitted;
 use super::offer::Offer;
 use super::typestate::{Asserted, Context, Validity};
 
-/// A fact emitted by `project`; it re-enters `admit` + `play` like any input.
+/// Raw bytes proposed by `project`; they re-enter decode/admission/projection like
+/// any input before they can become valid.
 pub struct EmittedFact {
     pub bytes: Vec<u8>,
 }
 
-/// What `project` returns: this item's validity plus any emitted facts.
+/// What `project` returns: this item's validity plus any raw emitted bytes.
 pub struct ProjectOutcome {
     pub validity: Validity,
     pub emitted: Vec<EmittedFact>,

@@ -10,7 +10,15 @@
 //! - [ ] Unvalidated persisted edges cannot be placed in `Context`.
 //! - [ ] `has_offer` answers only whether an exact validated match address is
 //!       present; it does not inspect fact bodies or storage.
-//! - [ ] Provenance of context contents belongs to `core::engine`.
+//! Imported theorems:
+//! - `core::offer`: only validated offers have type `Offer<Validated>`.
+//! - `core::engine`: every validated offer placed into context has a valid owner.
+//! Proof strategy:
+//! - Prove `Context` has no public constructor that accepts asserted offers.
+//! - Prove `Context::from` preserves exactly the validated offer vector supplied
+//!   by the engine.
+//! - Prove `has_offer` is a pure membership query over role/key in that vector;
+//!   storage and fact bodies are not available.
 use super::offer::{Key, Offer, Role};
 
 /// The result of validating one item.

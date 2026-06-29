@@ -18,6 +18,16 @@
 //! - [ ] Promotion preserves the asserted edge's address and metadata; it adds no
 //!       new authority payload.
 //! - [ ] The authority to call promotion belongs to `core::engine`.
+//! Imported theorems:
+//! - None for representation shape. `core::engine` supplies the precondition for
+//!   when promotion is allowed.
+//! Proof strategy:
+//! - Prove `Offer<Asserted>` constructors set only the requested direction and
+//!   match address with fixed default scope/polarity/binding.
+//! - Prove `Offer<Asserted>::validate` copies every semantic field unchanged and
+//!   changes only the typestate marker.
+//! - Keep `validate` visible only inside `core` so the engine remains the single
+//!   promotion authority.
 use std::marker::PhantomData;
 
 use super::typestate::{Asserted, Validated};

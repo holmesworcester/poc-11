@@ -11,6 +11,15 @@
 //!       `Validity`, `Context`, or `Offer<Validated>`.
 //! - [ ] Window selection is only a replay seed choice; validity cannot depend on
 //!       recency, ordering, or inclusion in the window.
+//! Imported theorems:
+//! - `core::item`: callers can recheck loaded bytes against fact ids.
+//! - `core::offer`: asserted edge addresses and directions have fixed meaning.
+//! Proof strategy:
+//! - Treat `Index` as an abstract storage contract, not as a proof of SQLite.
+//! - Specify postconditions for each trait method: fact loads return candidate
+//!   bytes for the requested id, edge queries return owners for the requested
+//!   asserted address, and window returns only seed ids.
+//! - Prove no method can return validated state by type shape.
 use super::item::FactId;
 use super::offer::{Key, Offer, Role, Scope};
 use super::typestate::Asserted;

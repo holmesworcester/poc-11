@@ -73,12 +73,14 @@ defines what roots, parents, and ancestry mean:
   need declared by the link fields.
 - A `prev=None` link is an anchor root for its own component. Multiple anchors
   are allowed; the starter model does not prove global root uniqueness.
-- A child link is valid only when the validated parent context proves the parent
-  is in the same root/domain.
+- In the current prev-only model, a child link is valid only when validated
+  context proves its declared parent is valid.
 - Link projection emits no new facts unless a later model intentionally adds
   emitted facts.
-- Link ancestry is domain preserving: any valid descendant has a valid parent
-  chain ending at its claimed anchor root.
+- Current link ancestry is parent-chain preserving: any valid descendant has a
+  valid parent chain ending at an anchor.
+- Root/domain preservation is a future link theorem after the link shape carries
+  a root/domain id.
 
 ## Invariant Checklist Style
 
@@ -88,6 +90,13 @@ being authority, validated-context provenance, exact fact-family interpretation,
 and no validity created by IO/storage/reporting. Avoid checklists that are only
 call traces such as "function X calls function Y"; those details belong in Verus
 specs, Rust tests, or contract tests under the named invariant.
+
+Each checklist should be followed by:
+
+- `Imported theorems`: the external facts this proof depends on, named by owning
+  module.
+- `Proof strategy`: the local argument needed in this file, without reproving
+  imported theorems.
 
 ## Invariant Responsibility
 
@@ -100,7 +109,7 @@ as if it were their own.
 | --- | --- |
 | `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
 | `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
-| `facts::link::project` | Link-family implementation of the projector contract and link-specific validity/root/domain theorems. |
+| `facts::link::project` | Link-family implementation of the projector contract and current parent-chain validity theorem; root/domain theorems move here after the link shape carries root/domain ids. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |
@@ -113,7 +122,17 @@ as if it were their own.
 | `facts::link::api` | Reporting boundary; reports are observations, not proof evidence. |
 | `facts::link::cli` | CLI adapter boundary; user input chooses constructor parameters only. |
 
-The composition theorem is:
+The current composition theorem is:
+
+```text
+core validated-context provenance
++ link's parent projection contract
+=> every valid child link is backed by a valid parent link, transitively to an
+   anchor
+```
+
+After the link shape carries a root/domain id, the stronger composition theorem
+becomes:
 
 ```text
 core validated-context provenance
