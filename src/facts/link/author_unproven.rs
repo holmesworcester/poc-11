@@ -2,9 +2,10 @@
 //! remains unproven while it performs storage admission directly.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Authoring a root link sets `prev=None` and no encoded child root id.
-//! - [ ] Authoring a child link sets `prev=Some(parent_id)` and, after the
-//!       root/domain model lands, carries the intended root/domain id.
+//! - [ ] Authoring copies the requested `prev` parameter exactly into the link:
+//!       `None` for roots, `Some(parent_id)` for children.
+//! - [ ] After the root/domain model lands, authoring copies the requested
+//!       root/domain id parameter exactly into child links and omits it for roots.
 //! - [ ] Authored content is deterministic from command inputs that should affect
 //!       the fact id.
 //! - [ ] The authored link is admitted only through core admission, so persisted
