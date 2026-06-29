@@ -295,6 +295,9 @@ fn link_project_verified_kernel_is_running_code() {
     for required in [
         "verus!",
         "pub fn project_link_core",
+        "pub fn extract_link_core",
+        "child_extraction_offer_and_need_same_root",
+        "valid_projection_statement_equals_extracted_offer",
         "valid_child_requires_validated_same_root_parent",
         "valid_child_preserves_claimed_root",
         "malformed_projection_is_invalid",
@@ -307,6 +310,8 @@ fn link_project_verified_kernel_is_running_code() {
 
     for required in [
         "project_link_core(",
+        "extract_link_core(",
+        "link_core_for(id, l.prev, l.root)",
         "validity_from_core(projection.validity)",
         "Verified in `facts::link::project`",
     ] {

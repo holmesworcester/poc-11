@@ -29,12 +29,13 @@
 //! - [ ] Safety: project-owned construction: command parameters determine only
 //!       link content, `prev`, and claimed root/domain; app code cannot assign
 //!       ids, edges, or validity.
-//! - [ ] Safety: well-formed parent naming: for any child
+//! - [x] Safety: well-formed parent naming: for any child
 //!       `link.prev == Some(parent_id)` and `link.root == Some(root_id)`,
 //!       extraction asserts exactly one need for `valid_link(parent_id, root_id)`;
-//!       no other field or app input can choose the parent dependency.
-//! - [ ] Safety: malformed `prev`/`root` combinations assert no edges and project
-//!       invalid.
+//!       no other field or app input can choose the parent dependency. Verified
+//!       in `facts::link::project`.
+//! - [x] Safety: malformed `prev`/`root` combinations assert no edges and project
+//!       invalid. Verified in `facts::link::project`.
 //! - [x] Safety: starter validity rule: a root (`prev=None`) is valid; a child is
 //!       valid exactly when validated context contains
 //!       `valid_link(parent_id, root_id)` for the child's declared parent and
@@ -95,7 +96,8 @@ use crate::core::offer::{Key, Offer, Role};
 use crate::core::projector::{ProjectOutcome, Projector};
 use crate::core::typestate::{Asserted, Context, Validity};
 use crate::facts::link::project::{
-    fact_id_to_core, maybe_fact_id_to_core, project_link_core, validity_from_core, LinkCore,
+    core_to_fact_id, extract_link_core, link_core_for, project_link_core, validity_from_core,
+    LinkProjectionCore, MaybeStatementCore,
 };
 
 /// Wire tag distinguishing a link fact from other frames on the network.
@@ -152,22 +154,34 @@ pub fn link_id(l: &Link) -> FactId {
 }
 
 pub fn link_edges(l: &Link) -> Vec<Offer<Asserted>> {
-    let Some(root) = link_semantic_root(l) else {
-        return vec![];
-    };
-    let id = link_id(l);
-    let mut edges = vec![Offer::offer(LINK, valid_link_key(id, root))];
-    if let Some(parent) = l.prev {
-        edges.push(Offer::need(LINK, valid_link_key(parent, root)));
+    let extraction = extract_link_core(link_core_for(link_id(l), l.prev, l.root));
+    let mut edges = vec![];
+    if let MaybeStatementCore::Some(statement) = extraction.offer {
+        edges.push(Offer::offer(
+            LINK,
+            valid_link_key(
+                core_to_fact_id(statement.link_id),
+                core_to_fact_id(statement.root_id),
+            ),
+        ));
+    }
+    if let MaybeStatementCore::Some(statement) = extraction.need {
+        edges.push(Offer::need(
+            LINK,
+            valid_link_key(
+                core_to_fact_id(statement.link_id),
+                core_to_fact_id(statement.root_id),
+            ),
+        ));
     }
     edges
 }
 
 pub fn link_semantic_root(l: &Link) -> Option<FactId> {
-    match (l.prev, l.root) {
-        (None, None) => Some(link_id(l)),
-        (Some(_), Some(root)) => Some(root),
-        _ => None,
+    let extraction = extract_link_core(link_core_for(link_id(l), l.prev, l.root));
+    match extraction.offer {
+        MaybeStatementCore::Some(statement) => Some(core_to_fact_id(statement.root_id)),
+        MaybeStatementCore::None => None,
     }
 }
 
@@ -179,15 +193,19 @@ pub fn valid_link_key(link_id: FactId, root_id: FactId) -> Key {
     Key(fact_id(&bytes))
 }
 
-pub fn link_project_validity(l: &Link, parent_validated_same_root: bool) -> Validity {
-    let projection = project_link_core(
-        LinkCore {
-            self_id: fact_id_to_core(link_id(l)),
-            prev: maybe_fact_id_to_core(l.prev),
-            root: maybe_fact_id_to_core(l.root),
-        },
+pub fn link_project_decision(
+    id: FactId,
+    l: &Link,
+    parent_validated_same_root: bool,
+) -> LinkProjectionCore {
+    project_link_core(
+        link_core_for(id, l.prev, l.root),
         parent_validated_same_root,
-    );
+    )
+}
+
+pub fn link_project_validity(l: &Link, parent_validated_same_root: bool) -> Validity {
+    let projection = link_project_decision(link_id(l), l, parent_validated_same_root);
     validity_from_core(projection.validity)
 }
 
@@ -306,7 +324,8 @@ impl Projector for LinkProjector {
             (Some(parent), Some(root)) => ctx.has_offer(LINK, &valid_link_key(parent, root)),
             _ => false,
         };
-        let validity = link_project_validity(item.item(), parent_validated_same_root);
+        let projection = link_project_decision(item.id(), item.item(), parent_validated_same_root);
+        let validity = validity_from_core(projection.validity);
         let projected = projected_link_state(item.id(), item.item(), validity, st);
         ProjectOutcome {
             validity,
