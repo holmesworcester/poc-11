@@ -685,6 +685,11 @@ signatures, checkpoint-facts) were kept in §6.
   **reaction** and **slice** today — fixed by carrying the suppressing address in
   the fact (the closure rule, §5). The remaining open part is whether any projector
   needs a referenced fact's *content* (a map-with-lookups rather than a pure map).
+- TODO: align admission so network/projector-emitted items are not blanket-persisted
+  by ingress. `extract` should return both asserted edges and a content-pure
+  persistence decision; core admission should index every item in memory, persist
+  bytes + asserted edges only for durable items, and keep replay of already-stored
+  facts read-only.
 - How large is the index over a multi-year workspace? `O(fact-count)`,
   horizon-bounded — the real memory/disk ceiling. Measure before assuming bounded.
 - How large is the closure-carried portion of `context_have` — how much body-axis
