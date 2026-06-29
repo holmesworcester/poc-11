@@ -6,12 +6,12 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: generic fact-family interface contract.
-//! - [ ] Each implementation accepts exactly the canonical byte forms it is
-//!       willing to give semantic meaning.
-//! - [ ] Extraction and durability are content-pure: they depend on the fact body,
-//!       not storage, clocks, peers, or validation state.
-//! - [ ] Projection is confined to the admitted fact, validated context, and the
-//!       family-private state it owns.
+//! - [ ] Safety: each implementation accepts exactly the canonical byte forms it
+//!       is willing to give semantic meaning.
+//! - [ ] Safety: extraction and durability are content-pure: they depend on the
+//!       fact body, not storage, clocks, peers, or validation state.
+//! - [ ] Safety: projection is confined to the admitted fact, validated context,
+//!       and the family-private state it owns.
 //! Imported theorems:
 //! - `core::typestate`: `Context` contains only validated offers.
 //! - `core::admit` and `core::engine`: projectors receive an `Admitted` token only

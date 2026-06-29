@@ -4,13 +4,14 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: deterministic turn scheduling and effect application.
-//! - [ ] Each turn performs at most one observable step: request helper data,
-//!       project one admitted fact, or report idle.
-//! - [ ] Helper results enter the engine only through the engine's fact-load and
-//!       exact-query result handlers.
-//! - [ ] Missing helper data or effect errors cannot create validity.
-//! - [ ] Queue ordering affects scheduling and liveness only; it is not authority.
-//! - [ ] Drain safety is induction over turns that each preserve the
+//! - [ ] Safety: each turn performs at most one observable step: request helper
+//!       data, project one admitted fact, or report idle.
+//! - [ ] Safety: helper results enter the engine only through the engine's
+//!       fact-load and exact-query result handlers.
+//! - [ ] Safety: missing helper data or effect errors cannot create validity.
+//! - [ ] Safety: queue ordering affects scheduling and liveness only; it is not
+//!       authority.
+//! - [ ] Safety: drain safety is induction over turns that each preserve the
 //!       `core::engine` invariant.
 //! Imported theorems:
 //! - `core::effects`: helper payloads carry no validated state.

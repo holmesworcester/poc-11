@@ -13,14 +13,22 @@ name = "lk"
 path = "src/bin/lk.rs"
 
 [features]
-# Declared for future cargo-verus integration. The executable proof-facing core
-# lives in `verus-core/` and is verified by scripts/run_verus.sh.
+# Declared for cargo-verus integration of proof-facing core modules.
 verus = []
+
+[package.metadata.verus]
+verify = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(verus_keep_ghost)',
+    'cfg(verus_keep_ghost_body)',
+] }
 
 [dependencies]
 blake3 = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
-linktoy-verus-core = { path = "verus-core" }
+vstd = "=0.0.0-2026-03-22-0106"
 
 [dev-dependencies]
 tempfile = "3"

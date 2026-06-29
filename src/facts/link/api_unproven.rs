@@ -13,22 +13,24 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: link reporting boundary.
-//! - [ ] Reports are observations for users; they are never authority for
+//! - [ ] Safety: reports are observations for users; they are never authority for
 //!       projection or future validation.
-//! - [ ] Chain walking follows decoded `prev` links from persisted bytes and stops
-//!       at the first missing or malformed fact.
-//! - [ ] `complete` means both: the structural walk reached an anchor, and replay
-//!       validated the requested head.
-//! - [ ] Reporting code does not construct, admit, project, or create validated
-//!       context.
+//! - [ ] Safety: chain walking follows decoded `prev` links from persisted bytes
+//!       and stops at the first missing or malformed fact.
+//! - [ ] Safety: `complete` means all of: the structural walk reached an anchor,
+//!       the head's projected root/domain equals that anchor, and replay validated
+//!       the requested head.
+//! - [ ] Safety: reporting code does not construct, admit, project, or create
+//!       validated context.
 //! Imported theorems:
 //! - `facts::link::project`: link bytes decode to the link semantic shape.
 //! - `core::play`: replay soundness gives the validity result for `complete`.
 //! - `core::index`: storage reads are untrusted observations.
 //! Proof strategy:
 //! - Prove `walk` is read-only and follows only decoded `prev` pointers.
-//! - Prove `chain_report.complete` is true only when the walk reaches `prev=None`
-//!   and replay reports the head valid.
+//! - Prove `chain_report.complete` is true only when the walk reaches `prev=None`,
+//!   the structural anchor agrees with the head's projected root/domain, and
+//!   replay reports the head valid.
 //! - Prove report fields are returned as display/report data and never fed back
 //!   into core projection.
 use crate::core::index::Index;
@@ -37,7 +39,7 @@ use crate::core::play::replay;
 use crate::core::projector::Projector;
 use crate::core::typestate::Validity;
 
-use super::project_unproven::LinkProjector;
+use super::project_unproven::{link_semantic_root, LinkProjector};
 
 /// A validated view of the chain ending at `head`.
 pub struct Report {
@@ -54,7 +56,9 @@ pub fn chain_report(idx: &dyn Index, head: FactId) -> Result<Report, String> {
     let w = walk(idx, head)?;
     let complete = if w.present {
         let memo = replay::<LinkProjector>(idx, &[head])?;
-        w.reached_root && matches!(memo.get(&head), Some(Validity::Valid))
+        w.reached_root
+            && w.projected_root == Some(w.root)
+            && matches!(memo.get(&head), Some(Validity::Valid))
     } else {
         false
     };
@@ -74,6 +78,7 @@ pub(crate) struct Walk {
     pub depth: u64,
     pub length: u64,
     pub reached_root: bool,
+    pub projected_root: Option<FactId>,
     pub ids: Vec<FactId>,
 }
 
@@ -83,6 +88,7 @@ pub(crate) fn walk(idx: &dyn Index, head: FactId) -> Result<Walk, String> {
     let mut cur = Some(head);
     let mut present = false;
     let mut reached_root = false;
+    let mut projected_root = None;
     while let Some(id) = cur {
         let Some(bytes) = idx.load_fact(&id)? else {
             break;
@@ -90,8 +96,12 @@ pub(crate) fn walk(idx: &dyn Index, head: FactId) -> Result<Walk, String> {
         if id == head {
             present = true;
         }
+        let link = LinkProjector::decode(&bytes)?;
+        if id == head {
+            projected_root = link_semantic_root(&link);
+        }
         ids.push(id);
-        cur = match LinkProjector::decode(&bytes)?.prev {
+        cur = match link.prev {
             None => {
                 reached_root = true;
                 None
@@ -111,6 +121,7 @@ pub(crate) fn walk(idx: &dyn Index, head: FactId) -> Result<Walk, String> {
         depth,
         length,
         reached_root,
+        projected_root,
         ids,
     })
 }

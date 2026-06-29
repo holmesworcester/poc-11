@@ -6,14 +6,14 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: new/local fact admission creates only asserted state.
-//! - [ ] Admission creates an `Admitted` token and asserted storage state only; it
-//!       creates no validity, validated offer, or validated context.
-//! - [ ] The admitted token's id/body relation is derived from `core::item`
-//!       content addressing and the fact family's canonical encoder.
-//! - [ ] Stored asserted edges are exactly the fact family's extraction output;
-//!       extraction exactness is proved by the fact-family projector.
-//! - [ ] Fact bytes are requested to be written to durable storage only when the
-//!       fact-family durability predicate says this item is durable.
+//! - [ ] Safety: admission creates an `Admitted` token and asserted storage state
+//!       only; it creates no validity, validated offer, or validated context.
+//! - [ ] Safety: the admitted token's id/body relation is derived from
+//!       `core::item` content addressing and the fact family's canonical encoder.
+//! - [ ] Safety: stored asserted edges are exactly the fact family's extraction
+//!       output; extraction exactness is proved by the fact-family projector.
+//! - [ ] Safety: fact bytes are requested to be written to durable storage only
+//!       when the fact-family durability predicate says this item is durable.
 //! Imported theorems:
 //! - `core::item`: fact ids are content addresses of canonical bytes.
 //! - `core::projector`: encoding, extraction, and durability are content-pure for

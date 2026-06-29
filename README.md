@@ -42,7 +42,6 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
 | `src/facts/link/` | **link fact family**: `project_unproven` holds typed construction, codec, extract, and project; `api_unproven` reports observations; `cli_unproven` is the app admission/formatting adapter |
 | `src/helpers/` | narrow trusted helper/effect boundaries: crypto, hex, clock, SQLite, and TCP framing |
 | `src/cli_unproven.rs` | thin app layer wiring the link fact family into the core runtime |
-| `verus-core/` | Verus-verified executable projection gate called by `src/core/engine_unproven.rs` |
 
 `core` depends on nothing fact-family-specific; `facts` depends on `core`;
 `cli_unproven` (the composition root) depends on both. This is the seam Stage 3
@@ -90,12 +89,11 @@ cargo test
 ./scripts/run_verus.sh
 ```
 
-`verus-core/` is a normal Rust path dependency. The engine calls its
-`fact_ready_core` and `project_fact_core` functions before projector mutation,
-offer promotion, or emitted-fact admission. Verus proves that a fact is considered
-ready only when every asserted need address `(role, scope, key)` has a matching
-validated offer, and that a valid projection plan promotes only offers/fields
-copied from the projected fact under that fact's owner.
+The engine calls core gate functions before projector mutation, offer promotion,
+or emitted-byte admission. Verus proves that a fact is considered ready only when
+every asserted need address `(role, scope, key)` has a matching validated offer,
+and that a valid projection plan promotes only offers/fields copied from the
+projected fact under that fact's owner.
 
 Proof goals:
 

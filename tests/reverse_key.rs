@@ -15,7 +15,7 @@ use linktoy::core::offer::{Key, Offer, Role, Scope};
 use linktoy::core::play::{replay, wake};
 use linktoy::core::projector::Projector;
 use linktoy::core::typestate::{Asserted, Validity};
-use linktoy::facts::link::{Link, LinkProjector, LINK};
+use linktoy::facts::link::{valid_link_key, Link, LinkProjector, LINK};
 use linktoy::helpers::sqlite_unproven::SqliteIndex;
 
 fn open(dir: &tempfile::TempDir, name: &str) -> SqliteIndex {
@@ -31,11 +31,13 @@ fn out_of_order_child_before_parent_wakes_via_engine() {
     let root = Link {
         content: b"root".to_vec(),
         prev: None,
+        root: None,
     };
     let root_id = fact_id(&LinkProjector::encode(&root));
     let child = Link {
         content: b"child".to_vec(),
         prev: Some(root_id),
+        root: Some(root_id),
     };
 
     // Admit the CHILD first — its parent does not exist yet.
@@ -49,7 +51,7 @@ fn out_of_order_child_before_parent_wakes_via_engine() {
 
     // The index is reverse-keyed: the child's need is findable by the parent's key.
     assert_eq!(
-        idx.needs_for_key(LINK, Scope::Local, &Key(root_id))
+        idx.needs_for_key(LINK, Scope::Local, &valid_link_key(root_id, root_id))
             .unwrap(),
         vec![cid]
     );
@@ -124,11 +126,13 @@ fn replay_consumes_stored_edges_without_rewriting_index() {
     let root = Link {
         content: b"root".to_vec(),
         prev: None,
+        root: None,
     };
     let root_id = fact_id(&LinkProjector::encode(&root));
     let child = Link {
         content: b"child".to_vec(),
         prev: Some(root_id),
+        root: Some(root_id),
     };
     let child_id = fact_id(&LinkProjector::encode(&child));
 
@@ -136,7 +140,7 @@ fn replay_consumes_stored_edges_without_rewriting_index() {
     facts.insert(root_id, LinkProjector::encode(&root));
     facts.insert(child_id, LinkProjector::encode(&child));
     let mut offerers = HashMap::new();
-    offerers.insert(root_id, vec![root_id]);
+    offerers.insert(valid_link_key(root_id, root_id).0, vec![root_id]);
     let idx = FakeIndex::new(facts, offerers);
 
     let memo = replay::<LinkProjector>(&idx, &[child_id]).unwrap();

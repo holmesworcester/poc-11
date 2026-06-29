@@ -63,8 +63,11 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
     for required in [
         "choose code shapes that let behavior move from `_unproven` files into Verus-verified executable kernels",
         "There is no `_proven` suffix",
+        "`src/core/*_unproven.rs` contains the current operational core shell",
         "`src/facts/link/project_unproven.rs` keeps link codec, extraction, and projection together",
         "`src/core/effects_unproven.rs` and `src/core/turn_unproven.rs` are the current staging surface",
+        "`src/core/runtime_unproven.rs` is the current daemon/IO loop",
+        "It stays separate from `turn` so the deterministic queue/effect step can be proven without proving OS progress",
         "concrete SQLite lives in `src/helpers/sqlite_unproven.rs`",
         "`src/core/turn.rs`: deterministic `State + Input -> State + Effects` transition",
         "`src/facts/link/project.rs`: verified link codec, canonical encode/decode, deterministic typed construction from explicit parameters, extraction, projection validity",
@@ -73,17 +76,22 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Link proofs live in `src/facts/link/project.rs` because only the link family defines what roots, parents, and ancestry mean",
         "Source-file invariant checklists should state user-significant or threat-model-significant properties first",
         "Avoid checklists that are only call traces",
+        "Every checklist item must be labeled `Safety:` or `Liveness:`",
+        "Use `Safety:` for properties that rule out bad states",
+        "Use `Liveness:` only for progress claims",
+        "Do not put OS/socket/filesystem progress in a Verus invariant",
         "Each checklist should be followed by",
         "`Imported theorems`: the external facts this proof depends on",
         "`Proof strategy`: the local argument needed in this file",
         "Each invariant has one proof owner",
-        "`core::engine` | In-memory id/body relation, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety.",
-        "`facts::link::project` | Link-family implementation of the projector contract and current parent-chain validity theorem; root/domain theorems move here after the link shape carries root/domain ids.",
-        "In the current prev-only model, a child link is valid only when validated context proves its declared parent is valid",
-        "Root/domain preservation is a future link theorem after the link shape carries a root/domain id",
+        "`core::gate` | Pure readiness and projection-plan theorem: a fact may promote only its own asserted offers/fields, and only when its projector returned `Valid` and every asserted need has a matching validated offer. Invalid or not-ready facts promote nothing.",
+        "`core::engine` | In-memory id/body relation, integration with the core gate theorem, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety.",
+        "`facts::link::project` | Link-family implementation of the projector contract and current same-root parent-chain validity theorem.",
+        "In the current root/domain model, a root link (`prev=None, root=None`) is valid as `valid_link(self_id, self_id)`",
+        "A child link is valid only when validated context contains `valid_link(parent_id, claimed_root_id)`",
+        "parent-author, device, or admin-grant relationships must be explicit link/fact fields before their preservation can be a link theorem",
         "The current composition theorem is",
-        "link's parent projection contract",
-        "After the link shape carries a root/domain id, the stronger composition theorem becomes",
+        "link's parent/root projection contract",
         "Multiple anchors are allowed; the starter model does not prove global root uniqueness",
         "valid_link(link_id, root_id)",
         "no cross-root splice validates",
@@ -116,6 +124,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "src/core/admit_unproven.rs",
         "src/core/effects_unproven.rs",
         "src/core/engine_unproven.rs",
+        "src/core/gate.rs",
         "src/core/index_unproven.rs",
         "src/core/item_unproven.rs",
         "src/core/mod.rs",
@@ -149,17 +158,30 @@ fn proof_target_files_have_verus_invariant_checklists() {
             text.contains("Proof strategy:"),
             "{file} must describe a local proof strategy"
         );
+        for (idx, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//! - [ ] ") {
+                assert!(
+                    trimmed.contains("- [ ] Safety:") || trimmed.contains("- [ ] Liveness:"),
+                    "{file}:{} checklist item must be labeled Safety or Liveness",
+                    idx + 1
+                );
+            }
+        }
     }
 
     let engine = normalize_whitespace(&source_text(&root.join("src/core/engine_unproven.rs")));
     for required in [
         "Owned invariant: validated-context provenance and ongoing engine safety",
-        "Every in-memory fact is paired with the id derived from its canonical bytes before the engine hands it to a projector",
-        "A projector receives only validated offers",
-        "Every validated offer is owned by a fact already projected valid",
-        "Raw bytes returned in `ProjectOutcome.emitted` do not inherit authority",
+        "Safety: every in-memory fact is paired with the id derived from its",
+        "bytes before the engine hands it to a projector",
+        "Safety: a projector receives only validated offers",
+        "Safety: every validated offer is owned by a fact already projected valid",
+        "Safety: raw bytes returned in `ProjectOutcome.emitted` do not inherit",
         "Imported theorems:",
         "`core::item`: fact ids identify canonical bytes",
+        "`core::gate`: readiness and projection-plan functions encode the exact",
+        "promotion rule: projector `Valid` plus all asserted needs satisfied",
         "Proof strategy:",
     ] {
         assert!(
@@ -168,11 +190,33 @@ fn proof_target_files_have_verus_invariant_checklists() {
         );
     }
 
+    let gate = normalize_whitespace(&source_text(&root.join("src/core/gate.rs")));
+    for required in [
+        "Owned invariant: pure readiness and projection-plan gate",
+        "Safety: `fact_ready_core` is true exactly when every asserted need has a",
+        "matching validated offer",
+        "Safety: `project_fact_core` marks an abstract fact valid only when the",
+        "fact-family projector returned valid and readiness holds",
+        "Safety: a valid projection plan promotes only offers and fields copied",
+        "projected fact under that fact's owner",
+        "Safety: an invalid projection plan promotes nothing",
+        "Imported theorems:",
+        "None beyond Verus/Vstd sequence and equality reasoning",
+        "Proof strategy:",
+    ] {
+        assert!(
+            gate.contains(required),
+            "core gate checklist is missing {required:?}"
+        );
+    }
+
     let admit = normalize_whitespace(&source_text(&root.join("src/core/admit_unproven.rs")));
     for required in [
         "Owned invariant: new/local fact admission creates only asserted state",
+        "Safety: admission creates an `Admitted` token and asserted storage state",
         "creates no validity, validated offer, or validated context",
-        "The admitted token's id/body relation is derived from `core::item`",
+        "Safety: the admitted token's id/body relation is derived from",
+        "`core::item` content addressing",
         "extraction exactness is proved by the fact-family projector",
         "Imported theorems:",
         "Proof strategy:",
@@ -188,15 +232,20 @@ fn proof_target_files_have_verus_invariant_checklists() {
     ));
     for required in [
         "Owned invariant: link-family semantics and its `Projector` implementation",
-        "Canonical link identity",
-        "Project-owned construction",
-        "Extraction honesty",
-        "Starter validity rule",
-        "Composition with core",
-        "using `core::engine` validated-context provenance",
-        "valid parent chain to an anchor",
+        "Safety: canonical link identity",
+        "Safety: project-owned construction",
+        "Safety: parent naming",
+        "extraction asserts exactly one need for `parent_id`",
+        "Safety: starter validity rule",
+        "valid exactly when validated context contains the offer whose owner and",
+        "key are the child's declared `parent_id`",
+        "Safety: same-root/domain preservation",
+        "the child's promoted self-offer carries that same root/domain",
+        "Safety: composition with core",
+        "using `core::engine` validated-context",
+        "provenance, every valid child link has a valid same-root parent chain",
+        "valid same-root parent chain to",
         "no theorem here claims anchor uniqueness",
-        "future proof after the link shape carries a root/domain id",
         "Imported theorems:",
         "Proof strategy:",
     ] {
@@ -265,7 +314,7 @@ fn link_fact_family_contracts_are_strict_and_role_local() {
     }
 
     let cli = uncommented_source(&source_text(&root.join("src/facts/link/cli_unproven.rs")));
-    assert!(cli.contains("link_from_params(at, prev, label)"));
+    assert!(cli.contains("link_from_params(at, prev, root, label)"));
     assert!(cli.contains("admit::<LinkProjector>"));
     assert!(cli.contains("let r = chain_report(idx, id)?;"));
     for forbidden in [

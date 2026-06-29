@@ -10,8 +10,6 @@ or it is only a thin wrapper around such code.
 
 ## Current Labels
 
-- `verus-core/` is proven executable Rust. It currently verifies the generic
-  projection gate used by `src/core/engine_unproven.rs`.
 - `src/core/*_unproven.rs` contains the current operational core shell. These
   files expose the old public module names through `src/core/mod.rs`, but their
   filenames make the proof gap visible.
@@ -19,6 +17,9 @@ or it is only a thin wrapper around such code.
   staging surface for deterministic turn proof. `turn_unproven` orders queued
   work, emits storage effect requests, applies effect results, and delegates
   internal projection steps to the engine.
+- `src/core/runtime_unproven.rs` is the current daemon/IO loop: sockets, sleeps,
+  peer sends, and stdout readiness. It stays separate from `turn` so the
+  deterministic queue/effect step can be proven without proving OS progress.
 - `src/facts/link/project_unproven.rs` keeps link codec, extraction, and
   projection together because versioned byte interpretation is part of fact
   meaning. It also owns deterministic typed construction from explicit command
@@ -69,18 +70,18 @@ defines what roots, parents, and ancestry mean:
 
 - Link bytes decode canonically into the link semantic shape.
 - `link_id(link) == fact_id(encode(link))`.
-- Extraction emits exactly the self-offer and, for a child, exactly the parent
-  need declared by the link fields.
+- Extraction emits exactly the self-offer for `valid_link(self_id, root_id)` and,
+  for a child, exactly the parent need for `valid_link(prev, root_id)`.
 - A `prev=None` link is an anchor root for its own component. Multiple anchors
   are allowed; the starter model does not prove global root uniqueness.
-- In the current prev-only model, a child link is valid only when validated
-  context proves its declared parent is valid.
+- In the current root/domain model, a root link (`prev=None, root=None`) is valid
+  as `valid_link(self_id, self_id)`. A child link is valid only when validated
+  context contains `valid_link(parent_id, claimed_root_id)`.
 - Link projection emits no new facts unless a later model intentionally adds
   emitted facts.
-- Current link ancestry is parent-chain preserving: any valid descendant has a
-  valid parent chain ending at an anchor.
-- Root/domain preservation is a future link theorem after the link shape carries
-  a root/domain id.
+- Current link ancestry is same-root parent-chain preserving: any valid
+  descendant has a valid parent chain ending at an anchor in the same
+  root/domain.
 
 ## Invariant Checklist Style
 
@@ -90,6 +91,13 @@ being authority, validated-context provenance, exact fact-family interpretation,
 and no validity created by IO/storage/reporting. Avoid checklists that are only
 call traces such as "function X calls function Y"; those details belong in Verus
 specs, Rust tests, or contract tests under the named invariant.
+
+Every checklist item must be labeled `Safety:` or `Liveness:`. Use `Safety:` for
+properties that rule out bad states, invalid authority, bad interpretation,
+unsound promotion, or invalid report evidence. Use `Liveness:` only for progress
+claims such as eventually scheduling, waking, discovering, draining, or retrying
+work. Do not put OS/socket/filesystem progress in a Verus invariant unless that
+progress has been modeled as an explicit fair input to a deterministic core turn.
 
 Each checklist should be followed by:
 
@@ -108,13 +116,14 @@ as if it were their own.
 | Owner | Responsibility |
 | --- | --- |
 | `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
+| `core::gate` | Pure readiness and projection-plan theorem: a fact may promote only its own asserted offers/fields, and only when its projector returned `Valid` and every asserted need has a matching validated offer. Invalid or not-ready facts promote nothing. |
 | `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
-| `facts::link::project` | Link-family implementation of the projector contract and current parent-chain validity theorem; root/domain theorems move here after the link shape carries root/domain ids. |
+| `facts::link::project` | Link-family implementation of the projector contract and current same-root parent-chain validity theorem. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |
 | `core::index` | Durable storage lookup contract for persisted facts and asserted edges. |
-| `core::engine` | In-memory id/body relation, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety. |
+| `core::engine` | In-memory id/body relation, integration with the core gate theorem, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety. |
 | `core::effects` | Helper boundary data shape; helper effects carry no validated state. |
 | `core::turn` | Deterministic turn scheduling and effect-result application into the engine. |
 | `core::play` | Replay/wake API semantics over the turn/engine invariants. |
@@ -123,16 +132,6 @@ as if it were their own.
 | `facts::link::cli` | CLI adapter boundary; user input chooses constructor parameters only. |
 
 The current composition theorem is:
-
-```text
-core validated-context provenance
-+ link's parent projection contract
-=> every valid child link is backed by a valid parent link, transitively to an
-   anchor
-```
-
-After the link shape carries a root/domain id, the stronger composition theorem
-becomes:
 
 ```text
 core validated-context provenance
@@ -146,22 +145,24 @@ core validated-context provenance
 The current runnable toy uses only:
 
 ```text
-Link { prev: Option<FactId>, content: Vec<u8> }
+Link { prev: Option<FactId>, root: Option<FactId>, content: Vec<u8> }
 ```
 
-That is enough to start proving parent transitivity, with `prev=None` as an
-anchor. Before claiming stronger protocol-shaped invariants, migrate the link
-semantic shape to carry a child root/domain id:
+That is enough to prove same-root parent transitivity, with `prev=None` and
+`root=None` as an anchor. Stronger protocol-shaped invariants still require the
+relationship fields being proved: parent-author, device, or admin-grant
+relationships must be explicit link/fact fields before their preservation can be
+a link theorem.
 
 ```text
-Root:
+Current root:
   prev = None
-  encoded root_id = None
+  root = None
   semantic_root_id = self fact id
 
-Child:
+Current child:
   prev = Some(parent_id)
-  encoded root_id = Some(anchor_id)
+  root = Some(anchor_id)
   semantic_root_id = anchor_id
 ```
 
@@ -171,7 +172,7 @@ The validated link context should expose a statement like:
 valid_link(link_id, root_id)
 ```
 
-Then link projection checks:
+Link projection checks:
 
 - root: valid without parent context and emits `valid_link(self_id, self_id)`;
 - child: valid only if context contains `valid_link(parent_id, claimed_root_id)`;
@@ -200,9 +201,9 @@ fact families.
    offers, validated fields, and route tags toward shared executable types that
    Verus can reason about directly. Keep maps/scans simple first; optimize after
    the spec is stable.
-2. **Link semantic shape.** Add the child-carried root/domain id to the runnable
-   link fact shape. Preserve `prev=None` anchors and explicitly allow multiple
-   anchors.
+2. **Link semantic shape.** Keep the child-carried root/domain id in the runnable
+   link fact shape. Preserve `prev=None, root=None` anchors and explicitly allow
+   multiple anchors.
 3. **Link codec proof.** Prove canonical encode/decode for the full link shape:
    accepted bytes decode uniquely, malformed tag/flags/lengths are rejected, and
    `decode(encode(link)) == link`.

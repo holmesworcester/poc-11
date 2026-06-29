@@ -6,12 +6,16 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: IO adapter isolation.
-//! - [ ] Network frames enter core only through fact-family decode followed by
-//!       core admission.
-//! - [ ] Rejected frames are dropped without changing core fact or validity state.
-//! - [ ] Runtime transport never validates or projects facts directly.
-//! - [ ] Successful send, failed send, and wall-clock time do not influence
-//!       validity.
+//! - [ ] Safety: network frames enter core only through fact-family decode
+//!       followed by core admission.
+//! - [ ] Safety: rejected frames are dropped without changing core fact or
+//!       validity state.
+//! - [ ] Safety: runtime transport never validates or projects facts directly.
+//! - [ ] Safety: successful send, failed send, and wall-clock time do not
+//!       influence validity.
+//! No liveness invariant is owned here: socket accept/connect progress, peer
+//! availability, and retry fairness are operational assumptions/tests unless
+//! modeled as fair inputs to a deterministic core turn.
 //! Imported theorems:
 //! - `core::projector`: accepted frames have fact-family meaning only after
 //!   canonical decode.

@@ -9,18 +9,19 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: edge representation and promotion shape.
-//! - [ ] Asserted needs/offers are routing claims, not proof that their owner is
-//!       valid or authorized.
-//! - [ ] Matching depends only on `(role, scope, key)`; dependency discovery
-//!       cannot smuggle fact body data through the edge index.
-//! - [ ] Only offers, never needs, have a representation that can be promoted to
-//!       validated context.
-//! - [ ] Promotion preserves the asserted edge's address and metadata; it adds no
-//!       new authority payload.
-//! - [ ] The authority to call promotion belongs to `core::engine`.
+//! - [ ] Safety: asserted needs/offers are routing claims, not proof that their
+//!       owner is valid or authorized.
+//! - [ ] Safety: matching depends only on `(role, scope, key)`; dependency
+//!       discovery cannot smuggle fact body data through the edge index.
+//! - [ ] Safety: only offers, never needs, have a representation that can be
+//!       promoted to validated context.
+//! - [ ] Safety: promotion preserves the asserted edge's address and metadata; it
+//!       adds no new authority payload.
+//! - [ ] Safety: the authority to call promotion belongs to `core::engine`.
 //! Imported theorems:
-//! - None for representation shape. `core::engine` supplies the precondition for
-//!   when promotion is allowed.
+//! - None for representation shape. `core::engine` owns the promotion-authority
+//!   theorem: it calls `Offer<Asserted>::validate` only for asserted offers owned
+//!   by a fact that just projected `Valid` with all asserted needs satisfied.
 //! Proof strategy:
 //! - Prove `Offer<Asserted>` constructors set only the requested direction and
 //!   match address with fixed default scope/polarity/binding.

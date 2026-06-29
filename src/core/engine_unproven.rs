@@ -6,26 +6,28 @@
 //! - need queries: pull stored offerers for newly indexed needs.
 //! - offer queries: wake stored/local needers for newly validated offers.
 //!
-//! Projection promotion is gated by `linktoy-verus-core`, an executable Verus
-//! crate that this engine calls as ordinary Rust.
+//! Projection promotion is checked through pure core readiness/plan functions:
+//! the engine may promote asserted offers only for the same fact whose projector
+//! returned `Valid` and whose asserted needs are satisfied by validated context.
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: validated-context provenance and ongoing engine safety.
-//! - [ ] Every in-memory fact is paired with the id derived from its canonical
-//!       bytes before the engine hands it to a projector as an `Admitted` token.
-//! - [ ] Storage lookup results are discovery hints only; they cannot mark a fact
-//!       valid or promote an offer.
-//! - [ ] A projector receives only validated offers whose addresses match needs
-//!       asserted by the fact being projected.
-//! - [ ] Every validated offer is owned by a fact already projected valid and was
-//!       asserted by that same owner.
-//! - [ ] One owner contributes at most one validated offer for a given match
-//!       address.
-//! - [ ] Raw bytes returned in `ProjectOutcome.emitted` do not inherit authority
-//!       from the emitting fact; they must re-enter decode, admission, and
-//!       projection before becoming valid.
-//! - [ ] Every admit/query/project/wake step preserves these invariants, so every
-//!       prefix of a drain is sound.
+//! - [ ] Safety: every in-memory fact is paired with the id derived from its
+//!       canonical bytes before the engine hands it to a projector as an
+//!       `Admitted` token.
+//! - [ ] Safety: storage lookup results are discovery hints only; they cannot
+//!       mark a fact valid or promote an offer.
+//! - [ ] Safety: a projector receives only validated offers whose addresses match
+//!       needs asserted by the fact being projected.
+//! - [ ] Safety: every validated offer is owned by a fact already projected valid
+//!       and was asserted by that same owner.
+//! - [ ] Safety: one owner contributes at most one validated offer for a given
+//!       match address.
+//! - [ ] Safety: raw bytes returned in `ProjectOutcome.emitted` do not inherit
+//!       authority from the emitting fact; they must re-enter decode, admission,
+//!       and projection before becoming valid.
+//! - [ ] Safety: every admit/query/project/wake step preserves these invariants,
+//!       so every prefix of a drain is sound.
 //! Imported theorems:
 //! - `core::item`: fact ids identify canonical bytes.
 //! - `core::offer`: asserted-to-validated promotion preserves edge address and
@@ -35,8 +37,10 @@
 //! - `core::projector`: the selected fact family supplies canonical codec,
 //!   extraction, durability, projection contracts, and emitted bytes as raw
 //!   `EmittedFact` payloads.
-//! - `linktoy-verus-core`: readiness and promotion gates preserve the abstract
-//!   dependency/provenance relation.
+//! - `core::gate`: readiness and projection-plan functions encode the exact
+//!   promotion rule: projector `Valid` plus all asserted needs satisfied is
+//!   required before any asserted offer or field from that fact is promoted; an
+//!   invalid or not-ready plan promotes nothing.
 //! Proof strategy:
 //! - Define a state predicate over memory facts, asserted edges, validity,
 //!   validated offers, promoted offer keys, and queues.
@@ -52,7 +56,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use linktoy_verus_core::{
+use super::gate::{
     fact_ready_core, project_fact_core, AdmittedFactCore, Bytes32Core, EdgeAddrCore,
     ValidatedOfferCore, ValidityCore,
 };

@@ -3,18 +3,17 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: fact-id meaning.
-//! - [ ] A fact id is the content address of canonical fact bytes.
-//! - [ ] Crypto assumption: two different canonical byte strings do not have the
-//!       same fact id, and hashing the same bytes is deterministic.
-//! - [ ] Hex is display/input syntax only; it is never evidence of validity,
-//!       ownership, or authority.
+//! - [ ] Safety: a fact id is the content address of canonical fact bytes.
+//! - [ ] Safety: crypto assumption: two different canonical byte strings do not
+//!       have the same fact id, and hashing the same bytes is deterministic.
 //! Imported theorems:
 //! - None. This file is the root assumption for content-addressed identity.
 //! Proof strategy:
 //! - Model `FactId` as a 32-byte value and `fact_id(bytes)` as an uninterpreted,
 //!   deterministic, collision-resistant function over canonical byte strings.
-//! - Keep hex helpers out of proven paths; prove display/input round trips only
-//!   as app-boundary tests, not as validity evidence.
+//! - Treat hex parsing/formatting as an app-boundary representation of a
+//!   `FactId`; any theorem that needs identity uses the 32-byte id, not the
+//!   string representation.
 
 pub type FactId = [u8; 32];
 

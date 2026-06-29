@@ -7,7 +7,7 @@ use linktoy::core::offer::{Key, Offer, Role};
 use linktoy::core::projector::{EmittedFact, ProjectOutcome, Projector};
 use linktoy::core::turn::{self, TurnOutcome};
 use linktoy::core::typestate::{Asserted, Context, Validity};
-use linktoy::facts::link::{Link, LinkProjector, LINK};
+use linktoy::facts::link::{valid_link_key, Link, LinkProjector, LINK};
 use linktoy::helpers::sqlite_unproven::SqliteIndex;
 
 fn temp_db() -> (tempfile::TempDir, String) {
@@ -16,10 +16,11 @@ fn temp_db() -> (tempfile::TempDir, String) {
     (dir, path)
 }
 
-fn link(label: &str, prev: Option<FactId>) -> Link {
+fn link(label: &str, prev: Option<FactId>, root: Option<FactId>) -> Link {
     Link {
         content: label.as_bytes().to_vec(),
         prev,
+        root,
     }
 }
 
@@ -43,7 +44,6 @@ fn assert_validated_offer_provenance(engine: &EngineState<LinkProjector>) {
             "validated offer must come from a valid owner"
         );
         assert_eq!(vo.offer.role, LINK);
-        assert_eq!(vo.offer.key.0, vo.owner);
     }
 }
 
@@ -52,11 +52,11 @@ fn demand_for_head_pulls_stored_parent_chain_into_memory() {
     let (_dir, db) = temp_db();
     let idx = SqliteIndex::open(&db).unwrap();
 
-    let root = link("root", None);
+    let root = link("root", None, None);
     let root_id = store(&idx, root, 1);
-    let mid = link("mid", Some(root_id));
+    let mid = link("mid", Some(root_id), Some(root_id));
     let mid_id = store(&idx, mid, 2);
-    let head = link("head", Some(mid_id));
+    let head = link("head", Some(mid_id), Some(root_id));
     let head_id = store(&idx, head, 3);
 
     let mut engine = EngineState::<LinkProjector>::new();
@@ -79,9 +79,9 @@ fn later_in_memory_parent_admission_wakes_stored_child() {
     let (_dir, db) = temp_db();
     let idx = SqliteIndex::open(&db).unwrap();
 
-    let root = link("root", None);
+    let root = link("root", None, None);
     let root_id = link_id(&root);
-    let child_id = store(&idx, link("child", Some(root_id)), 1);
+    let child_id = store(&idx, link("child", Some(root_id), Some(root_id)), 1);
 
     let mut engine = EngineState::<LinkProjector>::new();
     engine.enqueue_admit(child_id);
@@ -108,7 +108,7 @@ fn requeueing_valid_fact_does_not_duplicate_validated_offers() {
     let (_dir, db) = temp_db();
     let idx = SqliteIndex::open(&db).unwrap();
 
-    let root_id = store(&idx, link("root", None), 1);
+    let root_id = store(&idx, link("root", None, None), 1);
 
     let mut engine = EngineState::<LinkProjector>::new();
     engine.enqueue_admit(root_id);
@@ -333,6 +333,36 @@ fn same_key_with_wrong_role_does_not_satisfy_verified_readiness() {
 }
 
 #[test]
+fn child_with_wrong_root_domain_does_not_validate() {
+    let (_dir, db) = temp_db();
+    let idx = SqliteIndex::open(&db).unwrap();
+
+    let root_a = link("root-a", None, None);
+    let root_a_id = store(&idx, root_a, 1);
+    let root_b = link("root-b", None, None);
+    let root_b_id = store(&idx, root_b, 2);
+    let child = link("child", Some(root_a_id), Some(root_b_id));
+    let child_id = store(&idx, child, 3);
+
+    let mut engine = EngineState::<LinkProjector>::new();
+    engine.enqueue_admit(root_a_id);
+    engine.enqueue_admit(root_b_id);
+    engine.enqueue_admit(child_id);
+    turn::drain(&mut engine, &idx, 100).unwrap();
+
+    assert_valid(&engine, root_a_id);
+    assert_valid(&engine, root_b_id);
+    assert_eq!(engine.validity.get(&child_id), Some(&Validity::Invalid));
+    assert!(
+        !engine
+            .validated
+            .iter()
+            .any(|vo| vo.owner == child_id && vo.offer.key == valid_link_key(child_id, root_b_id)),
+        "wrong-root child must not promote its claimed valid_link statement"
+    );
+}
+
+#[test]
 fn invalid_projection_output_does_not_emit_facts() {
     let mut engine = EngineState::<GateProjector>::new();
     let seed = engine.admit_item(GateItem::InvalidEmitter);
@@ -348,7 +378,7 @@ fn invalid_projection_output_does_not_emit_facts() {
 
 #[test]
 fn turn_exposes_load_fact_effect_before_storage_is_interpreted() {
-    let root = link("root", None);
+    let root = link("root", None, None);
     let root_id = link_id(&root);
     let mut engine = EngineState::<LinkProjector>::new();
     engine.enqueue_admit(root_id);

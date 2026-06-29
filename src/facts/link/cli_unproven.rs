@@ -3,7 +3,8 @@
 //!
 //! Fact-family contract (do not weaken):
 //! - Scope: app adapter only: call deterministic link construction, call core
-//!   admission, call report/replay helpers, and format returned data.
+//!   admission, call report/replay helpers, choose constructor parameters, and
+//!   format returned data.
 //! - Forbidden here: defining link constructors, defining codec/extraction/
 //!   projection rules, interpreting root/domain semantics, creating `Validity`,
 //!   creating `Context`, or creating `Offer<Validated>`.
@@ -11,13 +12,14 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: link CLI adapter boundary.
-//! - [ ] CLI input is not proof evidence; it only chooses parameters for the
+//! - [ ] Safety: CLI input is not proof evidence; it only chooses parameters for the
 //!       project-owned link constructor.
-//! - [ ] CLI admission goes through core admission; it never writes fact bytes or
-//!       asserted edges directly.
-//! - [ ] Displayed ids, roots, depths, and completeness are reports only; they do
-//!       not affect future validity.
-//! - [ ] CLI code cannot construct `Validity`, `Context`, or `Offer<Validated>`.
+//! - [ ] Safety: CLI admission goes through core admission; it never writes fact
+//!       bytes or asserted edges directly.
+//! - [ ] Safety: displayed ids, roots, depths, and completeness are reports only;
+//!       they do not affect future validity.
+//! - [ ] Safety: CLI code cannot construct `Validity`, `Context`, or
+//!       `Offer<Validated>`.
 //! Imported theorems:
 //! - `facts::link::project`: `link_from_params` owns link construction semantics.
 //! - `core::admit`: admission creates only asserted state.
@@ -46,7 +48,11 @@ pub fn link_lines(
     prev: Option<FactId>,
     label: &str,
 ) -> Result<Vec<String>, String> {
-    let id = admit::<LinkProjector>(link_from_params(at, prev, label), at, idx)?.id();
+    let root = match prev {
+        Some(parent) => Some(chain_report(idx, parent)?.root),
+        None => None,
+    };
+    let id = admit::<LinkProjector>(link_from_params(at, prev, root, label), at, idx)?.id();
     let r = chain_report(idx, id)?;
     Ok(vec![
         format!("link_id: {}", to_hex(&id)),

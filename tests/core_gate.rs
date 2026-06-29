@@ -1,4 +1,4 @@
-use linktoy_verus_core::{
+use linktoy::core::gate::{
     project_fact_core, AdmittedFactCore, Bytes32Core, EdgeAddrCore, FieldCore, ValidatedOfferCore,
     ValidityCore,
 };

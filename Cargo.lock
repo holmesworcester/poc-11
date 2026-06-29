@@ -184,15 +184,8 @@ name = "linktoy"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "linktoy-verus-core",
  "rusqlite",
  "tempfile",
-]
-
-[[package]]
-name = "linktoy-verus-core"
-version = "0.1.0"
-dependencies = [
  "vstd",
 ]
 

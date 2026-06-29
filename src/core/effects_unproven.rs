@@ -3,11 +3,11 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: helper boundary data shape.
-//! - [ ] Effect requests can ask helpers only for raw fact bytes or asserted-edge
-//!       lookup results.
-//! - [ ] Effect results carry only untrusted bytes, ids, and addresses.
-//! - [ ] `Validity`, `Context`, and `Offer<Validated>` never cross the helper
-//!       boundary in an effect payload.
+//! - [ ] Safety: effect requests can ask helpers only for raw fact bytes or
+//!       asserted-edge lookup results.
+//! - [ ] Safety: effect results carry only untrusted bytes, ids, and addresses.
+//! - [ ] Safety: `Validity`, `Context`, and `Offer<Validated>` never cross the
+//!       helper boundary in an effect payload.
 //! Imported theorems:
 //! - `core::engine::EdgeAddr`: effect query addresses have the same address
 //!   representation the engine uses.

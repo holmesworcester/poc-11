@@ -8,14 +8,17 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: replay/wake API semantics.
-//! - [ ] Replay seeds schedule admission work only; validity comes from the
-//!       engine drain they trigger.
-//! - [ ] Replay may discover the dependency closure through need-to-offer lookup,
-//!       but it does not rewrite already-persisted facts or asserted edges.
-//! - [ ] Wake schedules work from newly available facts through matching needers.
-//! - [ ] Successful replay/wake results report the engine validity map after the
-//!       work queue drains; bounded drain exhaustion is an error.
-//! - [ ] Soundness of each drain prefix belongs to `core::engine` and
+//! - [ ] Safety: replay seeds schedule admission work only; validity comes from
+//!       the engine drain they trigger.
+//! - [ ] Liveness: replay may discover the dependency closure through
+//!       need-to-offer lookup.
+//! - [ ] Safety: replay does not rewrite already-persisted facts or asserted
+//!       edges.
+//! - [ ] Liveness: wake schedules work from newly available facts through
+//!       matching needers.
+//! - [ ] Safety: successful replay/wake results report the engine validity map
+//!       after the work queue drains; bounded drain exhaustion is an error.
+//! - [ ] Safety: soundness of each drain prefix belongs to `core::engine` and
 //!       `core::turn`.
 //! Imported theorems:
 //! - `core::turn`: draining preserves the engine invariant and applies helper

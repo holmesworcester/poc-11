@@ -3,14 +3,15 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: durable storage lookup contract.
-//! - [ ] Loading a fact returns only bytes stored for the requested fact id; the
-//!       engine rechecks content addressing before admitting them to memory.
-//! - [ ] Need/offer queries return only owners with stored asserted edges at the
-//!       requested direction and match address.
-//! - [ ] Stored asserted edges remain discovery hints; storage never creates
-//!       `Validity`, `Context`, or `Offer<Validated>`.
-//! - [ ] Window selection is only a replay seed choice; validity cannot depend on
-//!       recency, ordering, or inclusion in the window.
+//! - [ ] Safety: loading a fact returns only bytes stored for the requested fact
+//!       id; the engine rechecks content addressing before admitting them to
+//!       memory.
+//! - [ ] Safety: need/offer queries return only owners with stored asserted edges
+//!       at the requested direction and match address.
+//! - [ ] Safety: stored asserted edges remain discovery hints; storage never
+//!       creates `Validity`, `Context`, or `Offer<Validated>`.
+//! - [ ] Safety: window selection is only a replay seed choice; validity cannot
+//!       depend on recency, ordering, or inclusion in the window.
 //! Imported theorems:
 //! - `core::item`: callers can recheck loaded bytes against fact ids.
 //! - `core::offer`: asserted edge addresses and directions have fixed meaning.

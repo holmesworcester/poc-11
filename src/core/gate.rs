@@ -1,8 +1,26 @@
-//! Verus-verified executable core for poc-11 projection.
+//! Pure core readiness and projection-plan gate. Runtime code calls these
+//! functions as ordinary Rust; `cargo-verus verify` checks the bodies against
+//! their contracts.
 //!
-//! This crate is a normal path dependency of `linktoy`: tests and runtime
-//! adapters can call these functions as ordinary Rust. `cargo-verus verify`
-//! checks the function bodies against their contracts.
+//! Invariant checklist (Verus):
+//! Owned invariant: pure readiness and projection-plan gate.
+//! - [ ] Safety: `fact_ready_core` is true exactly when every asserted need has a
+//!       matching validated offer in the supplied abstract context.
+//! - [ ] Safety: `project_fact_core` marks an abstract fact valid only when the
+//!       fact-family projector returned valid and readiness holds.
+//! - [ ] Safety: a valid projection plan promotes only offers and fields copied
+//!       from the projected fact under that fact's owner.
+//! - [ ] Safety: an invalid projection plan promotes nothing.
+//! Imported theorems:
+//! - None beyond Verus/Vstd sequence and equality reasoning; this is the pure
+//!   gate other core proofs import.
+//! Proof strategy:
+//! - Prove address equality and context membership against executable scans.
+//! - Prove readiness by induction over the fact's needs.
+//! - Prove promoted offer/field vectors are constructed by copying only from the
+//!   projected fact and assigning the projected fact id as owner.
+//! - Prove `project_fact_core` combines the projector decision with readiness and
+//!   returns empty promoted vectors on invalid plans.
 
 use vstd::prelude::*;
 
