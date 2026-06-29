@@ -5,7 +5,7 @@
 //! without writing bytes or edges back to persistence.
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: asserted-only ingress for new/local facts.
+//! Owned invariant: new/local fact admission creates only asserted state.
 //! - [ ] Admission creates an `Admitted` token and asserted storage state only; it
 //!       creates no validity, validated offer, or validated context.
 //! - [ ] The admitted token's id/body relation is derived from `core::item`

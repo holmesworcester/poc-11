@@ -8,7 +8,7 @@
 //! key, and any value is read from the fact body at project time.
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: edge representation and promotion shape.
+//! Owned invariant: edge representation and promotion shape.
 //! - [ ] Asserted needs/offers are routing claims, not proof that their owner is
 //!       valid or authorized.
 //! - [ ] Matching depends only on `(role, scope, key)`; dependency discovery

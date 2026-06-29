@@ -3,7 +3,7 @@
 //! helper effect, an internal projection step, or idle.
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: deterministic turn scheduling and effect application.
+//! Owned invariant: deterministic turn scheduling and effect application.
 //! - [ ] Each turn performs at most one observable step: request helper data,
 //!       project one admitted fact, or report idle.
 //! - [ ] Helper results enter the engine only through the engine's fact-load and

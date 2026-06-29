@@ -4,7 +4,7 @@
 //! the source tree.
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: core module shape.
+//! Owned invariant: core module shape.
 //! - [ ] This module has no fact, validity, or storage behavior of its own.
 //! - [ ] Proof status stays visible: behavior-bearing core files keep `_unproven`
 //!       until executable Verus proof covers their invariants.

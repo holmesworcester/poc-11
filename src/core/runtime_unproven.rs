@@ -5,7 +5,7 @@
 //! peers and reconciles a volatile sent-set each turn (recurrence = liveness).
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: IO adapter isolation.
+//! Owned invariant: IO adapter isolation.
 //! - [ ] Network frames enter core only through fact-family decode followed by
 //!       core admission.
 //! - [ ] Rejected frames are dropped without changing core fact or validity state.

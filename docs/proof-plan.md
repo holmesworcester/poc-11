@@ -91,7 +91,8 @@ specs, Rust tests, or contract tests under the named invariant.
 
 ## Invariant Responsibility
 
-Each invariant has one proof owner. Other files may depend on that theorem or
+Each invariant has one proof owner. Source files use `Owned invariant:` to name
+the property the current module owns. Other files may depend on that theorem or
 prove a narrow local preservation rule, but they should not restate the theorem
 as if it were their own.
 
@@ -102,7 +103,7 @@ as if it were their own.
 | `facts::link::project` | Link-family implementation of the projector contract and link-specific validity/root/domain theorems. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
-| `core::admit` | Asserted-only ingress for new/local facts; admission never creates validity. |
+| `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |
 | `core::index` | Durable storage lookup contract for persisted facts and asserted edges. |
 | `core::engine` | Validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety. |
 | `core::effects` | Helper boundary data shape; helper effects carry no validated state. |

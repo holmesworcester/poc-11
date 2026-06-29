@@ -130,14 +130,14 @@ fn proof_target_files_have_verus_invariant_checklists() {
             "{file} is missing its Verus invariant checklist"
         );
         assert!(
-            text.contains("Invariant owner:"),
-            "{file} must name the single proof owner for its checklist"
+            text.contains("Owned invariant:"),
+            "{file} must name the invariant owned by that file"
         );
     }
 
     let engine = normalize_whitespace(&source_text(&root.join("src/core/engine_unproven.rs")));
     for required in [
-        "Invariant owner: validated-context provenance and ongoing engine safety",
+        "Owned invariant: validated-context provenance and ongoing engine safety",
         "A projector receives only validated offers",
         "Every validated offer is owned by a fact already projected valid",
         "Emission does not inherit authority",
@@ -151,7 +151,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
 
     let admit = normalize_whitespace(&source_text(&root.join("src/core/admit_unproven.rs")));
     for required in [
-        "Invariant owner: asserted-only ingress for new/local facts",
+        "Owned invariant: new/local fact admission creates only asserted state",
         "creates no validity, validated offer, or validated context",
         "The admitted token's id/body relation is derived from `core::item`",
         "extraction exactness is proved by the fact-family projector",
@@ -166,7 +166,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         &root.join("src/facts/link/project_unproven.rs"),
     ));
     for required in [
-        "Invariant owner: link-family semantics and its `Projector` implementation",
+        "Owned invariant: link-family semantics and its `Projector` implementation",
         "Canonical link identity",
         "Project-owned construction",
         "Extraction honesty",

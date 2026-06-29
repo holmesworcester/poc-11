@@ -2,7 +2,7 @@
 //! [`crate::helpers::sqlite_unproven`].
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: durable storage lookup contract.
+//! Owned invariant: durable storage lookup contract.
 //! - [ ] Loading a fact returns only bytes stored for the requested fact id; the
 //!       engine rechecks content addressing before admitting them to memory.
 //! - [ ] Need/offer queries return only owners with stored asserted edges at the

@@ -5,7 +5,7 @@
 //! `Offer<Validated>`, so a projector physically cannot read unvalidated context.
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: validated context representation.
+//! Owned invariant: validated context representation.
 //! - [ ] `Context` can contain only `Offer<Validated>`.
 //! - [ ] Unvalidated persisted edges cannot be placed in `Context`.
 //! - [ ] `has_offer` answers only whether an exact validated match address is

@@ -10,7 +10,7 @@
 //! crate that this engine calls as ordinary Rust.
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: validated-context provenance and ongoing engine safety.
+//! Owned invariant: validated-context provenance and ongoing engine safety.
 //! - [ ] Loaded facts and query results can schedule work, but they cannot mark a
 //!       fact valid or promote an offer.
 //! - [ ] A projector receives only validated offers whose addresses match needs

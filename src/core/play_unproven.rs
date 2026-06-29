@@ -7,7 +7,7 @@
 //! indexed in memory, but their already-persisted bytes/edges are not re-written.
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: replay/wake API semantics.
+//! Owned invariant: replay/wake API semantics.
 //! - [ ] Replay seeds schedule admission work only; validity comes from the
 //!       engine drain they trigger.
 //! - [ ] Replay may discover the dependency closure through need-to-offer lookup,

@@ -18,7 +18,7 @@
 //!   only pass explicit parameters into `link_from_params`.
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: link-family semantics and its `Projector` implementation.
+//! Owned invariant: link-family semantics and its `Projector` implementation.
 //! - [ ] Canonical link identity: accepted link bytes decode to exactly one
 //!       semantic `Link`, re-encode to the same bytes, and derive the link id from
 //!       those bytes.

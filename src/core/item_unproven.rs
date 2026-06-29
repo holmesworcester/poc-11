@@ -2,7 +2,7 @@
 //! its id is the hash of its canonical bytes (mirrors poc-10 `fact_id`).
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: fact-id meaning.
+//! Owned invariant: fact-id meaning.
 //! - [ ] A fact id is the content address of canonical fact bytes.
 //! - [ ] Crypto assumption: two different canonical byte strings do not have the
 //!       same fact id, and hashing the same bytes is deterministic.

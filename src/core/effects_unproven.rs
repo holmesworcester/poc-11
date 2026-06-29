@@ -2,7 +2,7 @@
 //! unproven, but they make the storage boundary explicit.
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: helper boundary data shape.
+//! Owned invariant: helper boundary data shape.
 //! - [ ] Effect requests can ask helpers only for raw fact bytes or asserted-edge
 //!       lookup results.
 //! - [ ] Effect results carry only untrusted bytes, ids, and addresses.

@@ -5,7 +5,7 @@
 //! the daemon's workers hold an [`super::index::Index`].
 //!
 //! Invariant checklist (Verus):
-//! Invariant owner: generic fact-family interface contract.
+//! Owned invariant: generic fact-family interface contract.
 //! - [ ] Each implementation accepts exactly the canonical byte forms it is
 //!       willing to give semantic meaning.
 //! - [ ] Extraction and durability are content-pure: they depend on the fact body,
