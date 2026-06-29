@@ -116,8 +116,10 @@ Proof-first organization:
   an informal convention.
 - Keep the poc-10-style split: `src/core/` owns generic deterministic machinery
   such as turns, queues, contexts, admission, projection gates, and effect
-  requests; `src/facts/` owns fact-family logic such as link codec/extract/project
-  and authoring.
+  requests; `src/facts/` owns fact-family logic. Keep fact families in
+  poc-10-style directories such as `src/facts/link/`, with family-local modules
+  for `api`, `author`, `project`, `cli`, codec/extract, and tests/proofs as they
+  become real files.
 - Use `src/helpers/` for narrow external primitives and effect adapters:
   `crypto_unproven.rs`, `sqlite_unproven.rs`, `tcp_unproven.rs`,
   `fs_unproven.rs`, `clock_unproven.rs`. These files are explicit trusted

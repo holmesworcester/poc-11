@@ -698,8 +698,11 @@ the invariant as an informal rule.
   be proven.
 - **`src/facts/` is proof-targeted.** The current model has one fact family,
   `link`, but this is where poc-10-style fact families should live as they move
-  over. Codec canonicality, extraction, projection, emitted facts, persistence
-  decisions, and authoring kernels are fact proofs.
+  over. Keep the poc-10 family-directory shape: `src/facts/link/` should own
+  family-local modules such as `api`, `author`, `project`, `cli`, codec/extract,
+  and tests/proofs as they become real files. Codec canonicality, extraction,
+  projection, emitted facts, persistence decisions, and authoring kernels are
+  fact proofs.
 - **`src/helpers/` is the explicit trusted boundary.** Narrow external primitives
   and effect adapters belong here with `_unproven` suffixes: crypto assumptions,
   SQLite, TCP sockets, filesystem access, clocks, and similar APIs. Helpers should

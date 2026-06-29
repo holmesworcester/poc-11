@@ -32,6 +32,8 @@ fn in_memory_projection_note_records_extract_project_boundary() {
         "relentlessly move as much behavior as possible into Verus-proven executable kernels",
         "the runtime turn itself can be proven",
         "`src/facts/` is proof-targeted",
+        "Keep the poc-10 family-directory shape",
+        "`src/facts/link/` should own family-local modules such as `api`, `author`, `project`, `cli`",
         "`src/helpers/` is the explicit trusted boundary",
         "Files without `_unproven` in `core` or `facts` must have their invariants covered by Verus-verified executable code",
     ] {
