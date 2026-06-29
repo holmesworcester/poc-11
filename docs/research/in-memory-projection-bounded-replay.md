@@ -682,6 +682,34 @@ signatures, checkpoint-facts) were kept in §6.
   laziest).
 - **Bounded by the horizon:** index size, tombstone lifetime, sync reconciliation.
 
+### Proof-first organization
+
+The code organization should make proof the default destination for logic. The
+goal is to relentlessly move as much behavior as possible into Verus-proven
+executable kernels, and to choose implementation shapes that make those proofs
+tractable. If an invariant is hard to prove over the current code shape, prefer
+reshaping the code around deterministic, proof-friendly transitions over keeping
+the invariant as an informal rule.
+
+- **`src/core/` is proof-targeted.** Generic deterministic machinery belongs here:
+  ids, edge addresses, contexts, admission, projection gates, work queues, the
+  `turn` function, and effect request/result types. The queue/drain engine should
+  move toward `State + Input -> State + Effects`, so the runtime turn itself can
+  be proven.
+- **`src/facts/` is proof-targeted.** The current model has one fact family,
+  `link`, but this is where poc-10-style fact families should live as they move
+  over. Codec canonicality, extraction, projection, emitted facts, persistence
+  decisions, and authoring kernels are fact proofs.
+- **`src/helpers/` is the explicit trusted boundary.** Narrow external primitives
+  and effect adapters belong here with `_unproven` suffixes: crypto assumptions,
+  SQLite, TCP sockets, filesystem access, clocks, and similar APIs. Helpers should
+  stay small and should not accumulate domain logic.
+- **Naming carries proof status.** Files without `_unproven` in `core` or `facts`
+  must have their invariants covered by Verus-verified executable code or be thin
+  wrappers around such code. Files with `_unproven` are temporary or trusted
+  boundaries. Moving logic out of `_unproven` and into proven kernels is expected
+  work.
+
 ## 12. Open questions
 
 - Do poc-10's real projectors fit the **context-free `extract`** signature — i.e.

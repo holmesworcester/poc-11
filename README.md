@@ -98,12 +98,33 @@ Proof goals:
 - Verify executable core gates, not parallel proof-only models.
 - Verify protocol kernels: codec canonicality, extraction, projection, emitted
   facts, and authoring commands.
+- Shape deterministic execution as a proof target: move queue/drain logic toward a
+  `turn` function that takes state plus inputs and returns new state plus requested
+  effects.
 - Verify IO/storage interaction contracts around sockets, filesystem, and SQLite:
   accepted network frames go through verified decode/admission, persisted asserted
   edges are exactly verified extraction output, successful lookups satisfy the
   stated storage contract, and errors cannot create validated state. The OS,
   TCP, filesystem, and SQLite implementations remain trusted components unless
   replaced by verified implementations.
+
+Proof-first organization:
+
+- The default direction is to move as much logic as possible into proven code. If
+  current Rust shape makes an invariant hard to prove, prefer reshaping the code
+  around proof-friendly deterministic kernels instead of leaving the invariant as
+  an informal convention.
+- Keep the poc-10-style split: `src/core/` owns generic deterministic machinery
+  such as turns, queues, contexts, admission, projection gates, and effect
+  requests; `src/facts/` owns fact-family logic such as link codec/extract/project
+  and authoring.
+- Use `src/helpers/` for narrow external primitives and effect adapters:
+  `crypto_unproven.rs`, `sqlite_unproven.rs`, `tcp_unproven.rs`,
+  `fs_unproven.rs`, `clock_unproven.rs`. These files are explicit trusted
+  boundaries with limited roles, not places for domain logic.
+- Files without `_unproven` in `core` and `facts` should have their invariants
+  covered by Verus-verified executable code or by thin wrappers around such code.
+  Moving logic out of `_unproven` is expected work, not optional cleanup.
 
 ## Review gates
 

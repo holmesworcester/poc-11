@@ -29,6 +29,11 @@ fn in_memory_projection_note_records_extract_project_boundary() {
         "They promote to **`Validated`** only when `project` validates the item in Pass 2",
         "socket, filesystem, and SQLite wrappers feed bytes through verified decode/admission",
         "errors must not create validated state",
+        "relentlessly move as much behavior as possible into Verus-proven executable kernels",
+        "the runtime turn itself can be proven",
+        "`src/facts/` is proof-targeted",
+        "`src/helpers/` is the explicit trusted boundary",
+        "Files without `_unproven` in `core` or `facts` must have their invariants covered by Verus-verified executable code",
     ] {
         assert!(
             normalized.contains(required),
