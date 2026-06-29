@@ -28,6 +28,7 @@
 //! - Prove no functions or data constructors are defined here.
 pub mod api_unproven;
 pub mod cli_unproven;
+pub mod project;
 pub mod project_unproven;
 
 pub use api_unproven::{chain_report, Report};

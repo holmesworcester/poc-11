@@ -35,13 +35,14 @@
 //!       no other field or app input can choose the parent dependency.
 //! - [ ] Safety: malformed `prev`/`root` combinations assert no edges and project
 //!       invalid.
-//! - [ ] Safety: starter validity rule: a root (`prev=None`) is valid; a child is
+//! - [x] Safety: starter validity rule: a root (`prev=None`) is valid; a child is
 //!       valid exactly when validated context contains
 //!       `valid_link(parent_id, root_id)` for the child's declared parent and
-//!       root/domain ids.
-//! - [ ] Safety: same-root/domain preservation: a child is valid only when its
+//!       root/domain ids. Verified in `facts::link::project`.
+//! - [x] Safety: same-root/domain preservation: a child is valid only when its
 //!       claimed root/domain matches the validated parent statement it depends on,
 //!       and the child's promoted self-offer carries that same root/domain.
+//!       Verified in `facts::link::project`.
 //! - [ ] Safety: statement-to-owner: every validated link offer at
 //!       `valid_link_key(link_id, root_id)` was promoted from a valid link fact
 //!       whose id is `link_id` and whose semantic root is `root_id`.
@@ -93,6 +94,9 @@ use crate::core::item::{fact_id, FactId};
 use crate::core::offer::{Key, Offer, Role};
 use crate::core::projector::{ProjectOutcome, Projector};
 use crate::core::typestate::{Asserted, Context, Validity};
+use crate::facts::link::project::{
+    fact_id_to_core, maybe_fact_id_to_core, project_link_core, validity_from_core, LinkCore,
+};
 
 /// Wire tag distinguishing a link fact from other frames on the network.
 pub const TAG_LINK: u8 = 0x01;
@@ -176,11 +180,15 @@ pub fn valid_link_key(link_id: FactId, root_id: FactId) -> Key {
 }
 
 pub fn link_project_validity(l: &Link, parent_validated_same_root: bool) -> Validity {
-    match (l.prev, l.root) {
-        (None, None) => Validity::Valid,
-        (Some(_), Some(_)) if parent_validated_same_root => Validity::Valid,
-        _ => Validity::Invalid,
-    }
+    let projection = project_link_core(
+        LinkCore {
+            self_id: fact_id_to_core(link_id(l)),
+            prev: maybe_fact_id_to_core(l.prev),
+            root: maybe_fact_id_to_core(l.root),
+        },
+        parent_validated_same_root,
+    );
+    validity_from_core(projection.validity)
 }
 
 fn projected_root_or_fallback(id: FactId, l: &Link) -> FactId {

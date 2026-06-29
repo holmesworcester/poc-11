@@ -150,6 +150,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "src/facts/link/api_unproven.rs",
         "src/facts/link/cli_unproven.rs",
         "src/facts/link/mod.rs",
+        "src/facts/link/project.rs",
         "src/facts/link/project_unproven.rs",
     ];
 
@@ -176,6 +177,12 @@ fn proof_target_files_have_verus_invariant_checklists() {
             if trimmed.starts_with("//! - [ ] ") {
                 assert!(
                     trimmed.contains("- [ ] Safety:") || trimmed.contains("- [ ] Liveness:"),
+                    "{file}:{} checklist item must be labeled Safety or Liveness",
+                    idx + 1
+                );
+            } else if trimmed.starts_with("//! - [x] ") {
+                assert!(
+                    trimmed.contains("- [x] Safety:") || trimmed.contains("- [x] Liveness:"),
                     "{file}:{} checklist item must be labeled Safety or Liveness",
                     idx + 1
                 );
@@ -276,6 +283,43 @@ fn proof_target_files_have_verus_invariant_checklists() {
             "link API checklist is missing {required:?}"
         );
     }
+}
+
+#[test]
+fn link_project_verified_kernel_is_running_code() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let proven = source_text(&root.join("src/facts/link/project.rs"));
+    let wrapper = source_text(&root.join("src/facts/link/project_unproven.rs"));
+    let manifest = source_text(&root.join("Cargo.toml"));
+
+    for required in [
+        "verus!",
+        "pub fn project_link_core",
+        "valid_child_requires_validated_same_root_parent",
+        "valid_child_preserves_claimed_root",
+        "malformed_projection_is_invalid",
+    ] {
+        assert!(
+            proven.contains(required),
+            "verified link kernel is missing {required:?}"
+        );
+    }
+
+    for required in [
+        "project_link_core(",
+        "validity_from_core(projection.validity)",
+        "Verified in `facts::link::project`",
+    ] {
+        assert!(
+            wrapper.contains(required),
+            "runtime link projector does not delegate to verified kernel detail {required:?}"
+        );
+    }
+
+    assert!(
+        manifest.contains("[package.metadata.verus]") && manifest.contains("verify = true"),
+        "Cargo manifest must keep cargo-verus verification enabled"
+    );
 }
 
 #[test]
