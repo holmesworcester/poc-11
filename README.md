@@ -1,7 +1,7 @@
 # poc-11 — link toy (Stage 0)
 
 A minimal, functional **proof-of-model** for the in-memory projection /
-bounded-replay design (`../poc-10/docs/research/in-memory-projection-bounded-replay.md`).
+bounded-replay design (`docs/research/in-memory-projection-bounded-replay.md`).
 Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
 
 ## The model in one screen
