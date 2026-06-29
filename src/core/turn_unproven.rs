@@ -1,5 +1,5 @@
 //! Deterministic engine turn skeleton. This is the staging surface for a later
-//! `turn_proven`: state plus one input produces state plus either a requested
+//! unsuffixed `turn`: state plus one input produces state plus either a requested
 //! helper effect, an internal projection step, or idle.
 use super::effects::{EffectRequest, EffectResult};
 use super::engine::{EngineState, Storage};

@@ -45,24 +45,43 @@ fn in_memory_projection_note_records_extract_project_boundary() {
 }
 
 #[test]
-fn proof_plan_records_unproven_to_proven_migration() {
+fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let plan = source_text(&root.join("docs/proof-plan.md"));
     let normalized = normalize_whitespace(&plan);
 
     for required in [
-        "choose code shapes that let behavior move from `_unproven` files into Verus-proven executable kernels",
+        "choose code shapes that let behavior move from `_unproven` files into Verus-verified executable kernels",
+        "There is no `_proven` suffix",
         "`src/facts/link/project_unproven.rs` keeps link codec, extraction, and projection together",
         "`src/core/effects_unproven.rs` and `src/core/turn_unproven.rs` are the current staging surface",
         "concrete SQLite lives in `src/helpers/sqlite_unproven.rs`",
-        "`src/core/turn_proven.rs`: deterministic `State + Input -> State + Effects` transition",
-        "`src/facts/link/project_proven.rs`: verified link codec, canonical encode/decode, extraction, projection validity",
+        "`src/core/turn.rs`: deterministic `State + Input -> State + Effects` transition",
+        "`src/facts/link/project.rs`: verified link codec, canonical encode/decode, extraction, projection validity",
         "`src/helpers/*_unproven.rs`: narrow trusted adapters",
-        "A file can lose `_unproven` only when its invariant-bearing behavior is covered by Verus-verified executable code",
+        "Core proofs are about all possible fact families routed through the engine",
+        "Link proofs live in `src/facts/link/project.rs` because only the link family defines what roots, parents, and ancestry mean",
+        "Multiple anchors are allowed; the starter model does not prove global root uniqueness",
+        "valid_link(link_id, root_id)",
+        "no cross-root splice validates",
+        "Instantiate the core transitive-validity theorem with the link projection contract",
+        "A file loses `_unproven` only after its invariant-bearing behavior is covered by Verus-verified executable code",
     ] {
         assert!(
             normalized.contains(required),
             "proof plan is missing migration detail {required:?}"
+        );
+    }
+
+    for stale in [
+        "types_proven.rs",
+        "turn_proven.rs",
+        "project_proven.rs",
+        "author_proven.rs",
+    ] {
+        assert!(
+            !normalized.contains(stale),
+            "proof plan should use unsuffixed proven files instead of stale target {stale:?}"
         );
     }
 }

@@ -28,9 +28,11 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
   `project` validates the item; `Context` carries only validated offers.
   `Admitted<I>`'s only constructor is `admit`, so extract-before-project is a compile
   error. **Projectors get no storage/IO handle.**
-- **One fact**: `link { prev: Option<FactId> }` → a chain `link0 <- link1 <- ...`;
-  a link is valid iff its parent is valid (a root is valid by itself). The chain's
-  transitive validity is the Stage-1 Verus target.
+- **One fact**: the current starter is
+  `link { prev: Option<FactId> }` → a chain `link0 <- link1 <- ...`; `prev=None`
+  is an anchor root for that component, not a unique global root. The full proof
+  model will add a child-carried root/domain id so projection can prove every
+  valid child stays in the same root/domain as its validated parent.
 
 ## Layout — poc-10's core/protocol division
 

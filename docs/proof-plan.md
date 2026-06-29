@@ -1,8 +1,12 @@
 # poc-11 Proof Plan
 
 The project direction is proof-first: choose code shapes that let behavior move
-from `_unproven` files into Verus-proven executable kernels. `_unproven` is a
+from `_unproven` files into Verus-verified executable kernels. `_unproven` is a
 temporary or trusted boundary label, not a normal home for domain logic.
+
+There is no `_proven` suffix. In `src/core/` and `src/facts/`, an unsuffixed file
+means either its invariant-bearing behavior is covered by executable Verus proof
+or it is only a thin wrapper around such code.
 
 ## Current Labels
 
@@ -27,52 +31,154 @@ temporary or trusted boundary label, not a normal home for domain logic.
 
 ## Target Shape
 
-Move logic toward these proof-backed modules:
+Move logic toward these proof-backed unsuffixed modules:
 
-- `src/core/types_proven.rs`: proof-friendly ids, edge addresses, validity,
-  context, and validated-offer provenance types.
-- `src/core/turn_proven.rs`: deterministic `State + Input -> State + Effects`
+- `src/core/types.rs`: proof-friendly ids, edge addresses, validity, context, and
+  validated-offer provenance types.
+- `src/core/turn.rs`: deterministic `State + Input -> State + Effects`
   transition for admission, query results, projection, and wakeups, replacing
   `turn_unproven.rs` once the transition invariant is proven.
-- `src/facts/link/project_proven.rs`: verified link codec, canonical encode/decode,
+- `src/facts/link/project.rs`: verified link codec, canonical encode/decode,
   extraction, projection validity, emitted facts, and persistence decision.
-- `src/facts/link/author_proven.rs`: verified command kernels that construct typed
-  link facts from intent arguments.
+- `src/facts/link/author.rs`: verified command kernels that construct typed link
+  facts from intent arguments.
 - `src/helpers/*_unproven.rs`: narrow trusted adapters for crypto assumptions,
   SQLite, TCP sockets, filesystem, clocks, and similar external APIs.
 
-An unsuffixed compatibility module may re-export proven or unproven modules while
-the tree is in transition, but invariant-bearing logic should live in `_proven`
-or `_unproven` files with an explicit status.
+Compatibility modules may re-export unproven or proven modules while the tree is
+in transition. The file that contains invariant-bearing behavior keeps
+`_unproven` until that behavior has a Verus proof.
 
-## Migration Order
+## Proof Boundaries
 
-1. **Prove link project.** Move codec/extract/project from
-   `project_unproven.rs` into a Verus-backed `project_proven.rs`. Prove
-   `decode(encode(f)) == f`, accepted bytes are canonical, extraction contains
-   the offer for the fact id and the parent need when present, and projection
-   validates roots and only validates children with a matching validated parent.
-2. **Prove shared core types.** Move `FactId`, `EdgeAddr`, `Validity`, and
-   validated-offer/context representations toward proof-friendly shared types so
-   the adapter between runtime and Verus shrinks instead of growing.
-3. **Prove the turn.** Move `effects_unproven.rs` and `turn_unproven.rs` to
-   proven equivalents. Prove every `State + Input -> State + Vec<EffectRequest>`
-   transition preserves validated-offer provenance and never creates validated
-   state from an unready or invalid fact.
-4. **Prove admission/extraction persistence contracts.** The verified admission
-   transition should request persistence of exactly the verified extraction output
-   for durable facts. SQLite remains in `helpers/sqlite_unproven.rs` behind a
-   trusted storage contract until replaced.
-5. **Prove link authoring.** Move command kernels from `author_unproven.rs` into
-   `author_proven.rs`, proving authored facts encode the requested fields and
-   name the dependencies that later projection will require.
-6. **Shrink app and helper code.** `cli_unproven.rs`, sockets, filesystem, clocks,
-   and SQLite should stay thin. If any helper accumulates domain logic, move that
-   logic back into `core` or `facts` and prove it.
+Core proofs are about all possible fact families routed through the engine:
+
+- A fact becomes valid only through its routed projector.
+- Projectors receive only in-memory validated context.
+- Every validated offer has a valid owner fact.
+- Every validated offer was first asserted by that same owner during extraction.
+- Persisted facts and persisted needs/offers are discovery hints, not authority.
+- If fact A validates using fact B's offer, then B is valid; that dependency
+  relationship is transitively valid over any projected chain.
+- Admit, query, project, and wake turns preserve the ongoing engine invariant.
+- Route dispatch is sound: decoded family tags select the right family projector,
+  and malformed or unknown facts do not become valid.
+
+Link proofs live in `src/facts/link/project.rs` because only the link family
+defines what roots, parents, and ancestry mean:
+
+- Link bytes decode canonically into the link semantic shape.
+- `link_id(link) == fact_id(encode(link))`.
+- Extraction emits exactly the self-offer and, for a child, exactly the parent
+  need declared by the link fields.
+- A `prev=None` link is an anchor root for its own component. Multiple anchors
+  are allowed; the starter model does not prove global root uniqueness.
+- A child link is valid only when the validated parent context proves the parent
+  is in the same root/domain.
+- Link projection emits no new facts unless a later model intentionally adds
+  emitted facts.
+- Link ancestry is domain preserving: any valid descendant has a valid parent
+  chain ending at its claimed anchor root.
+
+The composition theorem is:
+
+```text
+core validated-context provenance
++ link's parent/root projection contract
+=> every valid child link is backed by a valid parent link, transitively to an
+   anchor in the same root/domain
+```
+
+## Stylized Link Model
+
+The current runnable toy uses only:
+
+```text
+Link { prev: Option<FactId>, content: Vec<u8> }
+```
+
+That is enough to start proving parent transitivity, with `prev=None` as an
+anchor. Before claiming stronger protocol-shaped invariants, migrate the link
+semantic shape to carry a child root/domain id:
+
+```text
+Root:
+  prev = None
+  encoded root_id = None
+  semantic_root_id = self fact id
+
+Child:
+  prev = Some(parent_id)
+  encoded root_id = Some(anchor_id)
+  semantic_root_id = anchor_id
+```
+
+The validated link context should expose a statement like:
+
+```text
+valid_link(link_id, root_id)
+```
+
+Then link projection checks:
+
+- root: valid without parent context and emits `valid_link(self_id, self_id)`;
+- child: valid only if context contains `valid_link(parent_id, claimed_root_id)`;
+- child: emits `valid_link(self_id, claimed_root_id)` after validation;
+- malformed links, roots that encode a foreign root id, and children whose parent
+  has a different root/domain are invalid.
+
+This is intentionally isomorphic to later protocol facts:
+
+```text
+fact declares domain id
+fact declares dependency/authority id
+projector requires validated context for that dependency
+projector checks dependency.domain == fact.domain
+projector emits validated statements only inside that same domain
+```
+
+For protocol facts, `root_id` corresponds to `workspace_id` or another authority
+domain. The link toy should prove the domain-preserving authority pattern before
+we translate the heavier poc-10 user, device-link, and admin-grant fact families.
+
+## Full Proof Plan
+
+1. **Proof-friendly core types.** Move ids, edge addresses, validity, validated
+   offers, validated fields, and route tags toward shared executable types that
+   Verus can reason about directly. Keep maps/scans simple first; optimize after
+   the spec is stable.
+2. **Link semantic shape.** Add the child-carried root/domain id to the runnable
+   link fact shape. Preserve `prev=None` anchors and explicitly allow multiple
+   anchors.
+3. **Link codec proof.** Prove canonical encode/decode for the full link shape:
+   accepted bytes decode uniquely, malformed tag/flags/lengths are rejected, and
+   `decode(encode(link)) == link`.
+4. **Link extraction proof.** Prove extraction is context-free and exact:
+   self-offer only for the link id, parent need only for `prev`, and any root or
+   domain statement needed by projection is derivable from encoded link fields or
+   the fact id.
+5. **Link projection proof.** Prove the family contract: anchors emit
+   `valid_link(self,self)`, children require validated parent context with the
+   same root id, no cross-root splice validates, and emitted offers/fields carry
+   only the validated link statement for this fact.
+6. **Core turn proof.** Prove `State + Input -> State + Effects` by induction over
+   every turn: admission, need-query result, projection, offer-query result, and
+   idle all preserve validated-offer provenance and context safety.
+7. **Storage/effect contract.** Keep SQLite, sockets, filesystem, and clocks in
+   helpers. Prove that successful effect results are interpreted only through the
+   verified decode/admission/extraction path, and that errors cannot create
+   validated state.
+8. **Composition proof.** Instantiate the core transitive-validity theorem with
+   the link projection contract. Prove every valid link has a domain-preserving
+   ancestry chain to its claimed anchor, while making no uniqueness claim about
+   anchors.
+9. **Rename only when complete.** A file loses `_unproven` only after its
+   invariant-bearing behavior is covered by Verus-verified executable code and
+   realistic Rust tests. Until then, keep the `_unproven` label.
 
 ## Done Criteria
 
 A file can lose `_unproven` only when its invariant-bearing behavior is covered by
 Verus-verified executable code or is only a thin wrapper around such code. Each
-move from `_unproven` to `_proven` should include realistic Rust tests plus
+move out of `_unproven` should include realistic Rust tests plus
 `./scripts/run_verus.sh` coverage.
