@@ -1,6 +1,6 @@
 //! Pass 1 (admission). [`admit`] is the durable path for new/incoming facts:
-//! running it extracts syntactic edges, persists them (`Asserted`), and flushes
-//! durable bytes. Replay of already-stored facts uses the queue engine's
+//! running it extracts syntactic edges, persists them (`Asserted`), and requests
+//! durable fact-byte writes. Replay of already-stored facts uses the queue engine's
 //! read-only storage admission path instead, indexing decoded facts in memory
 //! without writing bytes or edges back to persistence.
 //!
@@ -12,8 +12,8 @@
 //!       content addressing and the fact family's canonical encoder.
 //! - [ ] Stored asserted edges are exactly the fact family's extraction output;
 //!       extraction exactness is proved by the fact-family projector.
-//! - [ ] Fact bytes are flushed only when the fact-family durability predicate
-//!       says this item is durable.
+//! - [ ] Fact bytes are requested to be written to durable storage only when the
+//!       fact-family durability predicate says this item is durable.
 //! - [ ] Any non-storage admission path inside core must preserve the same
 //!       id/body relation before projection.
 use super::index::Index;
@@ -40,9 +40,10 @@ impl<I> Admitted<I> {
     }
 }
 
-/// Admit one new/incoming item: extract → persist edges (Asserted) → flush bytes
-/// if durable. Idempotent writes make repeated network/local admission safe, but
-/// replay does not call this for facts already loaded from storage.
+/// Admit one new/incoming item: extract → persist edges (Asserted) → request a
+/// durable byte write if durable. Idempotent writes make repeated network/local
+/// admission safe, but replay does not call this for facts already loaded from
+/// storage.
 pub fn admit<P: Projector>(
     item: P::Item,
     ts: u64,

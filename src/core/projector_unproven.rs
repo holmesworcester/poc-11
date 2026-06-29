@@ -40,7 +40,7 @@ pub trait Projector {
     fn encode(item: &Self::Item) -> Vec<u8>;
     fn decode(bytes: &[u8]) -> Result<Self::Item, String>;
 
-    /// Durable (flush bytes + edges) vs volatile (edges only). Content-pure.
+    /// Durable (write bytes + edges) vs volatile (edges only). Content-pure.
     fn durable(_item: &Self::Item) -> bool {
         true
     }
