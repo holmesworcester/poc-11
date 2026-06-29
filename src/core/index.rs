@@ -9,8 +9,7 @@ use super::item::{fact_id, FactId};
 use super::offer::{EdgeKind, Key, Offer, Role, Scope};
 use super::typestate::Asserted;
 
-/// The storage contract core (admit/play) and the daemon's workers depend on. The
-/// Stage-1 Verus core is written against this contract, not against rusqlite.
+/// The storage contract core (admit/play) and the daemon's workers depend on.
 pub trait Index {
     fn insert_asserted(
         &self,

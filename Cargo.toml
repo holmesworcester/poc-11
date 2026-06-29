@@ -13,9 +13,8 @@ name = "lk"
 path = "src/bin/lk.rs"
 
 [features]
-# Declared for future cargo-verus integration. Proofs are verified standalone via
-# scripts/run_verus.sh, so cargo never compiles `verus!` syntax and the toy stays
-# dependency-light.
+# Declared for future cargo-verus integration. The executable proof-facing core
+# lives in `verus-core/` and is verified by scripts/run_verus.sh.
 verus = []
 
 [dependencies]

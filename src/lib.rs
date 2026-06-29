@@ -17,5 +17,3 @@
 pub mod cli;
 pub mod core;
 pub mod protocol;
-// NOTE: `src/proof.rs` is intentionally not a module here — it is Verus source
-// compiled standalone by `scripts/run_verus.sh`, never by cargo.

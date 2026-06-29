@@ -15,6 +15,21 @@ pub enum ValidityCore {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bytes32Core {
+    pub w0: u64,
+    pub w1: u64,
+    pub w2: u64,
+    pub w3: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EdgeAddrCore {
+    pub role: Bytes32Core,
+    pub scope: u64,
+    pub key: Bytes32Core,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldCore {
     pub name: u64,
     pub value: u64,
@@ -22,21 +37,21 @@ pub struct FieldCore {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct AdmittedFactCore {
-    pub id: u64,
-    pub needs: Vec<u64>,
-    pub offers: Vec<u64>,
+    pub id: Bytes32Core,
+    pub needs: Vec<EdgeAddrCore>,
+    pub offers: Vec<EdgeAddrCore>,
     pub fields: Vec<FieldCore>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ValidatedOfferCore {
-    pub owner: u64,
-    pub key: u64,
+    pub owner: Bytes32Core,
+    pub addr: EdgeAddrCore,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ValidatedFieldCore {
-    pub owner: u64,
+    pub owner: Bytes32Core,
     pub field: FieldCore,
 }
 
@@ -47,11 +62,40 @@ pub struct ProjectionPlanCore {
     pub promoted_fields: Vec<ValidatedFieldCore>,
 }
 
-pub open spec fn has_validated_offer_spec(ctx: Seq<ValidatedOfferCore>, key: u64) -> bool {
-    exists|i: int| #![auto] 0 <= i < ctx.len() && ctx[i].key == key
+pub open spec fn bytes32_eq_spec(left: Bytes32Core, right: Bytes32Core) -> bool {
+    left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
 }
 
-pub open spec fn all_needs_satisfied_spec(needs: Seq<u64>, ctx: Seq<ValidatedOfferCore>) -> bool {
+pub open spec fn edge_addr_eq_spec(left: EdgeAddrCore, right: EdgeAddrCore) -> bool {
+    bytes32_eq_spec(left.role, right.role)
+        && left.scope == right.scope
+        && bytes32_eq_spec(left.key, right.key)
+}
+
+pub fn bytes32_eq(left: Bytes32Core, right: Bytes32Core) -> (equal: bool)
+    ensures
+        equal == bytes32_eq_spec(left, right),
+{
+    left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
+}
+
+pub fn edge_addr_eq(left: EdgeAddrCore, right: EdgeAddrCore) -> (equal: bool)
+    ensures
+        equal == edge_addr_eq_spec(left, right),
+{
+    bytes32_eq(left.role, right.role)
+        && left.scope == right.scope
+        && bytes32_eq(left.key, right.key)
+}
+
+pub open spec fn has_validated_offer_spec(ctx: Seq<ValidatedOfferCore>, addr: EdgeAddrCore) -> bool {
+    exists|i: int| #![auto] 0 <= i < ctx.len() && edge_addr_eq_spec(ctx[i].addr, addr)
+}
+
+pub open spec fn all_needs_satisfied_spec(
+    needs: Seq<EdgeAddrCore>,
+    ctx: Seq<ValidatedOfferCore>,
+) -> bool {
     forall|i: int| 0 <= i < needs.len() ==> has_validated_offer_spec(ctx, #[trigger] needs[i])
 }
 
@@ -61,7 +105,8 @@ pub open spec fn promoted_offers_match_fact(
 ) -> bool {
     promoted.len() == fact.offers@.len()
         && (forall|i: int| 0 <= i < promoted.len() ==>
-            #[trigger] promoted[i].owner == fact.id && promoted[i].key == fact.offers@[i])
+            #[trigger] promoted[i].owner == fact.id
+                && edge_addr_eq_spec(promoted[i].addr, fact.offers@[i]))
 }
 
 pub open spec fn promoted_fields_match_fact(
@@ -86,30 +131,30 @@ pub open spec fn projection_plan_sound(
         && (!plan.valid ==> plan.promoted_fields@.len() == 0)
 }
 
-pub fn has_validated_offer(ctx: &Vec<ValidatedOfferCore>, key: u64) -> (found: bool)
+pub fn has_validated_offer(ctx: &Vec<ValidatedOfferCore>, addr: EdgeAddrCore) -> (found: bool)
     ensures
-        found == has_validated_offer_spec(ctx@, key),
+        found == has_validated_offer_spec(ctx@, addr),
 {
     let mut i: usize = 0;
     while i < ctx.len()
         invariant
             0 <= i <= ctx.len(),
             ctx@.len() == ctx.len() as int,
-            forall|k: int| #![auto] 0 <= k < i ==> ctx@[k].key != key,
+            forall|k: int| #![auto] 0 <= k < i ==> !edge_addr_eq_spec(ctx@[k].addr, addr),
         decreases ctx.len() - i,
     {
-        if ctx[i].key == key {
-            assert(has_validated_offer_spec(ctx@, key));
+        if edge_addr_eq(ctx[i].addr, addr) {
+            assert(has_validated_offer_spec(ctx@, addr));
             return true;
         }
         i += 1;
     }
-    assert(!has_validated_offer_spec(ctx@, key));
+    assert(!has_validated_offer_spec(ctx@, addr));
     false
 }
 
 pub fn all_needs_satisfied(
-    needs: &Vec<u64>,
+    needs: &Vec<EdgeAddrCore>,
     ctx: &Vec<ValidatedOfferCore>,
 ) -> (ready: bool)
     ensures
@@ -133,6 +178,16 @@ pub fn all_needs_satisfied(
     true
 }
 
+pub fn fact_ready_core(
+    fact: &AdmittedFactCore,
+    ctx: &Vec<ValidatedOfferCore>,
+) -> (ready: bool)
+    ensures
+        ready == all_needs_satisfied_spec(fact.needs@, ctx@),
+{
+    all_needs_satisfied(&fact.needs, ctx)
+}
+
 pub fn promoted_offers_for(fact: &AdmittedFactCore) -> (promoted: Vec<ValidatedOfferCore>)
     ensures
         promoted_offers_match_fact(*fact, promoted@),
@@ -145,22 +200,24 @@ pub fn promoted_offers_for(fact: &AdmittedFactCore) -> (promoted: Vec<ValidatedO
             fact.offers@.len() == fact.offers.len() as int,
             promoted@.len() == i,
             forall|k: int| 0 <= k < promoted@.len() ==>
-                #[trigger] promoted@[k].owner == fact.id && promoted@[k].key == fact.offers@[k],
+                #[trigger] promoted@[k].owner == fact.id
+                    && edge_addr_eq_spec(promoted@[k].addr, fact.offers@[k]),
         decreases fact.offers.len() - i,
     {
         let ghost before = promoted@;
-        let offer_key = fact.offers[i];
+        let offer_addr = fact.offers[i];
         promoted.push(ValidatedOfferCore {
             owner: fact.id,
-            key: offer_key,
+            addr: offer_addr,
         });
         assert(promoted@.len() == before.len() + 1);
         assert(before.len() == i);
         assert(promoted@[i as int].owner == fact.id);
-        assert(promoted@[i as int].key == offer_key);
-        assert(offer_key == fact.offers@[i as int]);
+        assert(edge_addr_eq_spec(promoted@[i as int].addr, offer_addr));
+        assert(edge_addr_eq_spec(offer_addr, fact.offers@[i as int]));
         assert forall|k: int| 0 <= k < promoted@.len() implies
-            #[trigger] promoted@[k].owner == fact.id && promoted@[k].key == fact.offers@[k]
+            #[trigger] promoted@[k].owner == fact.id
+                && edge_addr_eq_spec(promoted@[k].addr, fact.offers@[k])
         by {
             if k < before.len() {
                 assert(promoted@[k] == before[k]);

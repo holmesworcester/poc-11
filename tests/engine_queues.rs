@@ -206,3 +206,140 @@ fn emitted_facts_reenter_the_in_memory_worklist() {
     assert_eq!(engine.validity.get(&seed_id), Some(&Validity::Valid));
     assert_eq!(engine.validity.get(&emitted_id), Some(&Validity::Valid));
 }
+
+#[derive(Clone)]
+enum GateItem {
+    NeedsRoleA { key: Key, offer: Key },
+    ProviderRoleB { key: Key },
+    InvalidEmitter,
+    Emitted,
+}
+
+#[derive(Default)]
+struct GateState {
+    calls: usize,
+}
+
+struct GateProjector;
+
+const GATE_A: Role = Role("gate-a");
+const GATE_B: Role = Role("gate-b");
+
+impl Projector for GateProjector {
+    type Item = GateItem;
+    type State = GateState;
+
+    fn encode(item: &Self::Item) -> Vec<u8> {
+        let mut bytes = vec![0xA0];
+        match item {
+            GateItem::NeedsRoleA { key, offer } => {
+                bytes.push(0);
+                bytes.extend_from_slice(&key.0);
+                bytes.extend_from_slice(&offer.0);
+            }
+            GateItem::ProviderRoleB { key } => {
+                bytes.push(1);
+                bytes.extend_from_slice(&key.0);
+            }
+            GateItem::InvalidEmitter => {
+                bytes.push(2);
+            }
+            GateItem::Emitted => {
+                bytes.push(3);
+            }
+        }
+        bytes
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self::Item, String> {
+        match bytes {
+            [0xA0, 3] => Ok(GateItem::Emitted),
+            _ => Err("gate decode is only needed for emitted facts".to_string()),
+        }
+    }
+
+    fn extract(item: &Self::Item) -> Vec<Offer<Asserted>> {
+        match item {
+            GateItem::NeedsRoleA { key, offer } => {
+                vec![Offer::need(GATE_A, *key), Offer::offer(GATE_A, *offer)]
+            }
+            GateItem::ProviderRoleB { key } => vec![Offer::offer(GATE_B, *key)],
+            GateItem::InvalidEmitter => vec![],
+            GateItem::Emitted => vec![],
+        }
+    }
+
+    fn project(item: &Admitted<Self::Item>, _ctx: Context, st: &mut Self::State) -> ProjectOutcome {
+        st.calls += 1;
+        match item.item() {
+            GateItem::InvalidEmitter => ProjectOutcome {
+                validity: Validity::Invalid,
+                emitted: vec![EmittedFact {
+                    bytes: Self::encode(&GateItem::Emitted),
+                }],
+            },
+            _ => ProjectOutcome {
+                validity: Validity::Valid,
+                emitted: vec![],
+            },
+        }
+    }
+}
+
+#[test]
+fn unmet_need_is_rejected_before_projector_can_mutate_state() {
+    let missing = Key([7; 32]);
+    let offered = Key([8; 32]);
+    let mut engine = EngineState::<GateProjector>::new();
+    let id = engine.admit_item(GateItem::NeedsRoleA {
+        key: missing,
+        offer: offered,
+    });
+
+    engine.drain(&EmptyStorage, 100).unwrap();
+
+    assert_eq!(engine.validity.get(&id), Some(&Validity::Invalid));
+    assert_eq!(engine.projector_state.calls, 0);
+    assert!(engine.validated.is_empty());
+}
+
+#[test]
+fn same_key_with_wrong_role_does_not_satisfy_verified_readiness() {
+    let shared_key = Key([9; 32]);
+    let child_offer = Key([10; 32]);
+    let mut engine = EngineState::<GateProjector>::new();
+    let provider = engine.admit_item(GateItem::ProviderRoleB { key: shared_key });
+    engine.drain(&EmptyStorage, 100).unwrap();
+
+    assert_eq!(engine.validity.get(&provider), Some(&Validity::Valid));
+    assert_eq!(engine.validated.len(), 1);
+    assert_eq!(engine.validated[0].offer.role, GATE_B);
+    assert_eq!(engine.projector_state.calls, 1);
+
+    let needer = engine.admit_item(GateItem::NeedsRoleA {
+        key: shared_key,
+        offer: child_offer,
+    });
+    engine.drain(&EmptyStorage, 100).unwrap();
+
+    assert_eq!(engine.validity.get(&needer), Some(&Validity::Invalid));
+    assert_eq!(
+        engine.projector_state.calls, 1,
+        "the role-mismatched validated offer must not make the needer ready"
+    );
+    assert_eq!(engine.validated.len(), 1);
+}
+
+#[test]
+fn invalid_projection_output_does_not_emit_facts() {
+    let mut engine = EngineState::<GateProjector>::new();
+    let seed = engine.admit_item(GateItem::InvalidEmitter);
+    let emitted = fact_id(&GateProjector::encode(&GateItem::Emitted));
+
+    engine.drain(&EmptyStorage, 100).unwrap();
+
+    assert_eq!(engine.validity.get(&seed), Some(&Validity::Invalid));
+    assert_eq!(engine.projector_state.calls, 1);
+    assert!(engine.mem.contains(&seed));
+    assert!(!engine.mem.contains(&emitted));
+}

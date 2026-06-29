@@ -6,9 +6,15 @@
 //! - need queries: pull stored offerers for newly indexed needs.
 //! - offer queries: wake stored/local needers for newly validated offers.
 //!
-//! The Verus model in `src/proof.rs` proves the same shape over typed maps/sets.
+//! Projection promotion is gated by `linktoy-verus-core`, an executable Verus
+//! crate that this engine calls as ordinary Rust.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+
+use linktoy_verus_core::{
+    fact_ready_core, project_fact_core, AdmittedFactCore, Bytes32Core, EdgeAddrCore,
+    ValidatedOfferCore, ValidityCore,
+};
 
 use super::admit::Admitted;
 use super::index::Index;
@@ -273,11 +279,24 @@ where
             }
         }
 
+        let core_fact = core_fact(id, &edges);
+        let core_ctx = self.core_validated_offers();
+        if !fact_ready_core(&core_fact, &core_ctx) {
+            self.validity.insert(id, Validity::Invalid);
+            return Ok(Some(Validity::Invalid));
+        }
+
         let admitted = Admitted::from_parts(item, id);
         let out = P::project(&admitted, self.collect(&edges), &mut self.projector_state);
-        self.validity.insert(id, out.validity);
+        let plan = project_fact_core(&core_fact, &core_ctx, core_validity(out.validity));
+        let effective_validity = if plan.valid {
+            Validity::Valid
+        } else {
+            Validity::Invalid
+        };
+        self.validity.insert(id, effective_validity);
 
-        if out.validity == Validity::Valid {
+        if effective_validity == Validity::Valid {
             for offer in edges.iter().copied().filter(|edge| edge.is_offer()) {
                 let addr = EdgeAddr::from_offer(&offer);
                 if !self.promoted_offers.insert((id, addr)) {
@@ -299,16 +318,18 @@ where
             }
         }
 
-        for emitted in out.emitted {
-            let id = fact_id(&emitted.bytes);
-            let item = P::decode(&emitted.bytes)?;
-            if P::encode(&item) != emitted.bytes {
-                return Err("projector emitted non-canonical bytes".to_string());
+        if effective_validity == Validity::Valid {
+            for emitted in out.emitted {
+                let id = fact_id(&emitted.bytes);
+                let item = P::decode(&emitted.bytes)?;
+                if P::encode(&item) != emitted.bytes {
+                    return Err("projector emitted non-canonical bytes".to_string());
+                }
+                self.index_item(id, item);
             }
-            self.index_item(id, item);
         }
 
-        Ok(Some(out.validity))
+        Ok(Some(effective_validity))
     }
 
     pub fn drain<S: Storage + ?Sized>(
@@ -391,4 +412,73 @@ where
         }
         Context::from(offers)
     }
+
+    fn core_validated_offers(&self) -> Vec<ValidatedOfferCore> {
+        self.validated
+            .iter()
+            .map(|validated| ValidatedOfferCore {
+                owner: core_bytes32(validated.owner),
+                addr: core_addr(EdgeAddr::from_offer(&validated.offer)),
+            })
+            .collect()
+    }
+}
+
+fn core_fact(id: FactId, edges: &[Offer<Asserted>]) -> AdmittedFactCore {
+    AdmittedFactCore {
+        id: core_bytes32(id),
+        needs: edges
+            .iter()
+            .filter(|edge| edge.is_need())
+            .map(|edge| core_addr(EdgeAddr::from_offer(edge)))
+            .collect(),
+        offers: edges
+            .iter()
+            .filter(|edge| edge.is_offer())
+            .map(|edge| core_addr(EdgeAddr::from_offer(edge)))
+            .collect(),
+        fields: vec![],
+    }
+}
+
+fn core_addr(addr: EdgeAddr) -> EdgeAddrCore {
+    EdgeAddrCore {
+        role: core_role(addr.role),
+        scope: core_scope(addr.scope),
+        key: core_bytes32(addr.key.0),
+    }
+}
+
+fn core_validity(validity: Validity) -> ValidityCore {
+    match validity {
+        Validity::Valid => ValidityCore::Valid,
+        Validity::Invalid => ValidityCore::Invalid,
+    }
+}
+
+fn core_scope(scope: Scope) -> u64 {
+    match scope {
+        Scope::Local => 0,
+    }
+}
+
+fn core_role(role: Role) -> Bytes32Core {
+    // The verified core uses fixed-width addresses; role names enter it under
+    // the same blake3 collision assumption as content-addressed fact ids.
+    core_bytes32(*blake3::hash(role.0.as_bytes()).as_bytes())
+}
+
+fn core_bytes32(bytes: [u8; 32]) -> Bytes32Core {
+    Bytes32Core {
+        w0: word64(&bytes, 0),
+        w1: word64(&bytes, 8),
+        w2: word64(&bytes, 16),
+        w3: word64(&bytes, 24),
+    }
+}
+
+fn word64(bytes: &[u8; 32], offset: usize) -> u64 {
+    let mut word = [0u8; 8];
+    word.copy_from_slice(&bytes[offset..offset + 8]);
+    u64::from_le_bytes(word)
 }

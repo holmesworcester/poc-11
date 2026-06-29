@@ -39,7 +39,7 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
 | `src/core/` | **protocol-agnostic runtime + playback**: `item` (content addressing), `offer` (`Offer<V>`), `typestate` (`Asserted`/`Validated`/`Context`), `projector` (the trait), `admit` (Pass 1), `index` (`Index` trait + `SqliteIndex`), `engine` (typed in-memory queues), `play` (`play`/`replay`/`wake`, Pass 2), `net`, `runtime` (the generic daemon `serve<P>`) |
 | `src/protocol/` | **item families + projectors**: `link` (the one fact family) |
 | `src/cli.rs` | the thin **app layer** wiring a protocol family into the core runtime |
-| `src/proof.rs` | Verus source, verified standalone (see `scripts/run_verus.sh`) |
+| `verus-core/` | Verus-verified executable projection gate called by `src/core/engine.rs` |
 
 `core` depends on nothing protocol-specific; `protocol` depends on `core`; `cli` (the
 composition root) depends on both. This is the seam Stage 3 generalizes into a manifest.
@@ -83,17 +83,15 @@ cargo test
 ## Verify (Verus)
 
 ```sh
-./scripts/run_verus.sh    # real link-projector and transitive-chain proofs
+./scripts/run_verus.sh
 ```
 
-`src/proof.rs` abstracts crypto and durable storage behind typed contracts, then
-proves a generic positive projection calculus: admitted facts have typed needs and
-offers, ready facts promote only owner-bearing validated offers, context soundness
-(`validated_offers` only come from valid owners) and offer provenance are preserved,
-and any dependency-respecting projection schedule validates all scheduled facts.
-The link projector is then an instance of that calculus, proving root/child
-behavior and transitive validity for any root-to-head chain projected through valid
-edges.
+`verus-core/` is a normal Rust path dependency. The engine calls its
+`fact_ready_core` and `project_fact_core` functions before projector mutation,
+offer promotion, or emitted-fact admission. Verus proves that a fact is considered
+ready only when every asserted need address `(role, scope, key)` has a matching
+validated offer, and that a valid projection plan promotes only offers/fields
+copied from the projected fact under that fact's owner.
 
 ## Review gates
 
