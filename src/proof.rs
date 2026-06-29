@@ -46,12 +46,52 @@ pub struct EngineState {
     pub offer_queries: Seq<Id>,
 }
 
+pub enum EngineEvent {
+    Admit(SpecFact),
+    NeedQuery(Id),
+    Project(SpecFact),
+    OfferQuery(Id),
+}
+
 pub open spec fn mem_index_admits_fact(mem: MemIndex, fact: SpecFact) -> bool {
     mem.facts.contains(fact.id)
         && (forall|i: int| 0 <= i < fact.offers.len() ==>
             #[trigger] mem.offers.contains((fact.id, fact.offers[i])))
         && (forall|i: int| 0 <= i < fact.needs.len() ==>
             #[trigger] mem.needs.contains((fact.id, fact.needs[i])))
+}
+
+pub open spec fn mem_index_exact_fact_edges(mem: MemIndex, fact: SpecFact) -> bool {
+    mem_index_admits_fact(mem, fact)
+        && (forall|key: Id| #[trigger] mem.offers.contains((fact.id, key)) ==>
+            exists|i: int| 0 <= i < fact.offers.len() && fact.offers[i] == key)
+        && (forall|key: Id| #[trigger] mem.needs.contains((fact.id, key)) ==>
+            exists|i: int| 0 <= i < fact.needs.len() && fact.needs[i] == key)
+}
+
+pub open spec fn same_mem(left: MemIndex, right: MemIndex) -> bool {
+    left.facts =~= right.facts
+        && left.offers =~= right.offers
+        && left.needs =~= right.needs
+}
+
+pub open spec fn same_projection(left: Projection, right: Projection) -> bool {
+    left.valid =~= right.valid
+        && left.validated_offers =~= right.validated_offers
+}
+
+pub open spec fn mem_extends(old: MemIndex, new: MemIndex) -> bool {
+    (forall|id: Id| #[trigger] old.facts.contains(id) ==> new.facts.contains(id))
+        && (forall|owner: Id, key: Id|
+            #[trigger] old.offers.contains((owner, key)) ==> new.offers.contains((owner, key)))
+        && (forall|owner: Id, key: Id|
+            #[trigger] old.needs.contains((owner, key)) ==> new.needs.contains((owner, key)))
+}
+
+pub open spec fn no_new_needs_for_valid_owners(old: MemIndex, new: MemIndex, proj: Projection) -> bool {
+    forall|owner: Id, key: Id|
+        #[trigger] new.needs.contains((owner, key)) && proj.valid.contains(owner) ==>
+            old.needs.contains((owner, key))
 }
 
 pub open spec fn projection_context_sound(proj: Projection) -> bool {
@@ -65,18 +105,110 @@ pub open spec fn projected_offer_has_provenance(mem: MemIndex, proj: Projection)
             #[trigger] mem.offers.contains((owner, key))
 }
 
-pub open spec fn engine_invariant(e: EngineState) -> bool {
-    projection_context_sound(e.projection)
-        && projected_offer_has_provenance(e.mem, e.projection)
+pub open spec fn valid_facts_have_memory_provenance(mem: MemIndex, proj: Projection) -> bool {
+    forall|id: Id| #[trigger] proj.valid.contains(id) ==> mem.facts.contains(id)
 }
 
 pub open spec fn need_satisfied(proj: Projection, key: Id) -> bool {
     exists|owner: Id| proj.validated_offers.contains((owner, key))
 }
 
+pub open spec fn valid_facts_used_validated_context(mem: MemIndex, proj: Projection) -> bool {
+    forall|owner: Id, key: Id|
+        #[trigger] mem.needs.contains((owner, key)) && proj.valid.contains(owner) ==>
+            need_satisfied(proj, key)
+}
+
+pub open spec fn seq_contains(xs: Seq<Id>, x: Id) -> bool {
+    exists|i: int| 0 <= i < xs.len() && xs[i] == x
+}
+
+pub open spec fn project_queue_well_formed(e: EngineState) -> bool {
+    forall|i: int| 0 <= i < e.to_project.len() ==>
+        e.mem.facts.contains(#[trigger] e.to_project[i])
+            || seq_contains(e.to_admit, e.to_project[i])
+}
+
+pub open spec fn mem_has_need_for(mem: MemIndex, key: Id) -> bool {
+    exists|owner: Id| mem.needs.contains((owner, key))
+}
+
+pub open spec fn projection_has_validated_offer_for(proj: Projection, key: Id) -> bool {
+    exists|owner: Id| proj.validated_offers.contains((owner, key))
+}
+
+pub open spec fn need_query_queue_well_formed(e: EngineState) -> bool {
+    forall|i: int| 0 <= i < e.need_queries.len() ==>
+        mem_has_need_for(e.mem, #[trigger] e.need_queries[i])
+}
+
+pub open spec fn offer_query_queue_well_formed(e: EngineState) -> bool {
+    forall|i: int| 0 <= i < e.offer_queries.len() ==>
+        projection_has_validated_offer_for(e.projection, #[trigger] e.offer_queries[i])
+}
+
+pub open spec fn queues_well_formed(e: EngineState) -> bool {
+    project_queue_well_formed(e)
+        && need_query_queue_well_formed(e)
+        && offer_query_queue_well_formed(e)
+}
+
+pub open spec fn engine_invariant(e: EngineState) -> bool {
+    projection_context_sound(e.projection)
+        && projected_offer_has_provenance(e.mem, e.projection)
+        && valid_facts_have_memory_provenance(e.mem, e.projection)
+        && valid_facts_used_validated_context(e.mem, e.projection)
+        && queues_well_formed(e)
+}
+
 pub open spec fn fact_can_project(proj: Projection, fact: SpecFact) -> bool {
     forall|i: int| 0 <= i < fact.needs.len() ==>
         need_satisfied(proj, #[trigger] fact.needs[i])
+}
+
+pub open spec fn admit_step(e: EngineState, fact: SpecFact, next: EngineState) -> bool {
+    mem_extends(e.mem, next.mem)
+        && mem_index_exact_fact_edges(next.mem, fact)
+        && no_new_needs_for_valid_owners(e.mem, next.mem, e.projection)
+        && same_projection(next.projection, e.projection)
+        && queues_well_formed(next)
+}
+
+pub open spec fn query_step(e: EngineState, next: EngineState) -> bool {
+    same_mem(next.mem, e.mem)
+        && same_projection(next.projection, e.projection)
+        && queues_well_formed(next)
+}
+
+pub open spec fn project_step(e: EngineState, fact: SpecFact, next: EngineState) -> bool {
+    same_mem(next.mem, e.mem)
+        && mem_index_exact_fact_edges(e.mem, fact)
+        && same_projection(next.projection, project_fact_projection(e.projection, fact))
+        && queues_well_formed(next)
+}
+
+pub open spec fn engine_step(e: EngineState, event: EngineEvent, next: EngineState) -> bool {
+    match event {
+        EngineEvent::Admit(fact) => admit_step(e, fact, next),
+        EngineEvent::NeedQuery(_) => query_step(e, next),
+        EngineEvent::Project(fact) => project_step(e, fact, next),
+        EngineEvent::OfferQuery(_) => query_step(e, next),
+    }
+}
+
+pub open spec fn engine_run(states: Seq<EngineState>, events: Seq<EngineEvent>) -> bool
+    decreases events.len()
+{
+    if events.len() == 0 {
+        states.len() == 1
+    } else {
+        states.len() == events.len() + 1
+            && engine_step(states[0], events[0], states[1])
+            && engine_run(
+                states.subrange(1, states.len() as int),
+                events.subrange(1, events.len() as int),
+            )
+    }
 }
 
 pub open spec fn promote_one_offer(proj: Projection, owner: Id, key: Id) -> Projection {
@@ -224,6 +356,129 @@ pub proof fn promote_offers_records_offer_provenance(
     }
 }
 
+pub proof fn promote_offers_preserves_validated_offer(
+    proj: Projection,
+    owner: Id,
+    offers: Seq<Id>,
+    old_owner: Id,
+    old_key: Id,
+)
+    requires proj.validated_offers.contains((old_owner, old_key))
+    ensures promote_offers(proj, owner, offers).validated_offers.contains((old_owner, old_key))
+    decreases offers.len()
+{
+    if offers.len() == 0 {
+    } else {
+        let after_first = promote_one_offer(proj, owner, offers[0]);
+        assert(after_first.validated_offers.contains((old_owner, old_key)));
+        promote_offers_preserves_validated_offer(
+            after_first,
+            owner,
+            offers.subrange(1, offers.len() as int),
+            old_owner,
+            old_key,
+        );
+    }
+}
+
+pub proof fn promote_offers_preserves_need_satisfied(
+    proj: Projection,
+    owner: Id,
+    offers: Seq<Id>,
+    key: Id,
+)
+    requires need_satisfied(proj, key)
+    ensures need_satisfied(promote_offers(proj, owner, offers), key)
+{
+    let provider = choose|provider: Id| proj.validated_offers.contains((provider, key));
+    promote_offers_preserves_validated_offer(proj, owner, offers, provider, key);
+}
+
+pub proof fn promote_offers_new_valid_owner_source(
+    proj: Projection,
+    owner: Id,
+    offers: Seq<Id>,
+    id: Id,
+)
+    requires
+        promote_offers(proj, owner, offers).valid.contains(id),
+        !proj.valid.contains(id),
+    ensures id == owner
+    decreases offers.len()
+{
+    if offers.len() == 0 {
+    } else {
+        let after_first = promote_one_offer(proj, owner, offers[0]);
+        if after_first.valid.contains(id) {
+            assert(id == owner);
+        } else {
+            promote_offers_new_valid_owner_source(
+                after_first,
+                owner,
+                offers.subrange(1, offers.len() as int),
+                id,
+            );
+        }
+    }
+}
+
+pub proof fn promote_offers_preserves_valid_memory_provenance(
+    mem: MemIndex,
+    proj: Projection,
+    owner: Id,
+    offers: Seq<Id>,
+)
+    requires
+        valid_facts_have_memory_provenance(mem, proj),
+        mem.facts.contains(owner),
+    ensures valid_facts_have_memory_provenance(mem, promote_offers(proj, owner, offers))
+{
+    assert forall|id: Id|
+        #[trigger] promote_offers(proj, owner, offers).valid.contains(id)
+            implies mem.facts.contains(id)
+    by {
+        if proj.valid.contains(id) {
+            assert(mem.facts.contains(id));
+        } else {
+            promote_offers_new_valid_owner_source(proj, owner, offers, id);
+            assert(id == owner);
+        }
+    }
+}
+
+pub proof fn promote_offers_preserves_validated_context_for_valid_facts(
+    mem: MemIndex,
+    proj: Projection,
+    fact: SpecFact,
+)
+    requires
+        valid_facts_used_validated_context(mem, proj),
+        mem_index_exact_fact_edges(mem, fact),
+        fact_can_project(proj, fact),
+    ensures valid_facts_used_validated_context(mem, promote_offers(proj, fact.id, fact.offers))
+{
+    assert forall|owner: Id, key: Id|
+        #[trigger] mem.needs.contains((owner, key))
+            && promote_offers(proj, fact.id, fact.offers).valid.contains(owner)
+            implies need_satisfied(promote_offers(proj, fact.id, fact.offers), key)
+    by {
+        if proj.valid.contains(owner) {
+            assert(need_satisfied(proj, key));
+            promote_offers_preserves_need_satisfied(proj, fact.id, fact.offers, key);
+        } else {
+            promote_offers_new_valid_owner_source(proj, fact.id, fact.offers, owner);
+            assert(owner == fact.id);
+            assert(mem.needs.contains((fact.id, key)));
+            assert(exists|i: int| 0 <= i < fact.needs.len() && fact.needs[i] == key);
+            let i = choose|i: int| 0 <= i < fact.needs.len() && fact.needs[i] == key;
+            assert(need_satisfied(proj, fact.needs[i]));
+            assert(fact.needs[i] == key);
+            assert(need_satisfied(proj, key));
+            promote_offers_preserves_need_satisfied(proj, fact.id, fact.offers, key);
+        }
+    }
+}
+
 pub proof fn promote_offers_marks_owner_valid(proj: Projection, owner: Id, offers: Seq<Id>)
     ensures promote_offers(proj, owner, offers).valid.contains(owner)
     decreases offers.len()
@@ -284,15 +539,280 @@ pub proof fn project_schedule_preserves_valid_fact(
     }
 }
 
+pub proof fn project_fact_preserves_queues_well_formed(e: EngineState, fact: SpecFact)
+    requires queues_well_formed(e)
+    ensures queues_well_formed(project_fact(e, fact))
+{
+    let pe = project_fact(e, fact);
+    assert(project_queue_well_formed(pe)) by {
+        assert forall|i: int| 0 <= i < pe.to_project.len() implies
+            pe.mem.facts.contains(#[trigger] pe.to_project[i])
+                || seq_contains(pe.to_admit, pe.to_project[i])
+    by {
+        if 0 <= i < pe.to_project.len() {
+            let id = pe.to_project[i];
+            assert(pe.to_project.len() == e.to_project.len());
+            assert(0 <= i < e.to_project.len());
+            assert(id == e.to_project[i]);
+            assert(pe.to_admit =~= e.to_admit);
+            assert(pe.mem.facts =~= e.mem.facts);
+            if e.mem.facts.contains(id) {
+                assert(pe.mem.facts.contains(id));
+            } else {
+                assert(seq_contains(e.to_admit, id));
+                let j = choose|j: int| 0 <= j < e.to_admit.len() && e.to_admit[j] == id;
+                assert(pe.to_admit[j] == id);
+                assert(seq_contains(pe.to_admit, id));
+            }
+        }
+    }
+    }
+
+    assert(need_query_queue_well_formed(pe)) by {
+        assert forall|i: int| 0 <= i < pe.need_queries.len() implies
+            mem_has_need_for(pe.mem, #[trigger] pe.need_queries[i])
+    by {
+        if 0 <= i < pe.need_queries.len() {
+            let key = pe.need_queries[i];
+            assert(pe.need_queries.len() == e.need_queries.len());
+            assert(0 <= i < e.need_queries.len());
+            assert(key == e.need_queries[i]);
+            assert(exists|owner: Id| e.mem.needs.contains((owner, key)));
+            let owner = choose|owner: Id| e.mem.needs.contains((owner, key));
+            assert(pe.mem.needs =~= e.mem.needs);
+            assert(pe.mem.needs.contains((owner, key)));
+            assert(mem_has_need_for(pe.mem, key));
+        }
+    }
+    }
+
+    assert(offer_query_queue_well_formed(pe)) by {
+        assert forall|i: int| 0 <= i < pe.offer_queries.len() implies
+            projection_has_validated_offer_for(pe.projection, #[trigger] pe.offer_queries[i])
+    by {
+        if 0 <= i < pe.offer_queries.len() {
+            let key = pe.offer_queries[i];
+            assert(pe.offer_queries.len() == e.offer_queries.len());
+            assert(0 <= i < e.offer_queries.len());
+            assert(key == e.offer_queries[i]);
+            assert(exists|owner: Id| e.projection.validated_offers.contains((owner, key)));
+            let owner = choose|owner: Id| e.projection.validated_offers.contains((owner, key));
+            if fact_can_project(e.projection, fact) {
+                assert(pe.projection.validated_offers
+                    =~= promote_offers(e.projection, fact.id, fact.offers).validated_offers);
+                promote_offers_preserves_validated_offer(
+                    e.projection,
+                    fact.id,
+                    fact.offers,
+                    owner,
+                    key,
+                );
+                assert(pe.projection.validated_offers.contains((owner, key)));
+            } else {
+                assert(pe.projection.validated_offers.contains((owner, key)));
+            }
+            assert(projection_has_validated_offer_for(pe.projection, key));
+        }
+    }
+    }
+    assert(queues_well_formed(pe));
+}
+
 pub proof fn project_fact_preserves_engine_invariant(e: EngineState, fact: SpecFact)
     requires
         engine_invariant(e),
-        mem_index_admits_fact(e.mem, fact),
+        mem_index_exact_fact_edges(e.mem, fact),
     ensures engine_invariant(project_fact(e, fact))
 {
     if fact_can_project(e.projection, fact) {
         promote_offers_preserves_context_sound(e.projection, fact.id, fact.offers);
         promote_offers_records_offer_provenance(e.mem, e.projection, fact.id, fact.offers);
+        promote_offers_preserves_valid_memory_provenance(
+            e.mem,
+            e.projection,
+            fact.id,
+            fact.offers,
+        );
+        promote_offers_preserves_validated_context_for_valid_facts(e.mem, e.projection, fact);
+    }
+    project_fact_preserves_queues_well_formed(e, fact);
+}
+
+pub proof fn same_projection_preserves_need_satisfied(
+    left: Projection,
+    right: Projection,
+    key: Id,
+)
+    requires
+        same_projection(left, right),
+        need_satisfied(left, key),
+    ensures need_satisfied(right, key)
+{
+    let owner = choose|owner: Id| left.validated_offers.contains((owner, key));
+    assert(right.validated_offers.contains((owner, key)));
+}
+
+pub proof fn same_state_preserves_engine_invariant(e: EngineState, next: EngineState)
+    requires
+        engine_invariant(e),
+        same_mem(next.mem, e.mem),
+        same_projection(next.projection, e.projection),
+        queues_well_formed(next),
+    ensures engine_invariant(next)
+{
+    assert forall|owner: Id, key: Id|
+        next.projection.validated_offers.contains((owner, key))
+            implies next.projection.valid.contains(owner)
+    by {
+        assert(e.projection.validated_offers.contains((owner, key)));
+        assert(e.projection.valid.contains(owner));
+    }
+
+    assert forall|owner: Id, key: Id|
+        next.projection.validated_offers.contains((owner, key))
+            implies #[trigger] next.mem.offers.contains((owner, key))
+    by {
+        assert(e.projection.validated_offers.contains((owner, key)));
+        assert(e.mem.offers.contains((owner, key)));
+    }
+
+    assert forall|id: Id|
+        #[trigger] next.projection.valid.contains(id) implies next.mem.facts.contains(id)
+    by {
+        assert(e.projection.valid.contains(id));
+        assert(e.mem.facts.contains(id));
+    }
+
+    assert forall|owner: Id, key: Id|
+        #[trigger] next.mem.needs.contains((owner, key)) && next.projection.valid.contains(owner)
+            implies need_satisfied(next.projection, key)
+    by {
+        assert(e.mem.needs.contains((owner, key)));
+        assert(e.projection.valid.contains(owner));
+        assert(need_satisfied(e.projection, key));
+        same_projection_preserves_need_satisfied(e.projection, next.projection, key);
+    }
+}
+
+pub proof fn admit_step_preserves_engine_invariant(
+    e: EngineState,
+    fact: SpecFact,
+    next: EngineState,
+)
+    requires
+        engine_invariant(e),
+        admit_step(e, fact, next),
+    ensures engine_invariant(next)
+{
+    assert forall|owner: Id, key: Id|
+        next.projection.validated_offers.contains((owner, key))
+            implies next.projection.valid.contains(owner)
+    by {
+        assert(e.projection.validated_offers.contains((owner, key)));
+        assert(e.projection.valid.contains(owner));
+    }
+
+    assert forall|owner: Id, key: Id|
+        next.projection.validated_offers.contains((owner, key))
+            implies #[trigger] next.mem.offers.contains((owner, key))
+    by {
+        assert(e.projection.validated_offers.contains((owner, key)));
+        assert(e.mem.offers.contains((owner, key)));
+        assert(next.mem.offers.contains((owner, key)));
+    }
+
+    assert forall|id: Id|
+        #[trigger] next.projection.valid.contains(id) implies next.mem.facts.contains(id)
+    by {
+        assert(e.projection.valid.contains(id));
+        assert(e.mem.facts.contains(id));
+        assert(next.mem.facts.contains(id));
+    }
+
+    assert forall|owner: Id, key: Id|
+        #[trigger] next.mem.needs.contains((owner, key)) && next.projection.valid.contains(owner)
+            implies need_satisfied(next.projection, key)
+    by {
+        assert(e.projection.valid.contains(owner));
+        assert(e.mem.needs.contains((owner, key)));
+        assert(need_satisfied(e.projection, key));
+        same_projection_preserves_need_satisfied(e.projection, next.projection, key);
+    }
+}
+
+pub proof fn project_step_preserves_engine_invariant(
+    e: EngineState,
+    fact: SpecFact,
+    next: EngineState,
+)
+    requires
+        engine_invariant(e),
+        project_step(e, fact, next),
+    ensures engine_invariant(next)
+{
+    let projected = project_fact(e, fact);
+    project_fact_preserves_engine_invariant(e, fact);
+    assert(same_mem(next.mem, projected.mem));
+    assert(same_projection(next.projection, projected.projection));
+    same_state_preserves_engine_invariant(projected, next);
+}
+
+pub proof fn engine_step_preserves_engine_invariant(
+    e: EngineState,
+    event: EngineEvent,
+    next: EngineState,
+)
+    requires
+        engine_invariant(e),
+        engine_step(e, event, next),
+    ensures engine_invariant(next)
+{
+    match event {
+        EngineEvent::Admit(fact) => {
+            admit_step_preserves_engine_invariant(e, fact, next);
+        },
+        EngineEvent::NeedQuery(_) => {
+            same_state_preserves_engine_invariant(e, next);
+        },
+        EngineEvent::Project(fact) => {
+            project_step_preserves_engine_invariant(e, fact, next);
+        },
+        EngineEvent::OfferQuery(_) => {
+            same_state_preserves_engine_invariant(e, next);
+        },
+    }
+}
+
+pub proof fn engine_run_preserves_engine_invariant(
+    states: Seq<EngineState>,
+    events: Seq<EngineEvent>,
+)
+    requires
+        engine_run(states, events),
+        engine_invariant(states[0]),
+    ensures
+        forall|i: int| 0 <= i < states.len() ==>
+            engine_invariant(#[trigger] states[i]),
+    decreases events.len()
+{
+    if events.len() == 0 {
+        assert(states.len() == 1);
+    } else {
+        assert(states.len() == events.len() + 1);
+        engine_step_preserves_engine_invariant(states[0], events[0], states[1]);
+        let tail_states = states.subrange(1, states.len() as int);
+        let tail_events = events.subrange(1, events.len() as int);
+        assert(tail_states[0] == states[1]);
+        engine_run_preserves_engine_invariant(tail_states, tail_events);
+        assert forall|i: int| 0 <= i < states.len() implies
+            engine_invariant(#[trigger] states[i])
+        by {
+            if i == 0 {
+            } else {
+                assert(0 <= i - 1 < tail_states.len());
+                assert(tail_states[i - 1] == states[i]);
+            }
+        }
     }
 }
 
