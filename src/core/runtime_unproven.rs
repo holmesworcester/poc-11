@@ -5,13 +5,13 @@
 //! peers and reconciles a volatile sent-set each turn (recurrence = liveness).
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Network frames are untrusted until a fact-family codec accepts them and
-//!       core admission records their content-addressed identity.
+//! Invariant owner: IO adapter isolation.
+//! - [ ] Network frames enter core only through fact-family decode followed by
+//!       core admission.
 //! - [ ] Rejected frames are dropped without changing core fact or validity state.
-//! - [ ] Runtime transport never validates or projects facts directly; reads
-//!       derive validity through replay/projection.
-//! - [ ] Egress sends persisted fact bytes only; successful send, failed send, and
-//!       wall-clock time do not influence validity.
+//! - [ ] Runtime transport never validates or projects facts directly.
+//! - [ ] Successful send, failed send, and wall-clock time do not influence
+//!       validity.
 use std::collections::HashSet;
 use std::io::Write;
 use std::net::TcpListener;

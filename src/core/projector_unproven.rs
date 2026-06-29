@@ -5,16 +5,15 @@
 //! the daemon's workers hold an [`super::index::Index`].
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Codec canonicality: each fact family accepts exactly the canonical byte
-//!       forms it is willing to give semantic meaning.
-//! - [ ] Extraction is content-pure: persisted needs/offers are determined by the
-//!       fact body alone, not by storage, clocks, peers, or validation state.
-//! - [ ] Durability is content-pure: whether bytes are persisted does not depend
-//!       on which peer or command supplied them.
-//! - [ ] Projection is confined: it can inspect only the admitted fact, validated
-//!       context, and the family-private state it owns.
-//! - [ ] Core proves where context came from; each fact family proves what that
-//!       context means for its own validity rules.
+//! Invariant owner: generic fact-family interface contract.
+//! - [ ] Each implementation accepts exactly the canonical byte forms it is
+//!       willing to give semantic meaning.
+//! - [ ] Extraction and durability are content-pure: they depend on the fact body,
+//!       not storage, clocks, peers, or validation state.
+//! - [ ] Projection is confined to the admitted fact, validated context, and the
+//!       family-private state it owns.
+//! - [ ] Core proves where context came from; each fact-family implementation
+//!       proves what that context means for its own validity rules.
 use super::admit::Admitted;
 use super::offer::Offer;
 use super::typestate::{Asserted, Context, Validity};

@@ -2,13 +2,13 @@
 //! unproven, but they make the storage boundary explicit.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Helper effects can request only raw facts or asserted-edge lookups; they
-//!       cannot request validated state.
-//! - [ ] Helper results are untrusted observations until the turn layer feeds
-//!       them through decode, admission, or query-result handling.
-//! - [ ] Missing, malformed, or failed helper results cannot create validity.
-//! - [ ] No effect request or result can carry `Validity`, `Context`, or
-//!       `Offer<Validated>` across the helper boundary.
+//! Invariant owner: helper boundary data shape.
+//! - [ ] Effect requests can ask helpers only for raw fact bytes or asserted-edge
+//!       lookup results.
+//! - [ ] Effect results carry only untrusted bytes, ids, and addresses.
+//! - [ ] `Validity`, `Context`, and `Offer<Validated>` never cross the helper
+//!       boundary in an effect payload.
+//! - [ ] Safety of interpreting helper results belongs to `core::turn`.
 use super::engine::EdgeAddr;
 use super::item::FactId;
 

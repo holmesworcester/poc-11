@@ -18,6 +18,7 @@
 //!   only pass explicit parameters into `link_from_params`.
 //!
 //! Invariant checklist (Verus):
+//! Invariant owner: link-family semantics and its `Projector` implementation.
 //! - [ ] Canonical link identity: accepted link bytes decode to exactly one
 //!       semantic `Link`, re-encode to the same bytes, and derive the link id from
 //!       those bytes.
@@ -32,9 +33,9 @@
 //! - [ ] Root/domain migration: once links carry a root/domain id, roots emit
 //!       `valid_link(self,self)`, children require `valid_link(parent, root)`, and
 //!       cross-root splices are invalid.
-//! - [ ] Composition with core: because context offers have valid owners, every
-//!       valid child link has a valid same-domain parent chain to an anchor; no
-//!       theorem here claims anchor uniqueness.
+//! - [ ] Composition with core: using `core::engine` validated-context
+//!       provenance, every valid child link has a valid same-domain parent chain
+//!       to an anchor; no theorem here claims anchor uniqueness.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;

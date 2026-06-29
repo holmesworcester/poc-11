@@ -7,16 +7,16 @@
 //! indexed in memory, but their already-persisted bytes/edges are not re-written.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Replay starts from chosen seeds but may pull the transitive dependency
-//!       closure through persisted need-to-offer matches.
-//! - [ ] Replay is read-only with respect to durable storage: stored facts can be
-//!       decoded into memory, but their bytes and asserted edges are not rewritten.
-//! - [ ] Wake starts from newly available facts and cascades only through stored
-//!       or in-memory needers that match validated offers.
-//! - [ ] A successful replay/wake report reflects the engine state after the work
-//!       queue drains; if bounded draining leaves pending work, it reports error.
-//! - [ ] Replay/wake safety is inherited from the per-turn engine invariant for
-//!       every prefix of the drain.
+//! Invariant owner: replay/wake API semantics.
+//! - [ ] Replay seeds schedule admission work only; validity comes from the
+//!       engine drain they trigger.
+//! - [ ] Replay may discover the dependency closure through need-to-offer lookup,
+//!       but it does not rewrite already-persisted facts or asserted edges.
+//! - [ ] Wake schedules work from newly available facts through matching needers.
+//! - [ ] Successful replay/wake results report the engine validity map after the
+//!       work queue drains; bounded drain exhaustion is an error.
+//! - [ ] Soundness of each drain prefix belongs to `core::engine` and
+//!       `core::turn`.
 
 use std::collections::HashMap;
 

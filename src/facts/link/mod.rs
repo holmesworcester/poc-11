@@ -14,6 +14,7 @@
 //!   tests in `tests/documentation.rs`.
 //!
 //! Invariant checklist (Verus):
+//! Invariant owner: link family module shape.
 //! - [ ] All link-specific meaning lives in `project`.
 //! - [ ] App/report modules cannot define link semantics or proof evidence.
 //! - [ ] This module is re-export-only; it adds no behavior to prove.

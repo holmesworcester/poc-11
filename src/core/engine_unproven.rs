@@ -10,20 +10,22 @@
 //! crate that this engine calls as ordinary Rust.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Content-addressed memory: every in-memory fact is stored under the id of
-//!       canonical bytes accepted by its fact-family codec.
-//! - [ ] Persisted edges are discovery only: loading facts or query results can
-//!       enqueue work, but cannot mark a fact valid or promote an offer.
-//! - [ ] Ready context: a projector receives only validated offers whose
-//!       addresses match needs asserted by the fact being projected.
-//! - [ ] Validated-offer provenance: every offer in validated context is owned by
-//!       a fact already projected valid and was asserted by that same owner.
-//! - [ ] No duplicated authority: one owner can contribute at most one validated
-//!       offer for a given match address.
-//! - [ ] Emission does not inherit authority: emitted bytes re-enter decode,
-//!       admission, and projection before they can become valid.
-//! - [ ] Ongoing safety: every admit/query/project/wake queue step preserves
-//!       these invariants, so every prefix of a drain is sound.
+//! Invariant owner: validated-context provenance and ongoing engine safety.
+//! - [ ] Loaded facts and query results can schedule work, but they cannot mark a
+//!       fact valid or promote an offer.
+//! - [ ] A projector receives only validated offers whose addresses match needs
+//!       asserted by the fact being projected.
+//! - [ ] Every validated offer is owned by a fact already projected valid and was
+//!       asserted by that same owner.
+//! - [ ] One owner contributes at most one validated offer for a given match
+//!       address.
+//! - [ ] Emitted bytes do not inherit authority; they must re-enter decode,
+//!       admission, and projection before becoming valid.
+//! - [ ] Every admit/query/project/wake step preserves these invariants, so every
+//!       prefix of a drain is sound.
+//! - [ ] This proof depends on `core::item` for fact-id meaning, `core::offer` and
+//!       `core::typestate` for representation gates, and each fact-family
+//!       projector for codec/extraction/projection contracts.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 

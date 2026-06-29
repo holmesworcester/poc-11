@@ -10,6 +10,7 @@
 //! - CLI output is display text. It is not proof evidence.
 //!
 //! Invariant checklist (Verus):
+//! Invariant owner: link CLI adapter boundary.
 //! - [ ] CLI input is not proof evidence; it only chooses parameters for the
 //!       project-owned link constructor.
 //! - [ ] CLI admission goes through core admission; it never writes fact bytes or

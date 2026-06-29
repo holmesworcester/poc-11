@@ -5,13 +5,12 @@
 //! `Offer<Validated>`, so a projector physically cannot read unvalidated context.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Projectors can read only validated context, never persisted asserted
-//!       edges directly.
+//! Invariant owner: validated context representation.
+//! - [ ] `Context` can contain only `Offer<Validated>`.
 //! - [ ] Unvalidated persisted edges cannot be placed in `Context`.
 //! - [ ] `has_offer` answers only whether an exact validated match address is
 //!       present; it does not inspect fact bodies or storage.
-//! - [ ] Provenance of context contents is an engine theorem: every context offer
-//!       came from a valid owner fact.
+//! - [ ] Provenance of context contents belongs to `core::engine`.
 use super::offer::{Key, Offer, Role};
 
 /// The result of validating one item.

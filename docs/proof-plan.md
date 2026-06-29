@@ -89,6 +89,29 @@ and no validity created by IO/storage/reporting. Avoid checklists that are only
 call traces such as "function X calls function Y"; those details belong in Verus
 specs, Rust tests, or contract tests under the named invariant.
 
+## Invariant Responsibility
+
+Each invariant has one proof owner. Other files may depend on that theorem or
+prove a narrow local preservation rule, but they should not restate the theorem
+as if it were their own.
+
+| Owner | Responsibility |
+| --- | --- |
+| `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
+| `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
+| `facts::link::project` | Link-family implementation of the projector contract and link-specific validity/root/domain theorems. |
+| `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
+| `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
+| `core::admit` | Asserted-only ingress for new/local facts; admission never creates validity. |
+| `core::index` | Durable storage lookup contract for persisted facts and asserted edges. |
+| `core::engine` | Validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety. |
+| `core::effects` | Helper boundary data shape; helper effects carry no validated state. |
+| `core::turn` | Deterministic turn scheduling and effect-result application into the engine. |
+| `core::play` | Replay/wake API semantics over the turn/engine invariants. |
+| `core::runtime` | IO adapter isolation; network, clock, and send outcomes do not create validity. |
+| `facts::link::api` | Reporting boundary; reports are observations, not proof evidence. |
+| `facts::link::cli` | CLI adapter boundary; user input chooses constructor parameters only. |
+
 The composition theorem is:
 
 ```text

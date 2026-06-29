@@ -2,14 +2,15 @@
 //! [`crate::helpers::sqlite_unproven`].
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Stored facts are content-addressed: loading id `x` can return only bytes
-//!       whose hash is `x`.
-//! - [ ] Stored asserted edges are routing hints for their owner; storage never
-//!       turns them into authority or validity.
-//! - [ ] Need/offer lookup is exact: returned owners have a stored asserted edge
-//!       with the requested direction and match address.
-//! - [ ] Window selection is only a replay seed choice; no validity theorem can
-//!       depend on recency, ordering, or inclusion in the window.
+//! Invariant owner: durable storage lookup contract.
+//! - [ ] Loading a fact returns only bytes stored for the requested fact id; the
+//!       engine rechecks content addressing before admitting them to memory.
+//! - [ ] Need/offer queries return only owners with stored asserted edges at the
+//!       requested direction and match address.
+//! - [ ] Stored asserted edges remain discovery hints; storage never creates
+//!       `Validity`, `Context`, or `Offer<Validated>`.
+//! - [ ] Window selection is only a replay seed choice; validity cannot depend on
+//!       recency, ordering, or inclusion in the window.
 use super::item::FactId;
 use super::offer::{Key, Offer, Role, Scope};
 use super::typestate::Asserted;

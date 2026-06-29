@@ -8,15 +8,16 @@
 //! key, and any value is read from the fact body at project time.
 //!
 //! Invariant checklist (Verus):
+//! Invariant owner: edge representation and promotion shape.
 //! - [ ] Asserted needs/offers are routing claims, not proof that their owner is
 //!       valid or authorized.
 //! - [ ] Matching depends only on `(role, scope, key)`; dependency discovery
 //!       cannot smuggle fact body data through the edge index.
-//! - [ ] Only offers, never needs, can become validated context.
+//! - [ ] Only offers, never needs, have a representation that can be promoted to
+//!       validated context.
 //! - [ ] Promotion preserves the asserted edge's address and metadata; it adds no
 //!       new authority payload.
-//! - [ ] Only the core engine may promote an asserted offer, after proving the
-//!       owner fact is valid.
+//! - [ ] The authority to call promotion belongs to `core::engine`.
 use std::marker::PhantomData;
 
 use super::typestate::{Asserted, Validated};

@@ -5,18 +5,17 @@
 //! without writing bytes or edges back to persistence.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Content-addressed identity: an admitted fact is named only by the hash
-//!       of its canonical bytes; no network peer, CLI command, or storage row can
-//!       choose a different id.
-//! - [ ] Asserted-edge honesty: the dirty routing hints stored for a fact are
-//!       exactly the fact family's extraction output for that fact.
-//! - [ ] Durability policy: bytes are persisted only when the fact family's
-//!       content-pure durability decision says this item is durable.
-//! - [ ] Admission is not validation: admitting or persisting a fact creates no
-//!       validated context, validated offer, or validity claim.
-//! - [ ] Core-only admission tokens: any in-memory admitted token not produced by
-//!       this storage-writing path must separately preserve the same id/body
-//!       relation before projection.
+//! Invariant owner: asserted-only ingress for new/local facts.
+//! - [ ] Admission creates an `Admitted` token and asserted storage state only; it
+//!       creates no validity, validated offer, or validated context.
+//! - [ ] The admitted token's id/body relation is derived from `core::item`
+//!       content addressing and the fact family's canonical encoder.
+//! - [ ] Stored asserted edges are exactly the fact family's extraction output;
+//!       extraction exactness is proved by the fact-family projector.
+//! - [ ] Fact bytes are flushed only when the fact-family durability predicate
+//!       says this item is durable.
+//! - [ ] Any non-storage admission path inside core must preserve the same
+//!       id/body relation before projection.
 use super::index::Index;
 use super::item::{fact_id, FactId};
 use super::projector::Projector;

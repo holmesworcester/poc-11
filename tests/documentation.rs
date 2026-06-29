@@ -73,6 +73,9 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Link proofs live in `src/facts/link/project.rs` because only the link family defines what roots, parents, and ancestry mean",
         "Source-file invariant checklists should state user-significant or threat-model-significant properties first",
         "Avoid checklists that are only call traces",
+        "Each invariant has one proof owner",
+        "`core::engine` | Validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety.",
+        "`facts::link::project` | Link-family implementation of the projector contract and link-specific validity/root/domain theorems.",
         "Multiple anchors are allowed; the starter model does not prove global root uniqueness",
         "valid_link(link_id, root_id)",
         "no cross-root splice validates",
@@ -126,15 +129,19 @@ fn proof_target_files_have_verus_invariant_checklists() {
             text.contains("Invariant checklist (Verus):"),
             "{file} is missing its Verus invariant checklist"
         );
+        assert!(
+            text.contains("Invariant owner:"),
+            "{file} must name the single proof owner for its checklist"
+        );
     }
 
     let engine = normalize_whitespace(&source_text(&root.join("src/core/engine_unproven.rs")));
     for required in [
-        "Persisted edges are discovery only",
-        "Ready context: a projector receives only validated offers",
-        "Validated-offer provenance: every offer in validated context is owned by a fact already projected valid",
+        "Invariant owner: validated-context provenance and ongoing engine safety",
+        "A projector receives only validated offers",
+        "Every validated offer is owned by a fact already projected valid",
         "Emission does not inherit authority",
-        "Ongoing safety: every admit/query/project/wake queue step preserves these invariants",
+        "This proof depends on `core::item`",
     ] {
         assert!(
             engine.contains(required),
@@ -144,10 +151,10 @@ fn proof_target_files_have_verus_invariant_checklists() {
 
     let admit = normalize_whitespace(&source_text(&root.join("src/core/admit_unproven.rs")));
     for required in [
-        "Content-addressed identity",
-        "Asserted-edge honesty",
-        "Durability policy",
-        "Admission is not validation",
+        "Invariant owner: asserted-only ingress for new/local facts",
+        "creates no validity, validated offer, or validated context",
+        "The admitted token's id/body relation is derived from `core::item`",
+        "extraction exactness is proved by the fact-family projector",
     ] {
         assert!(
             admit.contains(required),
@@ -159,12 +166,14 @@ fn proof_target_files_have_verus_invariant_checklists() {
         &root.join("src/facts/link/project_unproven.rs"),
     ));
     for required in [
+        "Invariant owner: link-family semantics and its `Projector` implementation",
         "Canonical link identity",
         "Project-owned construction",
         "Extraction honesty",
         "Starter validity rule",
         "Root/domain migration",
         "Composition with core",
+        "using `core::engine` validated-context provenance",
         "valid same-domain parent chain to an anchor",
         "no theorem here claims anchor uniqueness",
     ] {

@@ -12,6 +12,7 @@
 //!   used as inputs to core validity or link projection theorems.
 //!
 //! Invariant checklist (Verus):
+//! Invariant owner: link reporting boundary.
 //! - [ ] Reports are observations for users; they are never authority for
 //!       projection or future validation.
 //! - [ ] Chain walking follows decoded `prev` links from persisted bytes and stops
