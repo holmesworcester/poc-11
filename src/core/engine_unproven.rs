@@ -11,6 +11,8 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: validated-context provenance and ongoing engine safety.
+//! - [ ] Every in-memory fact is paired with the id derived from its canonical
+//!       bytes before `Admitted::from_parts` may be used for projection.
 //! - [ ] Loaded facts and query results can schedule work, but they cannot mark a
 //!       fact valid or promote an offer.
 //! - [ ] A projector receives only validated offers whose addresses match needs

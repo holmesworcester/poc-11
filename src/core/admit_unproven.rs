@@ -14,8 +14,6 @@
 //!       extraction exactness is proved by the fact-family projector.
 //! - [ ] Fact bytes are requested to be written to durable storage only when the
 //!       fact-family durability predicate says this item is durable.
-//! - [ ] Any non-storage admission path inside core must preserve the same
-//!       id/body relation before projection.
 use super::index::Index;
 use super::item::{fact_id, FactId};
 use super::projector::Projector;

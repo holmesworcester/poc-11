@@ -105,7 +105,7 @@ as if it were their own.
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |
 | `core::index` | Durable storage lookup contract for persisted facts and asserted edges. |
-| `core::engine` | Validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety. |
+| `core::engine` | In-memory id/body relation, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety. |
 | `core::effects` | Helper boundary data shape; helper effects carry no validated state. |
 | `core::turn` | Deterministic turn scheduling and effect-result application into the engine. |
 | `core::play` | Replay/wake API semantics over the turn/engine invariants. |

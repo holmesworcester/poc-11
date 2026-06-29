@@ -138,6 +138,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
     let engine = normalize_whitespace(&source_text(&root.join("src/core/engine_unproven.rs")));
     for required in [
         "Owned invariant: validated-context provenance and ongoing engine safety",
+        "Every in-memory fact is paired with the id derived from its canonical bytes",
         "A projector receives only validated offers",
         "Every validated offer is owned by a fact already projected valid",
         "Emission does not inherit authority",
