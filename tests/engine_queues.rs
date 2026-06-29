@@ -1,9 +1,11 @@
 use linktoy::core::admit::admit;
 use linktoy::core::admit::Admitted;
+use linktoy::core::effects::{EffectRequest, EffectResult};
 use linktoy::core::engine::{EdgeAddr, EngineState, Storage};
 use linktoy::core::item::{fact_id, FactId};
 use linktoy::core::offer::{Key, Offer, Role};
 use linktoy::core::projector::{EmittedFact, ProjectOutcome, Projector};
+use linktoy::core::turn::{self, TurnOutcome};
 use linktoy::core::typestate::{Asserted, Context, Validity};
 use linktoy::facts::link::{Link, LinkProjector, LINK};
 use linktoy::helpers::sqlite_unproven::SqliteIndex;
@@ -59,7 +61,7 @@ fn demand_for_head_pulls_stored_parent_chain_into_memory() {
 
     let mut engine = EngineState::<LinkProjector>::new();
     engine.enqueue_admit(head_id);
-    let steps = engine.drain(&idx, 100).unwrap();
+    let steps = turn::drain(&mut engine, &idx, 100).unwrap();
 
     assert!(steps > 0);
     assert_eq!(engine.mem.len(), 3);
@@ -83,14 +85,14 @@ fn later_in_memory_parent_admission_wakes_stored_child() {
 
     let mut engine = EngineState::<LinkProjector>::new();
     engine.enqueue_admit(child_id);
-    engine.drain(&idx, 100).unwrap();
+    turn::drain(&mut engine, &idx, 100).unwrap();
 
     assert_eq!(engine.mem.len(), 1);
     assert_eq!(engine.validity.get(&child_id), Some(&Validity::Invalid));
 
     let admitted_root = engine.admit_item(root);
     assert_eq!(admitted_root, root_id);
-    engine.drain(&idx, 100).unwrap();
+    turn::drain(&mut engine, &idx, 100).unwrap();
 
     assert_eq!(engine.mem.len(), 2);
     assert_valid(&engine, root_id);
@@ -110,12 +112,12 @@ fn requeueing_valid_fact_does_not_duplicate_validated_offers() {
 
     let mut engine = EngineState::<LinkProjector>::new();
     engine.enqueue_admit(root_id);
-    engine.drain(&idx, 100).unwrap();
+    turn::drain(&mut engine, &idx, 100).unwrap();
     assert_valid(&engine, root_id);
     assert_eq!(engine.validated.len(), 1);
 
     engine.enqueue_project(root_id);
-    engine.drain(&idx, 100).unwrap();
+    turn::drain(&mut engine, &idx, 100).unwrap();
 
     assert_valid(&engine, root_id);
     assert_eq!(
@@ -199,7 +201,7 @@ fn emitted_facts_reenter_the_in_memory_worklist() {
     let seed_id = engine.admit_item(EmitItem(0));
     let emitted_id = fact_id(&EmitProjector::encode(&EmitItem(1)));
 
-    engine.drain(&EmptyStorage, 100).unwrap();
+    turn::drain(&mut engine, &EmptyStorage, 100).unwrap();
 
     assert!(engine.mem.contains(&seed_id));
     assert!(engine.mem.contains(&emitted_id));
@@ -296,7 +298,7 @@ fn unmet_need_is_rejected_before_projector_can_mutate_state() {
         offer: offered,
     });
 
-    engine.drain(&EmptyStorage, 100).unwrap();
+    turn::drain(&mut engine, &EmptyStorage, 100).unwrap();
 
     assert_eq!(engine.validity.get(&id), Some(&Validity::Invalid));
     assert_eq!(engine.projector_state.calls, 0);
@@ -309,7 +311,7 @@ fn same_key_with_wrong_role_does_not_satisfy_verified_readiness() {
     let child_offer = Key([10; 32]);
     let mut engine = EngineState::<GateProjector>::new();
     let provider = engine.admit_item(GateItem::ProviderRoleB { key: shared_key });
-    engine.drain(&EmptyStorage, 100).unwrap();
+    turn::drain(&mut engine, &EmptyStorage, 100).unwrap();
 
     assert_eq!(engine.validity.get(&provider), Some(&Validity::Valid));
     assert_eq!(engine.validated.len(), 1);
@@ -320,7 +322,7 @@ fn same_key_with_wrong_role_does_not_satisfy_verified_readiness() {
         key: shared_key,
         offer: child_offer,
     });
-    engine.drain(&EmptyStorage, 100).unwrap();
+    turn::drain(&mut engine, &EmptyStorage, 100).unwrap();
 
     assert_eq!(engine.validity.get(&needer), Some(&Validity::Invalid));
     assert_eq!(
@@ -336,10 +338,42 @@ fn invalid_projection_output_does_not_emit_facts() {
     let seed = engine.admit_item(GateItem::InvalidEmitter);
     let emitted = fact_id(&GateProjector::encode(&GateItem::Emitted));
 
-    engine.drain(&EmptyStorage, 100).unwrap();
+    turn::drain(&mut engine, &EmptyStorage, 100).unwrap();
 
     assert_eq!(engine.validity.get(&seed), Some(&Validity::Invalid));
     assert_eq!(engine.projector_state.calls, 1);
     assert!(engine.mem.contains(&seed));
     assert!(!engine.mem.contains(&emitted));
+}
+
+#[test]
+fn turn_exposes_load_fact_effect_before_storage_is_interpreted() {
+    let root = link("root", None);
+    let root_id = link_id(&root);
+    let mut engine = EngineState::<LinkProjector>::new();
+    engine.enqueue_admit(root_id);
+
+    let first = turn::turn(&mut engine).unwrap();
+    assert_eq!(first, TurnOutcome::Effect(EffectRequest::LoadFact(root_id)));
+    assert_eq!(engine.pending_admit_len(), 0);
+    assert!(!engine.mem.contains(&root_id));
+
+    turn::apply_effect(
+        &mut engine,
+        EffectResult::FactLoaded {
+            id: root_id,
+            bytes: Some(LinkProjector::encode(&root)),
+        },
+    )
+    .unwrap();
+
+    let second = turn::turn(&mut engine).unwrap();
+    assert_eq!(
+        second,
+        TurnOutcome::Projected {
+            id: root_id,
+            validity: Some(Validity::Valid),
+        }
+    );
+    assert_eq!(engine.validity.get(&root_id), Some(&Validity::Valid));
 }

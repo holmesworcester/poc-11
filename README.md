@@ -36,7 +36,7 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
 
 | path | role |
 |------|------|
-| `src/core/` | proof-targeted generic runtime/playback API, currently backed by `_unproven` implementation files |
+| `src/core/` | proof-targeted generic runtime/playback API; `effects_unproven` and `turn_unproven` stage the deterministic turn proof surface |
 | `src/facts/link/` | **link fact family**: `project_unproven` holds codec/extract/project; `author_unproven`, `api_unproven`, and `cli_unproven` hold storage/app-facing pieces |
 | `src/helpers/` | narrow trusted helper/effect boundaries: crypto, hex, clock, SQLite, and TCP framing |
 | `src/cli_unproven.rs` | thin app layer wiring the link fact family into the core runtime |

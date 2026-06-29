@@ -12,6 +12,7 @@ use super::engine::EngineState;
 use super::index::Index;
 use super::item::FactId;
 use super::projector::Projector;
+use super::turn;
 use super::typestate::Validity;
 use crate::helpers::hex_unproven::to_hex;
 
@@ -59,7 +60,7 @@ where
     }
 
     fn drain(&mut self) -> Result<usize, String> {
-        let steps = self.engine.drain(self.idx, self.max_steps)?;
+        let steps = turn::drain(&mut self.engine, self.idx, self.max_steps)?;
         if self.engine.has_pending_work() {
             return Err(format!(
                 "replay did not drain within {} engine steps",

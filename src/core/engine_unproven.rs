@@ -226,10 +226,19 @@ where
         id: FactId,
         storage: &S,
     ) -> Result<bool, String> {
+        let bytes = storage.load_fact(&id)?;
+        self.admit_loaded_fact(id, bytes)
+    }
+
+    pub fn admit_loaded_fact(
+        &mut self,
+        id: FactId,
+        bytes: Option<Vec<u8>>,
+    ) -> Result<bool, String> {
         if self.mem.contains(&id) {
             return Ok(false);
         }
-        let Some(bytes) = storage.load_fact(&id)? else {
+        let Some(bytes) = bytes else {
             return Ok(false);
         };
         if fact_id(&bytes) != id {
@@ -333,39 +342,6 @@ where
         Ok(Some(effective_validity))
     }
 
-    pub fn drain<S: Storage + ?Sized>(
-        &mut self,
-        storage: &S,
-        max_steps: usize,
-    ) -> Result<usize, String> {
-        let mut steps = 0;
-        while steps < max_steps {
-            if let Some(id) = self.to_admit.pop_front() {
-                self.queued_admit.remove(&id);
-                self.admit_from_storage(id, storage)?;
-            } else if let Some(addr) = self.need_queries.pop_front() {
-                self.queued_need_queries.remove(&addr);
-                for id in storage.offerers_for(addr)? {
-                    self.enqueue_admit(id);
-                    self.enqueue_project_if_unseen(id);
-                }
-            } else if let Some(id) = self.to_project.pop_front() {
-                self.queued_project.remove(&id);
-                self.project_one(id)?;
-            } else if let Some(addr) = self.offer_queries.pop_front() {
-                self.queued_offer_queries.remove(&addr);
-                for id in storage.needers_for(addr)? {
-                    self.enqueue_admit(id);
-                    self.enqueue_project_if_not_valid(id);
-                }
-            } else {
-                break;
-            }
-            steps += 1;
-        }
-        Ok(steps)
-    }
-
     pub fn has_pending_work(&self) -> bool {
         !self.to_admit.is_empty()
             || !self.to_project.is_empty()
@@ -394,6 +370,44 @@ where
     fn enqueue_project_if_not_valid(&mut self, id: FactId) {
         if self.validity.get(&id) != Some(&Validity::Valid) {
             self.enqueue_project(id);
+        }
+    }
+
+    pub(crate) fn pop_admit_request(&mut self) -> Option<FactId> {
+        let id = self.to_admit.pop_front()?;
+        self.queued_admit.remove(&id);
+        Some(id)
+    }
+
+    pub(crate) fn pop_need_query_request(&mut self) -> Option<EdgeAddr> {
+        let addr = self.need_queries.pop_front()?;
+        self.queued_need_queries.remove(&addr);
+        Some(addr)
+    }
+
+    pub(crate) fn pop_project_request(&mut self) -> Option<FactId> {
+        let id = self.to_project.pop_front()?;
+        self.queued_project.remove(&id);
+        Some(id)
+    }
+
+    pub(crate) fn pop_offer_query_request(&mut self) -> Option<EdgeAddr> {
+        let addr = self.offer_queries.pop_front()?;
+        self.queued_offer_queries.remove(&addr);
+        Some(addr)
+    }
+
+    pub(crate) fn enqueue_loaded_offerers(&mut self, ids: Vec<FactId>) {
+        for id in ids {
+            self.enqueue_admit(id);
+            self.enqueue_project_if_unseen(id);
+        }
+    }
+
+    pub(crate) fn enqueue_loaded_needers(&mut self, ids: Vec<FactId>) {
+        for id in ids {
+            self.enqueue_admit(id);
+            self.enqueue_project_if_not_valid(id);
         }
     }
 

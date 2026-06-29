@@ -11,6 +11,10 @@ temporary or trusted boundary label, not a normal home for domain logic.
 - `src/core/*_unproven.rs` contains the current operational core shell. These
   files expose the old public module names through `src/core/mod.rs`, but their
   filenames make the proof gap visible.
+- `src/core/effects_unproven.rs` and `src/core/turn_unproven.rs` are the current
+  staging surface for deterministic turn proof. `turn_unproven` orders queued
+  work, emits storage effect requests, applies effect results, and delegates
+  internal projection steps to the engine.
 - `src/facts/link/project_unproven.rs` keeps link codec, extraction, and
   projection together because versioned byte interpretation is part of fact
   meaning.
@@ -28,7 +32,8 @@ Move logic toward these proof-backed modules:
 - `src/core/types_proven.rs`: proof-friendly ids, edge addresses, validity,
   context, and validated-offer provenance types.
 - `src/core/turn_proven.rs`: deterministic `State + Input -> State + Effects`
-  transition for admission, query results, projection, and wakeups.
+  transition for admission, query results, projection, and wakeups, replacing
+  `turn_unproven.rs` once the transition invariant is proven.
 - `src/facts/link/project_proven.rs`: verified link codec, canonical encode/decode,
   extraction, projection validity, emitted facts, and persistence decision.
 - `src/facts/link/author_proven.rs`: verified command kernels that construct typed
@@ -50,10 +55,10 @@ or `_unproven` files with an explicit status.
 2. **Prove shared core types.** Move `FactId`, `EdgeAddr`, `Validity`, and
    validated-offer/context representations toward proof-friendly shared types so
    the adapter between runtime and Verus shrinks instead of growing.
-3. **Prove the turn.** Replace the implicit drain loop with a deterministic turn:
-   `State + Input -> State + Vec<EffectRequest>`. Prove every transition
-   preserves validated-offer provenance and never creates validated state from an
-   unready or invalid fact.
+3. **Prove the turn.** Move `effects_unproven.rs` and `turn_unproven.rs` to
+   proven equivalents. Prove every `State + Input -> State + Vec<EffectRequest>`
+   transition preserves validated-offer provenance and never creates validated
+   state from an unready or invalid fact.
 4. **Prove admission/extraction persistence contracts.** The verified admission
    transition should request persistence of exactly the verified extraction output
    for durable facts. SQLite remains in `helpers/sqlite_unproven.rs` behind a

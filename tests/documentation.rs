@@ -53,6 +53,7 @@ fn proof_plan_records_unproven_to_proven_migration() {
     for required in [
         "choose code shapes that let behavior move from `_unproven` files into Verus-proven executable kernels",
         "`src/facts/link/project_unproven.rs` keeps link codec, extraction, and projection together",
+        "`src/core/effects_unproven.rs` and `src/core/turn_unproven.rs` are the current staging surface",
         "concrete SQLite lives in `src/helpers/sqlite_unproven.rs`",
         "`src/core/turn_proven.rs`: deterministic `State + Input -> State + Effects` transition",
         "`src/facts/link/project_proven.rs`: verified link codec, canonical encode/decode, extraction, projection validity",
