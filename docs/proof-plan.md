@@ -16,6 +16,9 @@ temporary or trusted boundary label, not a normal home for domain logic.
   meaning.
 - `src/facts/link/{author,api,cli}_unproven.rs` contains storage-backed authoring,
   report, and formatting helpers.
+- `src/helpers/*_unproven.rs` contains narrow trusted boundaries for crypto/hex,
+  clocks, SQLite, and TCP framing. Core storage is now only a trait contract;
+  concrete SQLite lives in `src/helpers/sqlite_unproven.rs`.
 - `src/cli_unproven.rs` is app wiring and string/argument handling.
 
 ## Target Shape

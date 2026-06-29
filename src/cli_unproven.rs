@@ -2,12 +2,12 @@
 //! family, and run the core runtime for `start`. This is unproven composition and
 //! formatting code; deterministic fact behavior lives under `facts/link`.
 use std::io::Write;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::core::index::SqliteIndex;
-use crate::core::item::from_hex;
 use crate::core::runtime;
 use crate::facts::link::{cli_unproven as link_cli, LinkProjector};
+use crate::helpers::clock_unproven::now_ms;
+use crate::helpers::hex_unproven::from_hex;
+use crate::helpers::sqlite_unproven::SqliteIndex;
 
 /// Parsed `lk [--db PATH] [--at MS] COMMAND [ARGS...]`.
 struct Parsed {
@@ -160,11 +160,4 @@ fn peers_from(rest: &[String]) -> Vec<String> {
         i += 1;
     }
     peers
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }

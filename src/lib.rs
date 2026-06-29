@@ -17,5 +17,6 @@
 pub mod cli_unproven;
 pub mod core;
 pub mod facts;
+pub mod helpers;
 
 pub use cli_unproven as cli;

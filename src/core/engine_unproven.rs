@@ -22,6 +22,7 @@ use super::item::{fact_id, FactId};
 use super::offer::{Key, Offer, Role, Scope};
 use super::projector::Projector;
 use super::typestate::{Asserted, Context, Validated, Validity};
+use crate::helpers::crypto_unproven::role_id;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct EdgeAddr {
@@ -465,7 +466,7 @@ fn core_scope(scope: Scope) -> u64 {
 fn core_role(role: Role) -> Bytes32Core {
     // The verified core uses fixed-width addresses; role names enter it under
     // the same blake3 collision assumption as content-addressed fact ids.
-    core_bytes32(*blake3::hash(role.0.as_bytes()).as_bytes())
+    core_bytes32(role_id(role.0))
 }
 
 fn core_bytes32(bytes: [u8; 32]) -> Bytes32Core {

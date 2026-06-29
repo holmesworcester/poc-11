@@ -10,9 +10,10 @@ use std::collections::HashMap;
 
 use super::engine::EngineState;
 use super::index::Index;
-use super::item::{to_hex, FactId};
+use super::item::FactId;
 use super::projector::Projector;
 use super::typestate::Validity;
+use crate::helpers::hex_unproven::to_hex;
 
 const DEFAULT_MAX_STEPS: usize = 1_000_000;
 

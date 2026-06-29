@@ -1,12 +1,12 @@
 use linktoy::core::admit::admit;
 use linktoy::core::admit::Admitted;
 use linktoy::core::engine::{EdgeAddr, EngineState, Storage};
-use linktoy::core::index::SqliteIndex;
 use linktoy::core::item::{fact_id, FactId};
 use linktoy::core::offer::{Key, Offer, Role};
 use linktoy::core::projector::{EmittedFact, ProjectOutcome, Projector};
 use linktoy::core::typestate::{Asserted, Context, Validity};
 use linktoy::facts::link::{Link, LinkProjector, LINK};
+use linktoy::helpers::sqlite_unproven::SqliteIndex;
 
 fn temp_db() -> (tempfile::TempDir, String) {
     let dir = tempfile::tempdir().unwrap();

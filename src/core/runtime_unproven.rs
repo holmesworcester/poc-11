@@ -6,13 +6,14 @@
 use std::collections::HashSet;
 use std::io::Write;
 use std::net::TcpListener;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use super::admit::admit;
-use super::index::SqliteIndex;
 use super::item::FactId;
-use super::net;
 use super::projector::Projector;
+use crate::helpers::clock_unproven::now_ms;
+use crate::helpers::sqlite_unproven::SqliteIndex;
+use crate::helpers::tcp_unproven as tcp;
 
 pub fn serve<P: Projector>(
     idx: &SqliteIndex,
@@ -50,7 +51,7 @@ fn ingress_turn<P: Projector>(idx: &SqliteIndex, listener: &TcpListener) -> bool
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
-                while let Ok(Some(frame)) = net::read_frame(&mut stream) {
+                while let Ok(Some(frame)) = tcp::read_frame(&mut stream) {
                     if let Ok(item) = P::decode(&frame) {
                         if admit::<P>(item, now_ms(), idx).is_ok() {
                             did = true;
@@ -87,7 +88,7 @@ fn egress_turn(
         if frames.is_empty() {
             continue;
         }
-        if net::send_frames(peer, &frames).is_ok() {
+        if tcp::send_frames(peer, &frames).is_ok() {
             for (id, _) in &facts {
                 sent.insert((peer.clone(), *id));
             }
@@ -95,13 +96,6 @@ fn egress_turn(
         }
     }
     Ok(did)
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 fn stringify<E: std::fmt::Display>(e: E) -> String {

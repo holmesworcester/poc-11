@@ -38,6 +38,7 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
 |------|------|
 | `src/core/` | proof-targeted generic runtime/playback API, currently backed by `_unproven` implementation files |
 | `src/facts/link/` | **link fact family**: `project_unproven` holds codec/extract/project; `author_unproven`, `api_unproven`, and `cli_unproven` hold storage/app-facing pieces |
+| `src/helpers/` | narrow trusted helper/effect boundaries: crypto, hex, clock, SQLite, and TCP framing |
 | `src/cli_unproven.rs` | thin app layer wiring the link fact family into the core runtime |
 | `verus-core/` | Verus-verified executable projection gate called by `src/core/engine_unproven.rs` |
 

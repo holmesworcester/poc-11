@@ -9,13 +9,14 @@ use std::cell::Cell;
 use std::collections::HashMap;
 
 use linktoy::core::admit::admit;
-use linktoy::core::index::{Index, SqliteIndex};
+use linktoy::core::index::Index;
 use linktoy::core::item::{fact_id, FactId};
 use linktoy::core::offer::{Key, Offer, Role, Scope};
 use linktoy::core::play::{replay, wake};
 use linktoy::core::projector::Projector;
 use linktoy::core::typestate::{Asserted, Validity};
 use linktoy::facts::link::{Link, LinkProjector, LINK};
+use linktoy::helpers::sqlite_unproven::SqliteIndex;
 
 fn open(dir: &tempfile::TempDir, name: &str) -> SqliteIndex {
     SqliteIndex::open(dir.path().join(name).to_str().unwrap()).unwrap()

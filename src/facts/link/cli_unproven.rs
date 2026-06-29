@@ -3,8 +3,9 @@
 use std::collections::HashSet;
 
 use crate::core::index::Index;
-use crate::core::item::{to_hex, FactId};
+use crate::core::item::FactId;
 use crate::core::play::replay;
+use crate::helpers::hex_unproven::to_hex;
 
 use super::api_unproven::chain_report;
 use super::author_unproven::author;
