@@ -50,7 +50,7 @@ def extract_strategy_blocks(root: Path, paths: list[Path]) -> list[StrategyBlock
             while body and body[-1] == "":
                 body.pop()
             blocks.append(StrategyBlock(rel_path, start_line, tuple(body)))
-        idx += 1
+            idx += 1
     return blocks
 
 

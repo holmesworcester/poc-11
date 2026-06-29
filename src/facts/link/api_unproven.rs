@@ -15,8 +15,9 @@
 //! Owned invariant: link reporting boundary.
 //! - [ ] Safety: reports are observations for users; they are never authority for
 //!       projection or future validation.
-//! - [ ] Safety: chain walking follows decoded `prev` links from persisted bytes
-//!       and stops at the first missing or malformed fact.
+//! - [ ] Safety: chain walking follows only decoded `prev` links from persisted
+//!       bytes; a missing fact stops the walk as incomplete, and a malformed fact
+//!       returns an error before any complete report can be produced.
 //! - [ ] Safety: `complete` means all of: the structural walk reached an anchor,
 //!       the head's projected root/domain equals that anchor, and replay validated
 //!       the requested head.
@@ -27,7 +28,10 @@
 //! - `core::play`: replay soundness gives the validity result for `complete`.
 //! - `core::index`: storage reads are untrusted observations.
 //! Proof strategy:
-//! - Prove `walk` is read-only and follows only decoded `prev` pointers.
+//! - Prove `walk` is read-only and updates its next id only from a successfully
+//!   decoded link's `prev` field.
+//! - Prove missing storage yields an incomplete walk, while malformed bytes
+//!   return an error before `chain_report` can return `complete=true`.
 //! - Prove `chain_report.complete` is true only when the walk reaches `prev=None`,
 //!   the structural anchor agrees with the head's projected root/domain, and
 //!   replay reports the head valid.

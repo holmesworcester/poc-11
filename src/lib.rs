@@ -1,3 +1,5 @@
+#![allow(clippy::doc_lazy_continuation, clippy::doc_overindented_list_items)]
+
 //! poc-11 "link toy": a minimal, functional proof-of-model for the in-memory
 //! projection / bounded-replay design (see
 //! `../poc-10/docs/research/in-memory-projection-bounded-replay.md`).

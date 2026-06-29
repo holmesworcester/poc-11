@@ -28,15 +28,22 @@
 //! - [ ] Safety: project-owned construction: command parameters determine only
 //!       link content, `prev`, and claimed root/domain; app code cannot assign
 //!       ids, edges, or validity.
-//! - [ ] Safety: parent naming: for any child `link.prev == Some(parent_id)`,
-//!       extraction asserts exactly one need for `parent_id`; no other field or
-//!       app input can choose the parent dependency.
+//! - [ ] Safety: well-formed parent naming: for any child
+//!       `link.prev == Some(parent_id)` and `link.root == Some(root_id)`,
+//!       extraction asserts exactly one need for `valid_link(parent_id, root_id)`;
+//!       no other field or app input can choose the parent dependency.
+//! - [ ] Safety: malformed `prev`/`root` combinations assert no edges and project
+//!       invalid.
 //! - [ ] Safety: starter validity rule: a root (`prev=None`) is valid; a child is
-//!       valid exactly when validated context contains the offer whose owner and
-//!       key are the child's declared `parent_id`.
+//!       valid exactly when validated context contains
+//!       `valid_link(parent_id, root_id)` for the child's declared parent and
+//!       root/domain ids.
 //! - [ ] Safety: same-root/domain preservation: a child is valid only when its
 //!       claimed root/domain matches the validated parent statement it depends on,
 //!       and the child's promoted self-offer carries that same root/domain.
+//! - [ ] Safety: statement-to-owner: every validated link offer at
+//!       `valid_link_key(link_id, root_id)` was promoted from a valid link fact
+//!       whose id is `link_id` and whose semantic root is `root_id`.
 //! - [ ] Safety: no state authority leak: starter projection records only this
 //!       link's validity and emits no new facts.
 //! - [ ] Safety: composition with core: using `core::engine` validated-context
@@ -54,13 +61,19 @@
 //!   tag/prev/root/content layout.
 //! - Prove `link_from_params` constructs only `content`, `prev`, and claimed
 //!   root/domain, leaving id, edges, and validity to core/projector paths.
-//! - Prove `extract` is exactly `link_edges`: roots offer
-//!   `valid_link(self_id,self_id)`; children offer `valid_link(self_id,root_id)`
-//!   and need `valid_link(prev,root_id)`.
+//! - Prove `extract` is exactly `link_edges`: well-formed roots offer
+//!   `valid_link(self_id,self_id)`; well-formed children offer
+//!   `valid_link(self_id,root_id)` and need `valid_link(prev,root_id)`;
+//!   malformed `prev`/`root` combinations emit no edges.
 //! - Prove `project` implements `link_project_validity`, writes only this link's
 //!   validity into `LinkState`, and emits no facts.
-//! - Compose with the engine provenance theorem to prove same-root parent-chain
-//!   transitivity for the current root/domain model.
+//! - Prove the statement-to-owner lemma from `link_edges`, `valid_link_key`,
+//!   content addressing, and the engine theorem that every validated offer was
+//!   asserted by its valid owner.
+//! - Prove same-root parent-chain transitivity by induction: root case
+//!   `prev=None, root=None` gives `valid_link(self,self)`; child step uses the
+//!   validated `valid_link(parent,r)` dependency plus the statement-to-owner lemma
+//!   to obtain a valid parent in the same root/domain, then repeats to the anchor.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;

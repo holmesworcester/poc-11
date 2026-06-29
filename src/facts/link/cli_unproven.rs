@@ -3,8 +3,8 @@
 //!
 //! Fact-family contract (do not weaken):
 //! - Scope: app adapter only: call deterministic link construction, call core
-//!   admission, call report/replay helpers, choose constructor parameters, and
-//!   format returned data.
+//!   admission, call report/replay helpers, pass explicit constructor
+//!   parameters chosen by the app/frontend, and format returned data.
 //! - Forbidden here: defining link constructors, defining codec/extraction/
 //!   projection rules, interpreting root/domain semantics, creating `Validity`,
 //!   creating `Context`, or creating `Offer<Validated>`.
@@ -46,12 +46,9 @@ pub fn link_lines(
     idx: &dyn Index,
     at: u64,
     prev: Option<FactId>,
+    root: Option<FactId>,
     label: &str,
 ) -> Result<Vec<String>, String> {
-    let root = match prev {
-        Some(parent) => Some(chain_report(idx, parent)?.root),
-        None => None,
-    };
     let id = admit::<LinkProjector>(link_from_params(at, prev, root, label), at, idx)?.id();
     let r = chain_report(idx, id)?;
     Ok(vec![

@@ -67,8 +67,17 @@ fn cmd_link(idx: &SqliteIndex, p: &Parsed) -> Result<Vec<String>, String> {
         Some(h) => Some(from_hex(&h).ok_or("bad --prev hex")?),
         None => None,
     };
+    let root = match flag(&p.rest, "--root") {
+        Some(h) => Some(from_hex(&h).ok_or("bad --root hex")?),
+        None => None,
+    };
+    match (prev, root) {
+        (Some(_), None) => return Err("child link requires --root".to_string()),
+        (None, Some(_)) => return Err("root link must not pass --root".to_string()),
+        _ => {}
+    }
     let label = flag(&p.rest, "--label").unwrap_or_default();
-    link_cli::link_lines(idx, at, prev, &label)
+    link_cli::link_lines(idx, at, prev, root, &label)
 }
 
 fn cmd_chain(idx: &SqliteIndex, p: &Parsed) -> Result<Vec<String>, String> {

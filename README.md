@@ -29,10 +29,11 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
   `Admitted<I>`'s only constructor is `admit`, so extract-before-project is a compile
   error. **Projectors get no storage/IO handle.**
 - **One fact**: the current starter is
-  `link { prev: Option<FactId> }` → a chain `link0 <- link1 <- ...`; `prev=None`
-  is an anchor root for that component, not a unique global root. The full proof
-  model will add a child-carried root/domain id so projection can prove every
-  valid child stays in the same root/domain as its validated parent.
+  `link { prev: Option<FactId>, root: Option<FactId> }` -> a chain
+  `link0 <- link1 <- ...`; `prev=None, root=None` is an anchor root for that
+  component, not a unique global root. Children carry the root/domain they claim,
+  and projection validates them only against a parent statement in that same
+  root/domain.
 
 ## Layout — poc-10's core/protocol division
 
@@ -52,7 +53,7 @@ generalizes into a manifest.
 ```sh
 cargo build --bin lk
 lk --db x.db --at 1 link                 # construct/admit a root
-lk --db x.db --at 2 link --prev <id1>    # extend the chain
+lk --db x.db --at 2 link --prev <id1> --root <root-id>  # extend the chain
 lk --db x.db replay --window 1           # seed 1, pull the whole chain via the index
 lk --db x.db chain <head-id>             # validated chain (complete/length/root)
 lk --db x.db count
@@ -89,15 +90,15 @@ cargo test
 ./scripts/run_verus.sh
 ```
 
-The engine calls core gate functions before projector mutation, offer promotion,
-or emitted-byte admission. Verus proves that a fact is considered ready only when
-every asserted need address `(role, scope, key)` has a matching validated offer,
-and that a valid projection plan promotes only offers/fields copied from the
-projected fact under that fact's owner.
+There is intentionally no standalone proof-only `gate.rs`. Verus proofs should
+land on the running `core` and `facts/link` code. Until a real running-code Verus
+target exists, `scripts/run_verus.sh` fails instead of reporting fake proof
+coverage.
 
 Proof goals:
 
-- Verify executable core gates, not parallel proof-only models.
+- Verify executable core engine and fact-family code, not parallel proof-only
+  models.
 - Verify fact-family kernels: deterministic typed construction, codec canonicality,
   extraction, projection, and emitted facts.
 - Shape deterministic execution as a proof target: move queue/drain logic toward a
@@ -133,5 +134,7 @@ Proof-first organization:
 
 ## Review gates
 
-`cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, and
-`./scripts/run_verus.sh` all pass. `Cargo.lock` is tracked (this crate builds a binary).
+`cargo test`, `cargo clippy --all-targets -- -D warnings`, and
+`cargo fmt --check` should pass. `scripts/run_verus.sh` is expected to fail until
+real Verus proofs over running code are added. `Cargo.lock` is tracked because
+this crate builds a binary.

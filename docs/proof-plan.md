@@ -50,6 +50,10 @@ Compatibility modules may re-export unproven or proven modules while the tree is
 in transition. The file that contains invariant-bearing behavior keeps
 `_unproven` until that behavior has a Verus proof.
 
+The `_unproven` naming rule is repository policy, not a semantic Verus theorem
+about runtime behavior. Enforce it with source-tree tests and review gates; use
+Verus for the executable invariants inside core and fact-family code.
+
 ## Proof Boundaries
 
 Core proofs are about all possible fact families routed through the engine:
@@ -72,11 +76,14 @@ defines what roots, parents, and ancestry mean:
 - `link_id(link) == fact_id(encode(link))`.
 - Extraction emits exactly the self-offer for `valid_link(self_id, root_id)` and,
   for a child, exactly the parent need for `valid_link(prev, root_id)`.
+- Malformed `prev`/`root` combinations emit no edges and cannot validate.
 - A `prev=None` link is an anchor root for its own component. Multiple anchors
   are allowed; the starter model does not prove global root uniqueness.
 - In the current root/domain model, a root link (`prev=None, root=None`) is valid
   as `valid_link(self_id, self_id)`. A child link is valid only when validated
   context contains `valid_link(parent_id, claimed_root_id)`.
+- A validated `valid_link(link_id, root_id)` statement is owned by a valid link
+  fact whose id is `link_id` and whose semantic root is `root_id`.
 - Link projection emits no new facts unless a later model intentionally adds
   emitted facts.
 - Current link ancestry is same-root parent-chain preserving: any valid
@@ -116,16 +123,15 @@ as if it were their own.
 | Owner | Responsibility |
 | --- | --- |
 | `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
-| `core::gate` | Pure readiness and projection-plan theorem: a fact may promote only its own asserted offers/fields, and only when its projector returned `Valid` and every asserted need has a matching validated offer. Invalid or not-ready facts promote nothing. |
 | `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
 | `facts::link::project` | Link-family implementation of the projector contract and current same-root parent-chain validity theorem. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |
 | `core::index` | Durable storage lookup contract for persisted facts and asserted edges. |
-| `core::engine` | In-memory id/body relation, integration with the core gate theorem, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety. |
+| `core::engine` | In-memory id/body relation, running readiness/promotion rule, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety. |
 | `core::effects` | Helper boundary data shape; helper effects carry no validated state. |
-| `core::turn` | Deterministic turn scheduling and effect-result application into the engine. |
+| `core::turn` | Deterministic turn scheduling, effect-result application into the engine, and the future fair-input liveness model. |
 | `core::play` | Replay/wake API semantics over the turn/engine invariants. |
 | `core::runtime` | IO adapter isolation; network, clock, and send outcomes do not create validity. |
 | `facts::link::api` | Reporting boundary; reports are observations, not proof evidence. |
@@ -214,19 +220,25 @@ fact families.
 5. **Link projection proof.** Prove the family contract: anchors emit
    `valid_link(self,self)`, children require validated parent context with the
    same root id, no cross-root splice validates, and emitted offers/fields carry
-   only the validated link statement for this fact.
+   only the validated link statement for this fact. Prove the link-specific
+   statement-to-owner lemma: any validated `valid_link(x,r)` came from a valid
+   link fact whose own id is `x` and whose semantic root is `r`.
 6. **Core turn proof.** Prove `State + Input -> State + Effects` by induction over
    every turn: admission, need-query result, projection, offer-query result, and
    idle all preserve validated-offer provenance and context safety.
-7. **Storage/effect contract.** Keep SQLite, sockets, filesystem, and clocks in
+7. **Fair-input liveness model.** Before proving liveness, model helper/storage
+   results and transport arrivals as explicit fair inputs to the deterministic
+   turn. Prove progress only over that model; do not smuggle OS/socket/filesystem
+   fairness into safety invariants.
+8. **Storage/effect contract.** Keep SQLite, sockets, filesystem, and clocks in
    helpers. Prove that successful effect results are interpreted only through the
    verified decode/admission/extraction path, and that errors cannot create
    validated state.
-8. **Composition proof.** Instantiate the core transitive-validity theorem with
+9. **Composition proof.** Instantiate the core transitive-validity theorem with
    the link projection contract. Prove every valid link has a domain-preserving
-   ancestry chain to its claimed anchor, while making no uniqueness claim about
-   anchors.
-9. **Rename only when complete.** A file loses `_unproven` only after its
+   ancestry chain to its claimed anchor by induction over `prev`, while making
+   no uniqueness claim about anchors.
+10. **Rename only when complete.** A file loses `_unproven` only after its
    invariant-bearing behavior is covered by Verus-verified executable code and
    realistic Rust tests. Until then, keep the `_unproven` label.
 
@@ -234,5 +246,6 @@ fact families.
 
 A file can lose `_unproven` only when its invariant-bearing behavior is covered by
 Verus-verified executable code or is only a thin wrapper around such code. Each
-move out of `_unproven` should include realistic Rust tests plus
-`./scripts/run_verus.sh` coverage.
+move out of `_unproven` should include realistic Rust tests plus running-code
+Verus coverage. `scripts/run_verus.sh` must fail rather than claim success when
+no running-code Verus proof target exists.

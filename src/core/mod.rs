@@ -7,12 +7,10 @@
 //! Owned invariant: core module shape.
 //! - [ ] Safety: this module has no fact, validity, or storage behavior of its
 //!       own.
-//! - [ ] Safety: proof status stays visible: behavior-bearing core files keep
-//!       `_unproven` until executable Verus proof covers their invariants.
-//! - [ ] Safety: unsuffixed core files are either proven executable code or thin
-//!       wrappers around proven executable code.
+//! - [ ] Safety: this module only declares implementation modules and re-exports
+//!       public compatibility names.
 //! Imported theorems:
-//! - None. This module owns only source-tree shape.
+//! - None. This module owns no runtime behavior.
 //! Proof strategy:
 //! - Prove by source inspection/contract test that this file contains only module
 //!   declarations and re-exports.
@@ -21,7 +19,6 @@
 pub mod admit_unproven;
 pub mod effects_unproven;
 pub mod engine_unproven;
-pub mod gate;
 pub mod index_unproven;
 pub mod item_unproven;
 pub mod offer_unproven;

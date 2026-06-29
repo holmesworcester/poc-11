@@ -16,14 +16,20 @@ fn ids_in(line: &str) -> HashSet<String> {
 fn build_chain(db: &str, n: usize) -> Vec<String> {
     let mut ids = Vec::new();
     let mut prev: Option<String> = None;
+    let mut root: Option<String> = None;
     for i in 1..=n {
         let at = i.to_string();
         let mut args = vec!["--db", db, "--at", &at, "link"];
         if let Some(p) = &prev {
             args.push("--prev");
             args.push(p);
+            args.push("--root");
+            args.push(root.as_ref().unwrap());
         }
         let id = line_value(&assert_success(lk_cli(&args)), "link_id");
+        if root.is_none() {
+            root = Some(id.clone());
+        }
         prev = Some(id.clone());
         ids.push(id);
     }
@@ -41,6 +47,26 @@ fn build_independents(db: &str, n: usize) -> Vec<String> {
             )
         })
         .collect()
+}
+
+#[test]
+fn cli_requires_explicit_root_for_child_links() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = temp_db(&tmp, "explicit-root.db");
+    let root = line_value(
+        &assert_success(lk_cli(&["--db", &db, "--at", "1", "link"])),
+        "link_id",
+    );
+
+    let missing_root = lk_cli(&["--db", &db, "--at", "2", "link", "--prev", &root]);
+    assert!(!missing_root.status.success());
+    assert!(String::from_utf8_lossy(&missing_root.stderr).contains("child link requires --root"));
+
+    let root_with_root = lk_cli(&["--db", &db, "--at", "3", "link", "--root", &root]);
+    assert!(!root_with_root.status.success());
+    assert!(
+        String::from_utf8_lossy(&root_with_root.stderr).contains("root link must not pass --root")
+    );
 }
 
 #[test]

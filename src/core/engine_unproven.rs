@@ -6,9 +6,9 @@
 //! - need queries: pull stored offerers for newly indexed needs.
 //! - offer queries: wake stored/local needers for newly validated offers.
 //!
-//! Projection promotion is checked through pure core readiness/plan functions:
+//! Projection promotion is checked directly against this engine's running state:
 //! the engine may promote asserted offers only for the same fact whose projector
-//! returned `Valid` and whose asserted needs are satisfied by validated context.
+//! returned `Valid` after all asserted needs were satisfied by validated context.
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: validated-context provenance and ongoing engine safety.
@@ -37,10 +37,6 @@
 //! - `core::projector`: the selected fact family supplies canonical codec,
 //!   extraction, durability, projection contracts, and emitted bytes as raw
 //!   `EmittedFact` payloads.
-//! - `core::gate`: readiness and projection-plan functions encode the exact
-//!   promotion rule: projector `Valid` plus all asserted needs satisfied is
-//!   required before any asserted offer or field from that fact is promoted; an
-//!   invalid or not-ready plan promotes nothing.
 //! Proof strategy:
 //! - Define a state predicate over memory facts, asserted edges, validity,
 //!   validated offers, promoted offer keys, and queues.
@@ -56,18 +52,12 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use super::gate::{
-    fact_ready_core, project_fact_core, AdmittedFactCore, Bytes32Core, EdgeAddrCore,
-    ValidatedOfferCore, ValidityCore,
-};
-
 use super::admit::Admitted;
 use super::index::Index;
 use super::item::{fact_id, FactId};
 use super::offer::{Key, Offer, Role, Scope};
 use super::projector::Projector;
 use super::typestate::{Asserted, Context, Validated, Validity};
-use crate::helpers::crypto_unproven::role_id;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct EdgeAddr {
@@ -334,21 +324,14 @@ where
             }
         }
 
-        let core_fact = core_fact(id, &edges);
-        let core_ctx = self.core_validated_offers();
-        if !fact_ready_core(&core_fact, &core_ctx) {
+        if !self.needs_satisfied(&edges) {
             self.validity.insert(id, Validity::Invalid);
             return Ok(Some(Validity::Invalid));
         }
 
         let admitted = Admitted::from_engine_memory(item, id);
         let out = P::project(&admitted, self.collect(&edges), &mut self.projector_state);
-        let plan = project_fact_core(&core_fact, &core_ctx, core_validity(out.validity));
-        let effective_validity = if plan.valid {
-            Validity::Valid
-        } else {
-            Validity::Invalid
-        };
+        let effective_validity = out.validity;
         self.validity.insert(id, effective_validity);
 
         if effective_validity == Validity::Valid {
@@ -462,6 +445,13 @@ where
             .is_some_and(|offers| !offers.is_empty())
     }
 
+    fn needs_satisfied(&self, edges: &[Offer<Asserted>]) -> bool {
+        edges
+            .iter()
+            .filter(|edge| edge.is_need())
+            .all(|need| self.has_validated_offer(EdgeAddr::from_offer(need)))
+    }
+
     fn collect(&self, edges: &[Offer<Asserted>]) -> Context {
         let mut offers = vec![];
         for need in edges.iter().filter(|edge| edge.is_need()) {
@@ -472,73 +462,4 @@ where
         }
         Context::from(offers)
     }
-
-    fn core_validated_offers(&self) -> Vec<ValidatedOfferCore> {
-        self.validated
-            .iter()
-            .map(|validated| ValidatedOfferCore {
-                owner: core_bytes32(validated.owner),
-                addr: core_addr(EdgeAddr::from_offer(&validated.offer)),
-            })
-            .collect()
-    }
-}
-
-fn core_fact(id: FactId, edges: &[Offer<Asserted>]) -> AdmittedFactCore {
-    AdmittedFactCore {
-        id: core_bytes32(id),
-        needs: edges
-            .iter()
-            .filter(|edge| edge.is_need())
-            .map(|edge| core_addr(EdgeAddr::from_offer(edge)))
-            .collect(),
-        offers: edges
-            .iter()
-            .filter(|edge| edge.is_offer())
-            .map(|edge| core_addr(EdgeAddr::from_offer(edge)))
-            .collect(),
-        fields: vec![],
-    }
-}
-
-fn core_addr(addr: EdgeAddr) -> EdgeAddrCore {
-    EdgeAddrCore {
-        role: core_role(addr.role),
-        scope: core_scope(addr.scope),
-        key: core_bytes32(addr.key.0),
-    }
-}
-
-fn core_validity(validity: Validity) -> ValidityCore {
-    match validity {
-        Validity::Valid => ValidityCore::Valid,
-        Validity::Invalid => ValidityCore::Invalid,
-    }
-}
-
-fn core_scope(scope: Scope) -> u64 {
-    match scope {
-        Scope::Local => 0,
-    }
-}
-
-fn core_role(role: Role) -> Bytes32Core {
-    // The verified core uses fixed-width addresses; role names enter it under
-    // the same blake3 collision assumption as content-addressed fact ids.
-    core_bytes32(role_id(role.0))
-}
-
-fn core_bytes32(bytes: [u8; 32]) -> Bytes32Core {
-    Bytes32Core {
-        w0: word64(&bytes, 0),
-        w1: word64(&bytes, 8),
-        w2: word64(&bytes, 16),
-        w3: word64(&bytes, 24),
-    }
-}
-
-fn word64(bytes: &[u8; 32], offset: usize) -> u64 {
-    let mut word = [0u8; 8];
-    word.copy_from_slice(&bytes[offset..offset + 8]);
-    u64::from_le_bytes(word)
 }

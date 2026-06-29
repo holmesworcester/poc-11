@@ -13,6 +13,9 @@
 //!       authority.
 //! - [ ] Safety: drain safety is induction over turns that each preserve the
 //!       `core::engine` invariant.
+//! - [ ] Liveness: under an explicit fair-input model for helper/storage results
+//!       and transport arrivals, pending admission/query/project/wake work is
+//!       eventually selected, completed, or reported as failed.
 //! Imported theorems:
 //! - `core::effects`: helper payloads carry no validated state.
 //! - `core::engine`: each engine mutation preserves validated-context provenance
@@ -24,6 +27,9 @@
 //! - Prove `apply_effect` dispatches each effect result to exactly the matching
 //!   engine handler and never constructs validity itself.
 //! - Prove `drain` by induction over bounded repetitions of `turn_with_storage`.
+//! - For liveness, first introduce a fair-input transition model; do not treat
+//!   OS socket, filesystem, or SQLite progress as an unmodeled assumption inside
+//!   the core proof.
 use super::effects::{EffectRequest, EffectResult};
 use super::engine::{EngineState, Storage};
 use super::item::FactId;

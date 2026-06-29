@@ -37,6 +37,7 @@ fn link_chain_travels_over_tcp_and_projects_on_peer() {
     // Admit a chain of 8 on A via separate CLI processes (the daemon reads a.db
     // through WAL and ships new facts to B as they appear).
     let mut prev: Option<String> = None;
+    let mut root: Option<String> = None;
     let mut ids = Vec::new();
     for i in 1..=8 {
         let at = i.to_string();
@@ -44,8 +45,13 @@ fn link_chain_travels_over_tcp_and_projects_on_peer() {
         if let Some(p) = &prev {
             args.push("--prev");
             args.push(p);
+            args.push("--root");
+            args.push(root.as_ref().unwrap());
         }
         let id = line_value(&assert_success(lk_cli(&args)), "link_id");
+        if root.is_none() {
+            root = Some(id.clone());
+        }
         prev = Some(id.clone());
         ids.push(id);
     }
