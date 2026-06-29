@@ -6,7 +6,7 @@ use linktoy::core::item::{fact_id, FactId};
 use linktoy::core::offer::{Key, Offer, Role};
 use linktoy::core::projector::{EmittedFact, ProjectOutcome, Projector};
 use linktoy::core::typestate::{Asserted, Context, Validity};
-use linktoy::protocol::link::{Link, LinkProjector, LINK};
+use linktoy::facts::link::{Link, LinkProjector, LINK};
 
 fn temp_db() -> (tempfile::TempDir, String) {
     let dir = tempfile::tempdir().unwrap();

@@ -1,15 +1,25 @@
-//! Core: the protocol-agnostic **runtime and playback** (poc-10's core/protocol
-//! division, carried into poc-11). Core supplies content addressing, the
-//! `Offer<V>` typestate, the `Projector` trait, admission (Pass 1), the persisted
-//! index, playback (`play`, Pass 2), transport, and the daemon runtime. It must
-//! NOT know any item family — those live in [`crate::protocol`].
-pub mod admit;
-pub mod engine;
-pub mod index;
-pub mod item;
-pub mod net;
-pub mod offer;
-pub mod play;
-pub mod projector;
-pub mod runtime;
-pub mod typestate;
+//! Core: proof-targeted generic machinery. Current implementation files are
+//! labeled `_unproven` until their invariants move into executable Verus kernels.
+//! Public aliases preserve the existing API while making proof status visible in
+//! the source tree.
+pub mod admit_unproven;
+pub mod engine_unproven;
+pub mod index_unproven;
+pub mod item_unproven;
+pub mod net_unproven;
+pub mod offer_unproven;
+pub mod play_unproven;
+pub mod projector_unproven;
+pub mod runtime_unproven;
+pub mod typestate_unproven;
+
+pub use admit_unproven as admit;
+pub use engine_unproven as engine;
+pub use index_unproven as index;
+pub use item_unproven as item;
+pub use net_unproven as net;
+pub use offer_unproven as offer;
+pub use play_unproven as play;
+pub use projector_unproven as projector;
+pub use runtime_unproven as runtime;
+pub use typestate_unproven as typestate;

@@ -1,18 +1,13 @@
-//! The `lk` app layer: parse `--db/--at COMMAND`, dispatch to the protocol's link
-//! commands, and run the core runtime for `start`. This is the composition root —
-//! the only place that knows both `core` and a `protocol` family — mirroring
-//! poc-10's split (generic core hosting + protocol command adapters). Output is
-//! `field: value` lines; read commands exit 0 even when an id is absent, so a
-//! polling test keeps polling.
-use std::collections::HashSet;
+//! The `lk` app layer: parse `--db/--at COMMAND`, dispatch to the link fact
+//! family, and run the core runtime for `start`. This is unproven composition and
+//! formatting code; deterministic fact behavior lives under `facts/link`.
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::core::index::{Index, SqliteIndex};
-use crate::core::item::{from_hex, to_hex, FactId};
-use crate::core::play::replay;
+use crate::core::index::SqliteIndex;
+use crate::core::item::from_hex;
 use crate::core::runtime;
-use crate::protocol::link::{self, LinkProjector};
+use crate::facts::link::{cli_unproven as link_cli, LinkProjector};
 
 /// Parsed `lk [--db PATH] [--at MS] COMMAND [ARGS...]`.
 struct Parsed {
@@ -73,44 +68,16 @@ fn cmd_link(idx: &SqliteIndex, p: &Parsed) -> Result<Vec<String>, String> {
         None => None,
     };
     let label = flag(&p.rest, "--label").unwrap_or_default();
-    let a = link::author(idx, at, prev, &label)?;
-    Ok(vec![
-        format!("link_id: {}", to_hex(&a.id)),
-        format!(
-            "prev_id: {}",
-            prev.map(|p| to_hex(&p))
-                .unwrap_or_else(|| "none".to_string())
-        ),
-        format!("depth: {}", a.depth),
-        format!("root_id: {}", to_hex(&a.root)),
-    ])
+    link_cli::link_lines(idx, at, prev, &label)
 }
 
 fn cmd_chain(idx: &SqliteIndex, p: &Parsed) -> Result<Vec<String>, String> {
     let head = from_hex(p.rest.first().ok_or("usage: chain <id>")?).ok_or("bad id hex")?;
-    let r = link::chain_report(idx, head)?;
-    let mut lines = vec![
-        format!("present: {}", r.present),
-        format!("complete: {}", r.complete),
-        format!("target_id: {}", to_hex(&head)),
-        format!("root_id: {}", to_hex(&r.root)),
-        format!("depth: {}", r.depth),
-        format!("length: {}", r.length),
-    ];
-    if r.present {
-        lines.push(format!(
-            "chain: {}",
-            r.ids.iter().map(to_hex).collect::<Vec<_>>().join(" ")
-        ));
-    }
-    Ok(lines)
+    link_cli::chain_lines(idx, head)
 }
 
 fn cmd_count(idx: &SqliteIndex) -> Result<Vec<String>, String> {
-    Ok(vec![
-        format!("link_facts: {}", idx.total_facts()?),
-        format!("edges: {}", idx.total_edges()?),
-    ])
+    link_cli::count_lines(idx)
 }
 
 fn cmd_replay(idx: &SqliteIndex, p: &Parsed) -> Result<Vec<String>, String> {
@@ -118,35 +85,7 @@ fn cmd_replay(idx: &SqliteIndex, p: &Parsed) -> Result<Vec<String>, String> {
         .ok_or("usage: replay --window N")?
         .parse()
         .map_err(|_| "bad --window".to_string())?;
-    let total = idx.total_facts()?;
-    let seeds = idx.window(window)?;
-    let seed_set: HashSet<FactId> = seeds.iter().copied().collect();
-
-    let memo = replay::<LinkProjector>(idx, &seeds)?;
-    let mut projected: Vec<FactId> = memo.keys().copied().collect();
-    projected.sort();
-    let pulled = projected
-        .iter()
-        .filter(|id| !seed_set.contains(*id))
-        .count();
-
-    let mut seed_sorted = seeds.clone();
-    seed_sorted.sort();
-    Ok(vec![
-        format!("window: {window}"),
-        format!("total_facts: {total}"),
-        format!("seed_count: {}", seeds.len()),
-        format!("projected_count: {}", projected.len()),
-        format!("pulled_in_count: {pulled}"),
-        format!(
-            "seed: {}",
-            seed_sorted.iter().map(to_hex).collect::<Vec<_>>().join(" ")
-        ),
-        format!(
-            "projected: {}",
-            projected.iter().map(to_hex).collect::<Vec<_>>().join(" ")
-        ),
-    ])
+    link_cli::replay_lines(idx, window)
 }
 
 fn start(p: &Parsed) -> Result<(), String> {

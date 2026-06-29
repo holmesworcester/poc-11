@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 
 use super::typestate::{Asserted, Validated};
 
-/// The match namespace (poc-10's "role"). The toy uses one: [`crate::protocol::link::LINK`].
+/// The match namespace (poc-10's "role"). The toy uses one: [`crate::facts::link::LINK`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Role(pub &'static str);
 

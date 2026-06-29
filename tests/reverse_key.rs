@@ -15,7 +15,7 @@ use linktoy::core::offer::{Key, Offer, Role, Scope};
 use linktoy::core::play::{replay, wake};
 use linktoy::core::projector::Projector;
 use linktoy::core::typestate::{Asserted, Validity};
-use linktoy::protocol::link::{Link, LinkProjector, LINK};
+use linktoy::facts::link::{Link, LinkProjector, LINK};
 
 fn open(dir: &tempfile::TempDir, name: &str) -> SqliteIndex {
     SqliteIndex::open(dir.path().join(name).to_str().unwrap()).unwrap()

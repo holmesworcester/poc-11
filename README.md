@@ -36,13 +36,14 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
 
 | path | role |
 |------|------|
-| `src/core/` | **protocol-agnostic runtime + playback**: `item` (content addressing), `offer` (`Offer<V>`), `typestate` (`Asserted`/`Validated`/`Context`), `projector` (the trait), `admit` (Pass 1), `index` (`Index` trait + `SqliteIndex`), `engine` (typed in-memory queues), `play` (`play`/`replay`/`wake`, Pass 2), `net`, `runtime` (the generic daemon `serve<P>`) |
-| `src/protocol/` | **item families + projectors**: `link` (the one fact family) |
-| `src/cli.rs` | the thin **app layer** wiring a protocol family into the core runtime |
-| `verus-core/` | Verus-verified executable projection gate called by `src/core/engine.rs` |
+| `src/core/` | proof-targeted generic runtime/playback API, currently backed by `_unproven` implementation files |
+| `src/facts/link/` | **link fact family**: `project_unproven` holds codec/extract/project; `author_unproven`, `api_unproven`, and `cli_unproven` hold storage/app-facing pieces |
+| `src/cli_unproven.rs` | thin app layer wiring the link fact family into the core runtime |
+| `verus-core/` | Verus-verified executable projection gate called by `src/core/engine_unproven.rs` |
 
-`core` depends on nothing protocol-specific; `protocol` depends on `core`; `cli` (the
-composition root) depends on both. This is the seam Stage 3 generalizes into a manifest.
+`core` depends on nothing fact-family-specific; `facts` depends on `core`;
+`cli_unproven` (the composition root) depends on both. This is the seam Stage 3
+generalizes into a manifest.
 
 ## Build & run
 
@@ -127,6 +128,7 @@ Proof-first organization:
 - Files without `_unproven` in `core` and `facts` should have their invariants
   covered by Verus-verified executable code or by thin wrappers around such code.
   Moving logic out of `_unproven` is expected work, not optional cleanup.
+- The concrete migration order is tracked in `docs/proof-plan.md`.
 
 ## Review gates
 

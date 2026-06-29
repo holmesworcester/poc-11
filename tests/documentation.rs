@@ -43,3 +43,24 @@ fn in_memory_projection_note_records_extract_project_boundary() {
         );
     }
 }
+
+#[test]
+fn proof_plan_records_unproven_to_proven_migration() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let plan = source_text(&root.join("docs/proof-plan.md"));
+    let normalized = normalize_whitespace(&plan);
+
+    for required in [
+        "choose code shapes that let behavior move from `_unproven` files into Verus-proven executable kernels",
+        "`src/facts/link/project_unproven.rs` keeps link codec, extraction, and projection together",
+        "`src/core/turn_proven.rs`: deterministic `State + Input -> State + Effects` transition",
+        "`src/facts/link/project_proven.rs`: verified link codec, canonical encode/decode, extraction, projection validity",
+        "`src/helpers/*_unproven.rs`: narrow trusted adapters",
+        "A file can lose `_unproven` only when its invariant-bearing behavior is covered by Verus-verified executable code",
+    ] {
+        assert!(
+            normalized.contains(required),
+            "proof plan is missing migration detail {required:?}"
+        );
+    }
+}
