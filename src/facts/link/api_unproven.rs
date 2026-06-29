@@ -1,16 +1,25 @@
 //! Link read/report helpers. These are app-facing and storage-backed, so they are
 //! unproven until the storage/result contract is moved behind verified effects.
 //!
+//! Fact-family contract (do not weaken):
+//! - Scope: observation/report layer only.
+//! - Allowed here: read persisted bytes, decode links, follow declared `prev`
+//!   references, and call core replay to compute report completeness.
+//! - Forbidden here: fact construction, admission, storage writes, direct projector
+//!   execution, creation of `Validity`, creation of `Context`, and creation of
+//!   `Offer<Validated>`.
+//! - Report fields are observations. They are not proof witnesses and must not be
+//!   used as inputs to core validity or link projection theorems.
+//!
 //! Invariant checklist (Verus):
-//! - [ ] Reporting never creates facts, asserted edges, validity, or context.
-//! - [ ] A reported chain root/depth is derived only by decoding persisted link
-//!       bytes and following declared `prev` ids.
-//! - [ ] `complete == true` requires the walk to reach an anchor and replay to
-//!       project the requested head as valid.
-//! - [ ] Reported ids are display data only; authority still comes from core
-//!       validated context and link projection proofs.
-//! - [ ] After root/domain links land, reports must reject or mark incomplete any
-//!       chain whose decoded root ids disagree with validated projection state.
+//! - [ ] Reports are observations for users; they are never authority for
+//!       projection or future validation.
+//! - [ ] Chain walking follows decoded `prev` links from persisted bytes and stops
+//!       at the first missing or malformed fact.
+//! - [ ] `complete` means both: the structural walk reached an anchor, and replay
+//!       validated the requested head.
+//! - [ ] Reporting code does not construct, admit, project, or create validated
+//!       context.
 use crate::core::index::Index;
 use crate::core::item::FactId;
 use crate::core::play::replay;

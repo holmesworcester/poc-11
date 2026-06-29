@@ -5,14 +5,13 @@
 //! `Offer<Validated>`, so a projector physically cannot read unvalidated context.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] `Context` contains only `Offer<Validated>`.
-//! - [ ] The only source of `Offer<Validated>` in proven execution is core
-//!       promotion after owner validity.
-//! - [ ] `Context::has_offer` answers only exact role/key membership for
-//!       validated offers.
-//! - [ ] Projectors receive `Context` by value and receive no storage handle.
-//! - [ ] `Origin::Local` remains unforgeable outside engine-controlled
-//!       construction before any local-origin invariant depends on it.
+//! - [ ] Projectors can read only validated context, never persisted asserted
+//!       edges directly.
+//! - [ ] Unvalidated persisted edges cannot be placed in `Context`.
+//! - [ ] `has_offer` answers only whether an exact validated match address is
+//!       present; it does not inspect fact bodies or storage.
+//! - [ ] Provenance of context contents is an engine theorem: every context offer
+//!       came from a valid owner fact.
 use super::offer::{Key, Offer, Role};
 
 /// The result of validating one item.
@@ -35,7 +34,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn from(offers: Vec<Offer<Validated>>) -> Self {
+    pub(in crate::core) fn from(offers: Vec<Offer<Validated>>) -> Self {
         Self { offers }
     }
 

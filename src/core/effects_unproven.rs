@@ -2,14 +2,13 @@
 //! unproven, but they make the storage boundary explicit.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Every `EffectRequest` is a pure request for bytes or asserted-edge
-//!       owner ids; it cannot itself create memory, validity, or context.
-//! - [ ] Every successful `EffectResult` is interpreted only by the verified
-//!       turn/application function.
-//! - [ ] Missing facts, empty query results, and effect errors cannot create
-//!       validated state.
-//! - [ ] Storage results are discovery data only; they must pass canonical
-//!       decode/admission before any projection step can depend on them.
+//! - [ ] Helper effects can request only raw facts or asserted-edge lookups; they
+//!       cannot request validated state.
+//! - [ ] Helper results are untrusted observations until the turn layer feeds
+//!       them through decode, admission, or query-result handling.
+//! - [ ] Missing, malformed, or failed helper results cannot create validity.
+//! - [ ] No effect request or result can carry `Validity`, `Context`, or
+//!       `Offer<Validated>` across the helper boundary.
 use super::engine::EdgeAddr;
 use super::item::FactId;
 

@@ -3,17 +3,14 @@
 //! helper effect, an internal projection step, or idle.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] `turn` is deterministic for a given engine state.
-//! - [ ] `turn` emits at most one effect request or performs at most one internal
-//!       projection step.
-//! - [ ] Effect requests are selected only from queued work already present in
-//!       `EngineState`.
-//! - [ ] `apply_effect` interprets loaded facts only through canonical admission
-//!       and query results only as enqueue operations.
-//! - [ ] `turn_with_storage` preserves the engine invariant for every successful
-//!       step.
-//! - [ ] `drain` safety follows by induction over repeated `turn_with_storage`
-//!       steps; max-step exhaustion is a liveness failure, not a safety failure.
+//! - [ ] Each turn performs at most one observable step: request helper data,
+//!       project one admitted fact, or report idle.
+//! - [ ] Helper results enter the engine only through the decode/admit and
+//!       exact-query result handlers.
+//! - [ ] Missing helper data or effect errors cannot create validity.
+//! - [ ] Queue ordering affects scheduling and liveness only; it is not authority.
+//! - [ ] Drain safety is induction over turns that each preserve the engine
+//!       invariant.
 use super::effects::{EffectRequest, EffectResult};
 use super::engine::{EngineState, Storage};
 use super::item::FactId;

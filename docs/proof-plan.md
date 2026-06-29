@@ -21,9 +21,10 @@ or it is only a thin wrapper around such code.
   internal projection steps to the engine.
 - `src/facts/link/project_unproven.rs` keeps link codec, extraction, and
   projection together because versioned byte interpretation is part of fact
-  meaning.
-- `src/facts/link/{author,api,cli}_unproven.rs` contains storage-backed authoring,
-  report, and formatting helpers.
+  meaning. It also owns deterministic typed construction from explicit command
+  parameters.
+- `src/facts/link/api_unproven.rs` contains storage-backed report helpers.
+- `src/facts/link/cli_unproven.rs` contains unproven app admission and formatting.
 - `src/helpers/*_unproven.rs` contains narrow trusted boundaries for crypto/hex,
   clocks, SQLite, and TCP framing. Core storage is now only a trait contract;
   concrete SQLite lives in `src/helpers/sqlite_unproven.rs`.
@@ -39,9 +40,8 @@ Move logic toward these proof-backed unsuffixed modules:
   transition for admission, query results, projection, and wakeups, replacing
   `turn_unproven.rs` once the transition invariant is proven.
 - `src/facts/link/project.rs`: verified link codec, canonical encode/decode,
-  extraction, projection validity, emitted facts, and persistence decision.
-- `src/facts/link/author.rs`: verified command kernels that construct typed link
-  facts from intent arguments.
+  deterministic typed construction from explicit parameters, extraction,
+  projection validity, emitted facts, and persistence decision.
 - `src/helpers/*_unproven.rs`: narrow trusted adapters for crypto assumptions,
   SQLite, TCP sockets, filesystem, clocks, and similar external APIs.
 
@@ -79,6 +79,15 @@ defines what roots, parents, and ancestry mean:
   emitted facts.
 - Link ancestry is domain preserving: any valid descendant has a valid parent
   chain ending at its claimed anchor root.
+
+## Invariant Checklist Style
+
+Source-file invariant checklists should state user-significant or
+threat-model-significant properties first: content addressing, asserted data not
+being authority, validated-context provenance, exact fact-family interpretation,
+and no validity created by IO/storage/reporting. Avoid checklists that are only
+call traces such as "function X calls function Y"; those details belong in Verus
+specs, Rust tests, or contract tests under the named invariant.
 
 The composition theorem is:
 
@@ -127,7 +136,7 @@ Then link projection checks:
 - malformed links, roots that encode a foreign root id, and children whose parent
   has a different root/domain are invalid.
 
-This is intentionally isomorphic to later protocol facts:
+This is intentionally isomorphic to later fact families:
 
 ```text
 fact declares domain id
@@ -137,9 +146,10 @@ projector checks dependency.domain == fact.domain
 projector emits validated statements only inside that same domain
 ```
 
-For protocol facts, `root_id` corresponds to `workspace_id` or another authority
-domain. The link toy should prove the domain-preserving authority pattern before
-we translate the heavier poc-10 user, device-link, and admin-grant fact families.
+For later fact families, `root_id` corresponds to `workspace_id` or another
+authority domain. The link toy should prove the domain-preserving authority
+pattern before we translate the heavier poc-10 user, device-link, and admin-grant
+fact families.
 
 ## Full Proof Plan
 

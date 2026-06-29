@@ -8,17 +8,15 @@
 //! key, and any value is read from the fact body at project time.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Edge addresses are complete: role, scope, and key determine a match.
-//! - [ ] Needs and offers are distinguished only by `EdgeKind`; both use the same
-//!       address representation.
-//! - [ ] Only asserted offers can be promoted to validated offers.
-//! - [ ] Asserted needs are never promoted to validated context.
-//! - [ ] `Offer::validate` preserves kind, role, scope, key, polarity, and
-//!       binding exactly.
-//! - [ ] The caller-side precondition for `Offer::validate` is that the owning
-//!       fact has already been proven valid by core projection.
-//! - [ ] Polarity and binding are carried through unchanged so later suppressing
-//!       or late-bound edges can extend the same proof surface.
+//! - [ ] Asserted needs/offers are routing claims, not proof that their owner is
+//!       valid or authorized.
+//! - [ ] Matching depends only on `(role, scope, key)`; dependency discovery
+//!       cannot smuggle fact body data through the edge index.
+//! - [ ] Only offers, never needs, can become validated context.
+//! - [ ] Promotion preserves the asserted edge's address and metadata; it adds no
+//!       new authority payload.
+//! - [ ] Only the core engine may promote an asserted offer, after proving the
+//!       owner fact is valid.
 use std::marker::PhantomData;
 
 use super::typestate::{Asserted, Validated};
@@ -111,7 +109,7 @@ impl Offer<Asserted> {
     /// precondition into a Verus `requires`. The doc writes
     /// `validate(o) -> Option<Offer<Validated>>`; the Option lives one level up, in
     /// `project`'s `Validity`, so this per-offer step is infallible.
-    pub fn validate(self) -> Offer<Validated> {
+    pub(in crate::core) fn validate(self) -> Offer<Validated> {
         Offer {
             kind: self.kind,
             role: self.role,

@@ -11,7 +11,7 @@ fn ids_in(line: &str) -> HashSet<String> {
     line.split_whitespace().map(str::to_string).collect()
 }
 
-/// Author a chain of `n` links (each `--prev` the last), `--at i` for determinism.
+/// Admit a chain of `n` links (each `--prev` the last), `--at i` for determinism.
 /// Returns ids oldest..newest (index 0 = root).
 fn build_chain(db: &str, n: usize) -> Vec<String> {
     let mut ids = Vec::new();
@@ -30,7 +30,7 @@ fn build_chain(db: &str, n: usize) -> Vec<String> {
     ids
 }
 
-/// Author `n` independent links (no `--prev`). Returns ids in author order.
+/// Admit `n` independent links (no `--prev`). Returns ids in admission order.
 fn build_independents(db: &str, n: usize) -> Vec<String> {
     (1..=n)
         .map(|i| {

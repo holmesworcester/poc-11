@@ -1,4 +1,4 @@
-//! Test C (real two-process TCP round-trip): author a chain on daemon A, which
+//! Test C (real two-process TCP round-trip): admit a chain on daemon A, which
 //! pushes it to daemon B over a real socket. B must end up with the whole chain
 //! AND reconstruct + validate its closure — not merely store the bytes.
 mod cli_harness;
@@ -34,7 +34,7 @@ fn link_chain_travels_over_tcp_and_projects_on_peer() {
     let _bd = spawn_daemon(&b, b_port, &[]);
     let _ad = spawn_daemon(&a, a_port, &[b_port]);
 
-    // Author a chain of 8 on A via separate CLI processes (the daemon reads a.db
+    // Admit a chain of 8 on A via separate CLI processes (the daemon reads a.db
     // through WAL and ships new facts to B as they appear).
     let mut prev: Option<String> = None;
     let mut ids = Vec::new();

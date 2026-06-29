@@ -39,7 +39,7 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
 | path | role |
 |------|------|
 | `src/core/` | proof-targeted generic runtime/playback API; `effects_unproven` and `turn_unproven` stage the deterministic turn proof surface |
-| `src/facts/link/` | **link fact family**: `project_unproven` holds codec/extract/project; `author_unproven`, `api_unproven`, and `cli_unproven` hold storage/app-facing pieces |
+| `src/facts/link/` | **link fact family**: `project_unproven` holds typed construction, codec, extract, and project; `api_unproven` reports observations; `cli_unproven` is the app admission/formatting adapter |
 | `src/helpers/` | narrow trusted helper/effect boundaries: crypto, hex, clock, SQLite, and TCP framing |
 | `src/cli_unproven.rs` | thin app layer wiring the link fact family into the core runtime |
 | `verus-core/` | Verus-verified executable projection gate called by `src/core/engine_unproven.rs` |
@@ -52,7 +52,7 @@ generalizes into a manifest.
 
 ```sh
 cargo build --bin lk
-lk --db x.db --at 1 link                 # author a root
+lk --db x.db --at 1 link                 # construct/admit a root
 lk --db x.db --at 2 link --prev <id1>    # extend the chain
 lk --db x.db replay --window 1           # seed 1, pull the whole chain via the index
 lk --db x.db chain <head-id>             # validated chain (complete/length/root)
@@ -72,7 +72,7 @@ cargo test
 - `bounded_replay` — **Test A**: window=10 over a 25-link chain projects all 25
   (`pulled_in_count: 15`); **Test B**: 25 independents → only the window projects
   (`pulled_in_count: 0`). Same totals, so B is a real control for A.
-- `network_roundtrip` — **Test C**: a chain authored on daemon A is reconstructed
+- `network_roundtrip` — **Test C**: a chain admitted on daemon A is reconstructed
   and validated on daemon B over a real TCP socket.
 - `reverse_key` — **Test D**: a child admitted before its parent is Invalid; once the
   parent arrives, the engine's `wake` (offer→need) re-derives and validates it. A
@@ -100,8 +100,8 @@ copied from the projected fact under that fact's owner.
 Proof goals:
 
 - Verify executable core gates, not parallel proof-only models.
-- Verify protocol kernels: codec canonicality, extraction, projection, emitted
-  facts, and authoring commands.
+- Verify fact-family kernels: deterministic typed construction, codec canonicality,
+  extraction, projection, and emitted facts.
 - Shape deterministic execution as a proof target: move queue/drain logic toward a
   `turn` function that takes state plus inputs and returns new state plus requested
   effects.
@@ -121,9 +121,9 @@ Proof-first organization:
 - Keep the poc-10-style split: `src/core/` owns generic deterministic machinery
   such as turns, queues, contexts, admission, projection gates, and effect
   requests; `src/facts/` owns fact-family logic. Keep fact families in
-  poc-10-style directories such as `src/facts/link/`, with family-local modules
-  for `api`, `author`, `project`, `cli`, codec/extract, and tests/proofs as they
-  become real files.
+  poc-10-style directories such as `src/facts/link/`, with `project` owning typed
+  construction, codec/extract/project semantics, `api` owning observation, `cli`
+  owning app admission/formatting, and tests/proofs as they become real files.
 - Use `src/helpers/` for narrow external primitives and effect adapters:
   `crypto_unproven.rs`, `sqlite_unproven.rs`, `tcp_unproven.rs`,
   `fs_unproven.rs`, `clock_unproven.rs`. These files are explicit trusted

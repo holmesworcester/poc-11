@@ -5,16 +5,13 @@
 //! peers and reconciles a volatile sent-set each turn (recurrence = liveness).
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Runtime ingress never projects directly; accepted frames go through
-//!       decode plus core admission.
-//! - [ ] Frames rejected by the route decoder create no durable or validated
-//!       state.
-//! - [ ] Runtime egress sends stored bytes only; sending a fact is not evidence
-//!       that it is valid.
-//! - [ ] Socket, clock, and SQLite failures cannot create validated state.
-//! - [ ] Recurring egress is a liveness helper only and carries no authority.
-//! - [ ] Any deterministic runtime-turn logic that affects validity moves to
-//!       `core::turn` before being treated as proven.
+//! - [ ] Network frames are untrusted until a fact-family codec accepts them and
+//!       core admission records their content-addressed identity.
+//! - [ ] Rejected frames are dropped without changing core fact or validity state.
+//! - [ ] Runtime transport never validates or projects facts directly; reads
+//!       derive validity through replay/projection.
+//! - [ ] Egress sends persisted fact bytes only; successful send, failed send, and
+//!       wall-clock time do not influence validity.
 use std::collections::HashSet;
 use std::io::Write;
 use std::net::TcpListener;

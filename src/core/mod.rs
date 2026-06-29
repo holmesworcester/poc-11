@@ -4,11 +4,11 @@
 //! the source tree.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] This module remains re-export-only and contains no invariant-bearing
-//!       behavior.
-//! - [ ] Unsuffixed core modules are introduced only after their invariants are
-//!       covered by executable Verus proof or thin wrappers around proven code.
-//! - [ ] `_unproven` aliases stay explicit while proof obligations remain open.
+//! - [ ] This module has no fact, validity, or storage behavior of its own.
+//! - [ ] Proof status stays visible: behavior-bearing core files keep `_unproven`
+//!       until executable Verus proof covers their invariants.
+//! - [ ] Unsuffixed core files are either proven executable code or thin wrappers
+//!       around proven executable code.
 pub mod admit_unproven;
 pub mod effects_unproven;
 pub mod engine_unproven;

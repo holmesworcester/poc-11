@@ -9,6 +9,16 @@ fn normalize_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn uncommented_source(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with("//")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
 fn in_memory_projection_note_records_extract_project_boundary() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -33,7 +43,7 @@ fn in_memory_projection_note_records_extract_project_boundary() {
         "the runtime turn itself can be proven",
         "`src/facts/` is proof-targeted",
         "Keep the poc-10 family-directory shape",
-        "`src/facts/link/` should own family-local modules such as `api`, `author`, `project`, `cli`",
+        "`src/facts/link/` should own family-local modules such as `api`, `project`, `cli`",
         "`src/helpers/` is the explicit trusted boundary",
         "Files without `_unproven` in `core` or `facts` must have their invariants covered by Verus-verified executable code",
     ] {
@@ -57,10 +67,12 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "`src/core/effects_unproven.rs` and `src/core/turn_unproven.rs` are the current staging surface",
         "concrete SQLite lives in `src/helpers/sqlite_unproven.rs`",
         "`src/core/turn.rs`: deterministic `State + Input -> State + Effects` transition",
-        "`src/facts/link/project.rs`: verified link codec, canonical encode/decode, extraction, projection validity",
+        "`src/facts/link/project.rs`: verified link codec, canonical encode/decode, deterministic typed construction from explicit parameters, extraction, projection validity",
         "`src/helpers/*_unproven.rs`: narrow trusted adapters",
         "Core proofs are about all possible fact families routed through the engine",
         "Link proofs live in `src/facts/link/project.rs` because only the link family defines what roots, parents, and ancestry mean",
+        "Source-file invariant checklists should state user-significant or threat-model-significant properties first",
+        "Avoid checklists that are only call traces",
         "Multiple anchors are allowed; the starter model does not prove global root uniqueness",
         "valid_link(link_id, root_id)",
         "no cross-root splice validates",
@@ -103,7 +115,6 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "src/core/turn_unproven.rs",
         "src/core/typestate_unproven.rs",
         "src/facts/link/api_unproven.rs",
-        "src/facts/link/author_unproven.rs",
         "src/facts/link/cli_unproven.rs",
         "src/facts/link/mod.rs",
         "src/facts/link/project_unproven.rs",
@@ -119,10 +130,11 @@ fn proof_target_files_have_verus_invariant_checklists() {
 
     let engine = normalize_whitespace(&source_text(&root.join("src/core/engine_unproven.rs")));
     for required in [
-        "Every promoted offer is an asserted offer of the promoted owner",
-        "Every promoted offer's owner is marked valid",
-        "The `Context` passed to a projector contains only validated offers",
-        "Drain/run safety follows by induction over the one-step transition",
+        "Persisted edges are discovery only",
+        "Ready context: a projector receives only validated offers",
+        "Validated-offer provenance: every offer in validated context is owned by a fact already projected valid",
+        "Emission does not inherit authority",
+        "Ongoing safety: every admit/query/project/wake queue step preserves these invariants",
     ] {
         assert!(
             engine.contains(required),
@@ -130,20 +142,148 @@ fn proof_target_files_have_verus_invariant_checklists() {
         );
     }
 
+    let admit = normalize_whitespace(&source_text(&root.join("src/core/admit_unproven.rs")));
+    for required in [
+        "Content-addressed identity",
+        "Asserted-edge honesty",
+        "Durability policy",
+        "Admission is not validation",
+    ] {
+        assert!(
+            admit.contains(required),
+            "core admission checklist is missing model invariant {required:?}"
+        );
+    }
+
     let link = normalize_whitespace(&source_text(
         &root.join("src/facts/link/project_unproven.rs"),
     ));
     for required in [
-        "children encode a claimed root id",
-        "No cross-root splice validates",
-        "High-level link theorem depends on core",
-        "core proves validated context provenance, owner validity, asserted-to-validated promotion, and transitive validity",
-        "every valid child link is backed by a valid parent link in the same root/domain, transitively to an anchor",
-        "no global uniqueness of anchors is claimed",
+        "Canonical link identity",
+        "Project-owned construction",
+        "Extraction honesty",
+        "Starter validity rule",
+        "Root/domain migration",
+        "Composition with core",
+        "valid same-domain parent chain to an anchor",
+        "no theorem here claims anchor uniqueness",
     ] {
         assert!(
             link.contains(required),
             "link project checklist is missing {required:?}"
+        );
+    }
+}
+
+#[test]
+fn link_fact_family_contracts_are_strict_and_role_local() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let files = [
+        "src/facts/link/mod.rs",
+        "src/facts/link/api_unproven.rs",
+        "src/facts/link/cli_unproven.rs",
+        "src/facts/link/project_unproven.rs",
+    ];
+
+    for file in files {
+        let text = source_text(&root.join(file));
+        assert!(
+            text.contains("Fact-family contract (do not weaken):"),
+            "{file} is missing the strict fact-family contract"
+        );
+        assert!(
+            text.contains("do not weaken") || text.contains("Do not weaken"),
+            "{file} must make the contract's stability explicit"
+        );
+    }
+
+    let family_mod = uncommented_source(&source_text(&root.join("src/facts/link/mod.rs")));
+    assert!(
+        !root.join("src/facts/link/author_unproven.rs").exists(),
+        "link author module must not be reintroduced; deterministic construction belongs in project"
+    );
+    assert!(
+        !family_mod.contains("author_unproven"),
+        "link/mod.rs must not export an author module"
+    );
+    for forbidden in ["pub fn ", "pub struct ", "pub enum "] {
+        assert!(
+            !family_mod.contains(forbidden),
+            "link/mod.rs must remain re-export-only; found {forbidden:?}"
+        );
+    }
+
+    let api = uncommented_source(&source_text(&root.join("src/facts/link/api_unproven.rs")));
+    assert!(api.contains("pub fn chain_report("));
+    assert!(api.contains("replay::<LinkProjector>"));
+    for forbidden in [
+        "link_from_params",
+        "admit::<",
+        "insert_asserted",
+        "flush_fact",
+        "project_one",
+        "LinkState",
+        "Context",
+        "Offer<Validated>",
+    ] {
+        assert!(
+            !api.contains(forbidden),
+            "reporting must not contain construction/projection concern {forbidden:?}"
+        );
+    }
+
+    let cli = uncommented_source(&source_text(&root.join("src/facts/link/cli_unproven.rs")));
+    assert!(cli.contains("link_from_params(at, prev, label)"));
+    assert!(cli.contains("admit::<LinkProjector>"));
+    assert!(cli.contains("let r = chain_report(idx, id)?;"));
+    for forbidden in [
+        "Link {",
+        "insert_asserted",
+        "flush_fact",
+        "LinkState",
+        "Validity",
+        "Context",
+        "Offer<Validated>",
+        ".project(",
+    ] {
+        assert!(
+            !cli.contains(forbidden),
+            "CLI must not contain fact semantics/proof concern {forbidden:?}"
+        );
+    }
+
+    let project = uncommented_source(&source_text(
+        &root.join("src/facts/link/project_unproven.rs"),
+    ));
+    for required in [
+        "pub struct Link",
+        "pub struct LinkState",
+        "pub struct LinkProjector",
+        "pub fn link_from_params(",
+        "impl Projector for LinkProjector",
+        "fn encode(",
+        "fn decode(",
+        "fn extract(",
+        "fn project(",
+    ] {
+        assert!(
+            project.contains(required),
+            "project module is missing semantic owner item {required:?}"
+        );
+    }
+    for forbidden in [
+        "Index",
+        "SqliteIndex",
+        "admit::<",
+        "chain_report",
+        "author(",
+        "replay::<",
+        "to_hex",
+        "from_hex",
+    ] {
+        assert!(
+            !project.contains(forbidden),
+            "project module must not contain storage/UI/app-admission concern {forbidden:?}"
         );
     }
 }

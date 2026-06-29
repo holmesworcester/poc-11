@@ -1,18 +1,28 @@
 //! Link fact family, kept in poc-10-style family-directory shape.
 //!
+//! Fact-family contract (do not weaken):
+//! - `project` is the only link module that defines link semantics: codec,
+//!   extraction, projection, root/domain meaning, and link-specific theorems.
+//! - `api` is only an observation/report layer. It may read storage and call
+//!   replay to report completeness, but it must not construct, admit, or project
+//!   facts directly.
+//! - `cli` is the unproven app adapter. It may call project-owned deterministic
+//!   constructors and core admission, but it must not define link semantics or
+//!   create proof evidence.
+//! - This contract is part of the proof plan. Do not weaken or move these
+//!   responsibilities without updating the proof plan and the source-contract
+//!   tests in `tests/documentation.rs`.
+//!
 //! Invariant checklist (Verus):
-//! - [ ] This module remains re-export-only and contains no link semantics.
-//! - [ ] Link semantics stay in `project`; authoring/reporting/CLI files may call
-//!       it but must not duplicate projection rules.
-//! - [ ] The family directory remains the locus for all link-specific proof
-//!       obligations.
+//! - [ ] All link-specific meaning lives in `project`.
+//! - [ ] App/report modules cannot define link semantics or proof evidence.
+//! - [ ] This module is re-export-only; it adds no behavior to prove.
 pub mod api_unproven;
-pub mod author_unproven;
 pub mod cli_unproven;
 pub mod project_unproven;
 
 pub use api_unproven::{chain_report, Report};
-pub use author_unproven::{author, Authored};
 pub use project_unproven::{
-    link_edges, link_id, link_project_validity, Link, LinkProjector, LinkState, LINK, TAG_LINK,
+    link_edges, link_from_params, link_id, link_project_validity, Link, LinkProjector, LinkState,
+    LINK, TAG_LINK,
 };

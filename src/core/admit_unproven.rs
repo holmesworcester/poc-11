@@ -5,15 +5,18 @@
 //! without writing bytes or edges back to persistence.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Admission computes `id == fact_id(P::encode(item))`.
-//! - [ ] Admission persists exactly `P::extract(item)` as asserted edges for
-//!       `id`, with no extra owners or edges.
-//! - [ ] Durable admission flushes exactly `P::encode(item)` under `id`; volatile
-//!       admission does not flush bytes.
-//! - [ ] Admission creates only an `Admitted` token and asserted storage state; it
-//!       never creates validity or validated context.
-//! - [ ] `Admitted` tokens cannot be fabricated outside core admission/loading
-//!       paths.
+//! - [ ] Content-addressed identity: an admitted fact is named only by the hash
+//!       of its canonical bytes; no network peer, CLI command, or storage row can
+//!       choose a different id.
+//! - [ ] Asserted-edge honesty: the dirty routing hints stored for a fact are
+//!       exactly the fact family's extraction output for that fact.
+//! - [ ] Durability policy: bytes are persisted only when the fact family's
+//!       content-pure durability decision says this item is durable.
+//! - [ ] Admission is not validation: admitting or persisting a fact creates no
+//!       validated context, validated offer, or validity claim.
+//! - [ ] Core-only admission tokens: any in-memory admitted token not produced by
+//!       this storage-writing path must separately preserve the same id/body
+//!       relation before projection.
 use super::index::Index;
 use super::item::{fact_id, FactId};
 use super::projector::Projector;
@@ -26,7 +29,7 @@ pub struct Admitted<I> {
 }
 
 impl<I> Admitted<I> {
-    pub(crate) fn from_parts(item: I, id: FactId) -> Self {
+    pub(in crate::core) fn from_parts(item: I, id: FactId) -> Self {
         Self { item, id }
     }
 

@@ -5,33 +5,36 @@
 //! emits an OFFER on the link's own id and, if it has a parent, a NEED on `prev`.
 //! `project` makes a link valid iff its parent is valid; a root is valid by itself.
 //!
+//! Fact-family contract (do not weaken):
+//! - Scope: the only home for link semantics.
+//! - Owned here: `Link`, `LinkState`, `LinkProjector`, link codec, link
+//!   deterministic constructors, extraction, projection, root/domain
+//!   interpretation, and link-specific theorems.
+//! - Allowed dependency: core supplies `Admitted`, asserted/validated edge types,
+//!   `Context`, and `Validity`; core proves validated-context provenance.
+//! - Forbidden here: durable storage access, CLI/report formatting, network IO,
+//!   SQLite, and command admission policy.
+//! - Any future root/domain field must be interpreted here. App admission may
+//!   only pass explicit parameters into `link_from_params`.
+//!
 //! Invariant checklist (Verus):
-//! - [ ] Link codec is canonical: `decode(encode(link)) == link`.
-//! - [ ] Link codec rejects malformed tags, malformed parent/root flags,
-//!       truncated ids, and non-canonical accepted bytes.
-//! - [ ] `link_id(link) == fact_id(encode(link))`.
-//! - [ ] Extraction emits exactly one self-offer for this link id.
-//! - [ ] Extraction emits exactly one parent need iff `prev=Some(parent_id)`.
-//! - [ ] Extraction emits no hidden needs or offers.
-//! - [ ] Current starter semantics: `prev=None` is an anchor root for its own
-//!       component, and multiple anchors are allowed.
-//! - [ ] Root/domain semantics after migration: roots emit
-//!       `valid_link(self_id, self_id)`.
-//! - [ ] Root/domain semantics after migration: children encode a claimed root id
-//!       and require validated context `valid_link(parent_id, claimed_root_id)`.
-//! - [ ] No cross-root splice validates: a child whose claimed root differs from
-//!       the validated parent's root is invalid.
-//! - [ ] Projection uses only the parent/root context address declared by
-//!       extraction.
-//! - [ ] Projection emits no facts in the starter model.
-//! - [ ] Link state records only this fact's computed validity or validated link
-//!       statement and does not mutate unrelated ids.
-//! - [ ] High-level link theorem depends on core: core proves validated context
-//!       provenance, owner validity, asserted-to-validated promotion, and
-//!       transitive validity over dependency edges.
-//! - [ ] Composition theorem: every valid child link is backed by a valid parent
-//!       link in the same root/domain, transitively to an anchor; no global
-//!       uniqueness of anchors is claimed.
+//! - [ ] Canonical link identity: accepted link bytes decode to exactly one
+//!       semantic `Link`, re-encode to the same bytes, and derive the link id from
+//!       those bytes.
+//! - [ ] Project-owned construction: command parameters determine only link
+//!       content and `prev`; app code cannot assign ids, edges, roots, or validity.
+//! - [ ] Extraction honesty: a link asserts exactly its self-offer and, for a
+//!       child, exactly the need for its declared parent.
+//! - [ ] Starter validity rule: a root (`prev=None`) is valid; a child is valid
+//!       exactly when validated context contains its parent offer.
+//! - [ ] No state authority leak: starter projection records only this link's
+//!       validity and emits no new facts.
+//! - [ ] Root/domain migration: once links carry a root/domain id, roots emit
+//!       `valid_link(self,self)`, children require `valid_link(parent, root)`, and
+//!       cross-root splices are invalid.
+//! - [ ] Composition with core: because context offers have valid owners, every
+//!       valid child link has a valid same-domain parent chain to an anchor; no
+//!       theorem here claims anchor uniqueness.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
@@ -58,6 +61,13 @@ pub struct LinkState {
 }
 
 pub struct LinkProjector;
+
+/// Deterministic constructor from command parameters to the typed link fact.
+pub fn link_from_params(at: u64, prev: Option<FactId>, label: &str) -> Link {
+    let mut content = at.to_le_bytes().to_vec();
+    content.extend_from_slice(label.as_bytes());
+    Link { content, prev }
+}
 
 pub fn link_id(l: &Link) -> FactId {
     fact_id(&LinkProjector::encode(l))

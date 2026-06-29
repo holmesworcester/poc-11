@@ -2,12 +2,11 @@
 //! its id is the hash of its canonical bytes (mirrors poc-10 `fact_id`).
 //!
 //! Invariant checklist (Verus):
-//! - [ ] `FactId` is exactly a fixed 32-byte content address.
-//! - [ ] All fact ids used by proven code are derived from canonical bytes.
-//! - [ ] The proof treats `fact_id` as deterministic and collision-free for
-//!       accepted canonical bytes.
-//! - [ ] Hex parsing/formatting never participates in validity; it is only an
-//!       app-facing representation boundary.
+//! - [ ] Fact ids are content addresses for canonical fact bytes.
+//! - [ ] Crypto assumption: two different canonical byte strings do not have the
+//!       same fact id, and hashing the same bytes is deterministic.
+//! - [ ] Hex is display/input syntax only; it is never evidence of validity,
+//!       ownership, or authority.
 
 pub type FactId = [u8; 32];
 

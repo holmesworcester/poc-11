@@ -7,16 +7,16 @@
 //! indexed in memory, but their already-persisted bytes/edges are not re-written.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Replay seeds only enqueue admission; they do not create validity.
-//! - [ ] Replay and wake drive the same proven turn transition as live draining.
-//! - [ ] Storage facts pulled during replay are admitted read-only through the
-//!       engine's canonical load/decode path.
-//! - [ ] The returned memo contains only facts projected by the engine.
-//! - [ ] A successful replay proves each requested seed is admitted and projected.
-//! - [ ] A step bound can stop liveness/completeness, but it cannot create an
-//!       unsound valid fact.
-//! - [ ] Wake is the offer-to-need direction: it validates the arrived fact, then
-//!       relies on core offer-query turns to discover needers.
+//! - [ ] Replay starts from chosen seeds but may pull the transitive dependency
+//!       closure through persisted need-to-offer matches.
+//! - [ ] Replay is read-only with respect to durable storage: stored facts can be
+//!       decoded into memory, but their bytes and asserted edges are not rewritten.
+//! - [ ] Wake starts from newly available facts and cascades only through stored
+//!       or in-memory needers that match validated offers.
+//! - [ ] A successful replay/wake report reflects the engine state after the work
+//!       queue drains; if bounded draining leaves pending work, it reports error.
+//! - [ ] Replay/wake safety is inherited from the per-turn engine invariant for
+//!       every prefix of the drain.
 
 use std::collections::HashMap;
 

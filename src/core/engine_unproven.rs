@@ -10,27 +10,20 @@
 //! crate that this engine calls as ordinary Rust.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Every in-memory fact is keyed by `fact_id(P::encode(item))`.
-//! - [ ] Every in-memory asserted edge set is exactly `P::extract(item)` for its
-//!       owner.
-//! - [ ] Storage-loaded bytes are accepted only when their hash matches the
-//!       requested id and `P::encode(P::decode(bytes)) == bytes`.
-//! - [ ] Query results only enqueue candidate ids; they never create validity or
-//!       validated context.
-//! - [ ] A fact can become `Valid` only through `project_one` and its routed
-//!       projector.
-//! - [ ] `project_one` runs a projector only after the core readiness gate proves
-//!       every asserted need has a matching validated offer.
-//! - [ ] The `Context` passed to a projector contains only validated offers whose
-//!       addresses match this fact's asserted needs.
-//! - [ ] Every promoted offer is an asserted offer of the promoted owner.
-//! - [ ] Every promoted offer's owner is marked valid.
-//! - [ ] The same `(owner, address)` offer is promoted at most once.
-//! - [ ] Emitted facts are admitted only after the emitting fact is valid, and
-//!       emitted bytes must decode canonically for the same projector route.
-//! - [ ] Admit/query/project/wake queue operations preserve the above invariant
-//!       and only schedule well-formed ids or edge addresses.
-//! - [ ] Drain/run safety follows by induction over the one-step transition.
+//! - [ ] Content-addressed memory: every in-memory fact is stored under the id of
+//!       canonical bytes accepted by its fact-family codec.
+//! - [ ] Persisted edges are discovery only: loading facts or query results can
+//!       enqueue work, but cannot mark a fact valid or promote an offer.
+//! - [ ] Ready context: a projector receives only validated offers whose
+//!       addresses match needs asserted by the fact being projected.
+//! - [ ] Validated-offer provenance: every offer in validated context is owned by
+//!       a fact already projected valid and was asserted by that same owner.
+//! - [ ] No duplicated authority: one owner can contribute at most one validated
+//!       offer for a given match address.
+//! - [ ] Emission does not inherit authority: emitted bytes re-enter decode,
+//!       admission, and projection before they can become valid.
+//! - [ ] Ongoing safety: every admit/query/project/wake queue step preserves
+//!       these invariants, so every prefix of a drain is sound.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 

@@ -1,24 +1,32 @@
-//! Link CLI formatting helpers. Parsing/formatting remains unproven; it delegates
-//! fact-family behavior to the link author/report/project modules.
+//! Link CLI formatting helpers. Parsing/formatting and command admission remain
+//! unproven; semantic link construction stays in `project`.
+//!
+//! Fact-family contract (do not weaken):
+//! - Scope: app adapter only: call deterministic link construction, call core
+//!   admission, call report/replay helpers, and format returned data.
+//! - Forbidden here: defining link constructors, defining codec/extraction/
+//!   projection rules, interpreting root/domain semantics, creating `Validity`,
+//!   creating `Context`, or creating `Offer<Validated>`.
+//! - CLI output is display text. It is not proof evidence.
 //!
 //! Invariant checklist (Verus):
-//! - [ ] CLI parsing/formatting creates no validity or validated context.
-//! - [ ] CLI commands delegate all fact construction to link authoring and all
-//!       validity claims to replay/report helpers.
-//! - [ ] Hex input is only an app-facing representation and must become a
-//!       `FactId` before core/fact logic uses it.
-//! - [ ] Displayed `root_id`, `depth`, and `complete` values are reports, not
-//!       authority unless backed by replay/projection.
+//! - [ ] CLI input is not proof evidence; it only chooses parameters for the
+//!       project-owned link constructor.
+//! - [ ] CLI admission goes through core admission; it never writes fact bytes or
+//!       asserted edges directly.
+//! - [ ] Displayed ids, roots, depths, and completeness are reports only; they do
+//!       not affect future validity.
+//! - [ ] CLI code cannot construct `Validity`, `Context`, or `Offer<Validated>`.
 use std::collections::HashSet;
 
+use crate::core::admit::admit;
 use crate::core::index::Index;
 use crate::core::item::FactId;
 use crate::core::play::replay;
 use crate::helpers::hex_unproven::to_hex;
 
 use super::api_unproven::chain_report;
-use super::author_unproven::author;
-use super::project_unproven::LinkProjector;
+use super::project_unproven::{link_from_params, LinkProjector};
 
 pub fn link_lines(
     idx: &dyn Index,
@@ -26,16 +34,17 @@ pub fn link_lines(
     prev: Option<FactId>,
     label: &str,
 ) -> Result<Vec<String>, String> {
-    let a = author(idx, at, prev, label)?;
+    let id = admit::<LinkProjector>(link_from_params(at, prev, label), at, idx)?.id();
+    let r = chain_report(idx, id)?;
     Ok(vec![
-        format!("link_id: {}", to_hex(&a.id)),
+        format!("link_id: {}", to_hex(&id)),
         format!(
             "prev_id: {}",
             prev.map(|p| to_hex(&p))
                 .unwrap_or_else(|| "none".to_string())
         ),
-        format!("depth: {}", a.depth),
-        format!("root_id: {}", to_hex(&a.root)),
+        format!("depth: {}", r.depth),
+        format!("root_id: {}", to_hex(&r.root)),
     ])
 }
 

@@ -5,20 +5,16 @@
 //! the daemon's workers hold an [`super::index::Index`].
 //!
 //! Invariant checklist (Verus):
-//! - [ ] Each projector proves `decode(encode(item)) == item` for its semantic
-//!       item type.
-//! - [ ] Each projector rejects malformed or foreign-family bytes.
-//! - [ ] Each projector proves accepted bytes are canonical:
-//!       `encode(decode(bytes)) == bytes`.
-//! - [ ] `durable(item)` is deterministic and depends only on the item.
-//! - [ ] `extract(item)` is context-free and exact for all addresses the
-//!       projector may later read.
-//! - [ ] `project(admitted, ctx, state)` reads other facts only through validated
-//!       `ctx`.
-//! - [ ] `project` mutates only its private projector state and returns explicit
-//!       emitted facts/effects.
-//! - [ ] Any emitted fact bytes are canonical for their route before core admits
-//!       them.
+//! - [ ] Codec canonicality: each fact family accepts exactly the canonical byte
+//!       forms it is willing to give semantic meaning.
+//! - [ ] Extraction is content-pure: persisted needs/offers are determined by the
+//!       fact body alone, not by storage, clocks, peers, or validation state.
+//! - [ ] Durability is content-pure: whether bytes are persisted does not depend
+//!       on which peer or command supplied them.
+//! - [ ] Projection is confined: it can inspect only the admitted fact, validated
+//!       context, and the family-private state it owns.
+//! - [ ] Core proves where context came from; each fact family proves what that
+//!       context means for its own validity rules.
 use super::admit::Admitted;
 use super::offer::Offer;
 use super::typestate::{Asserted, Context, Validity};

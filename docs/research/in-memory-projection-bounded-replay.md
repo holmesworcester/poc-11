@@ -112,7 +112,7 @@ irreducibility of §3 stops being a problem.
 
 - **Durable (required):** the fact log, and the needs/offers index — a **key-value
   lookup** keyed by match address, reverse-keyed (by target/predicate) for
-  late-binding entries so a deletion/rekey can reach a target authored before it.
+  late-binding entries so a deletion/rekey can reach a target created before it.
   Resolved on every admit and load: out-of-order delivery means a deletion keyed
   to `F` can arrive before `F`, so admission queries the index by the arriving
   item's own address, and loads query it too.
@@ -699,10 +699,11 @@ the invariant as an informal rule.
 - **`src/facts/` is proof-targeted.** The current model has one fact family,
   `link`, but this is where poc-10-style fact families should live as they move
   over. Keep the poc-10 family-directory shape: `src/facts/link/` should own
-  family-local modules such as `api`, `author`, `project`, `cli`, codec/extract,
-  and tests/proofs as they become real files. Codec canonicality, extraction,
-  projection, emitted facts, persistence decisions, and authoring kernels are
-  fact proofs.
+  family-local modules such as `api`, `project`, `cli`, and tests/proofs as they
+  become real files. `project` owns deterministic typed construction,
+  codec/extract/project semantics, emitted facts, and persistence decisions; app
+  admission and formatting remain unproven adapters until their boundaries are
+  proven.
 - **`src/helpers/` is the explicit trusted boundary.** Narrow external primitives
   and effect adapters belong here with `_unproven` suffixes: crypto assumptions,
   SQLite, TCP sockets, filesystem access, clocks, and similar APIs. Helpers should

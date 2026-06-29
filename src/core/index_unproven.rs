@@ -2,19 +2,14 @@
 //! [`crate::helpers::sqlite_unproven`].
 //!
 //! Invariant checklist (Verus):
-//! - [ ] `flush_fact(id, bytes, ts)` stores bytes only under
-//!       `id == fact_id(bytes)`.
-//! - [ ] `load_fact(id)` returns either no bytes or bytes whose hash is `id`.
-//! - [ ] `insert_asserted(owner, edges, ts)` records only edges whose owner is
-//!       `owner`.
-//! - [ ] `offers_for_key(role, scope, key)` returns only owners with an asserted
-//!       offer at that exact address.
-//! - [ ] `needs_for_key(role, scope, key)` returns only owners with an asserted
-//!       need at that exact address.
-//! - [ ] Window ordering is a seed-selection mechanism only; it does not affect
-//!       validity.
-//! - [ ] Storage lookup results are untrusted discovery hints until the engine
-//!       revalidates bytes and context in memory.
+//! - [ ] Stored facts are content-addressed: loading id `x` can return only bytes
+//!       whose hash is `x`.
+//! - [ ] Stored asserted edges are routing hints for their owner; storage never
+//!       turns them into authority or validity.
+//! - [ ] Need/offer lookup is exact: returned owners have a stored asserted edge
+//!       with the requested direction and match address.
+//! - [ ] Window selection is only a replay seed choice; no validity theorem can
+//!       depend on recency, ordering, or inclusion in the window.
 use super::item::FactId;
 use super::offer::{Key, Offer, Role, Scope};
 use super::typestate::Asserted;
