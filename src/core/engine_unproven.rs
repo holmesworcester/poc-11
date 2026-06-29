@@ -6,9 +6,10 @@
 //! - need queries: pull stored offerers for newly indexed needs.
 //! - offer queries: wake stored/local needers for newly validated offers.
 //!
-//! Projection promotion is checked directly against this engine's running state:
-//! the engine may promote asserted offers only for the same fact whose projector
-//! returned `Valid` after all asserted needs were satisfied by validated context.
+//! Projection returns family-private read-model updates, but promotion is checked
+//! directly against this engine's running state: the engine may promote asserted
+//! offers and admit emitted facts only for the same fact whose projector returned
+//! `Valid` after all asserted needs were satisfied by validated context.
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: validated-context provenance and ongoing engine safety.
@@ -17,10 +18,15 @@
 //!       `Admitted` token.
 //! - [ ] Safety: storage lookup results are discovery hints only; they cannot
 //!       mark a fact valid or promote an offer.
-//! - [ ] Safety: a projector receives only validated offers whose addresses match
-//!       needs asserted by the fact being projected.
+//! - [ ] Safety: a projector is called only after every asserted need has a
+//!       matching validated offer; it receives only validated offers whose
+//!       addresses match needs asserted by the fact being projected.
 //! - [ ] Safety: every validated offer is owned by a fact already projected valid
 //!       and was asserted by that same owner.
+//! - [ ] Safety: family-private projector state is not authority: a projector may
+//!       return state updates only for the fact being projected, and the engine
+//!       promotes offers and emitted facts only after readiness and projector
+//!       validity are both established.
 //! - [ ] Safety: one owner contributes at most one validated offer for a given
 //!       match address.
 //! - [ ] Safety: raw bytes returned in `ProjectOutcome.emitted` do not inherit
@@ -44,9 +50,11 @@
 //!   load result, need-query result, projection, raw emitted-byte admission, and
 //!   offer-query result. The load/query transitions may enqueue additional ids or
 //!   addresses to inspect, but they do not mutate validity or validated offers.
-//! - For projection, use readiness to build context only from matching validated
-//!   offers, run the projector, then promote only asserted offers owned by a fact
-//!   whose effective validity is `Valid`.
+//! - For projection, prove readiness first, build context only from matching
+//!   validated offers, run the projector, reject any update whose owner is not the
+//!   projected fact, apply returned family-private updates through
+//!   `P::apply_update`, and promote asserted offers only when projector validity
+//!   is `Valid`.
 //! - Prove drain safety by induction over transition steps; prove completeness or
 //!   liveness separately from safety.
 
@@ -330,9 +338,19 @@ where
         }
 
         let admitted = Admitted::from_engine_memory(item, id);
-        let out = P::project(&admitted, self.collect(&edges), &mut self.projector_state);
+        let out = P::project(&admitted, self.collect(&edges), &self.projector_state);
         let effective_validity = out.validity;
+        let updates = out.updates;
+        for update in &updates {
+            if P::update_owner(update) != id {
+                return Err("projector returned state update for a different fact".to_string());
+            }
+        }
+
         self.validity.insert(id, effective_validity);
+        for update in updates {
+            P::apply_update(&mut self.projector_state, update);
+        }
 
         if effective_validity == Validity::Valid {
             for offer in edges.iter().copied().filter(|edge| edge.is_offer()) {

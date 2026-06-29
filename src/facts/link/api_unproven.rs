@@ -3,11 +3,12 @@
 //!
 //! Fact-family contract (do not weaken):
 //! - Scope: observation/report layer only.
-//! - Allowed here: read persisted bytes, decode links, follow declared `prev`
-//!   references, and call core replay to compute report completeness.
+//! - Allowed here: run core replay for the requested fact, read the
+//!   projector-maintained `LinkState` produced by that replay, and format report
+//!   data.
 //! - Forbidden here: fact construction, admission, storage writes, direct projector
-//!   execution, creation of `Validity`, creation of `Context`, and creation of
-//!   `Offer<Validated>`.
+//!   execution, direct persisted-byte chain walking, creation of `Validity`,
+//!   creation of `Context`, and creation of `Offer<Validated>`.
 //! - Report fields are observations. They are not proof witnesses and must not be
 //!   used as inputs to core validity or link projection theorems.
 //!
@@ -15,37 +16,37 @@
 //! Owned invariant: link reporting boundary.
 //! - [ ] Safety: reports are observations for users; they are never authority for
 //!       projection or future validation.
-//! - [ ] Safety: chain walking follows only decoded `prev` links from persisted
-//!       bytes; a missing fact stops the walk as incomplete, and a malformed fact
-//!       returns an error before any complete report can be produced.
-//! - [ ] Safety: `complete` means all of: the structural walk reached an anchor,
-//!       the head's projected root/domain equals that anchor, and replay validated
-//!       the requested head.
+//! - [ ] Safety: report fields are read from projector-maintained `LinkState`
+//!       after replay; this module does not compute them by walking persisted
+//!       bytes.
+//! - [ ] Safety: missing requested facts return `present=false`; malformed facts
+//!       return a replay/decode error before any report can be produced.
+//! - [ ] Safety: `complete` means replay projected the requested head valid and
+//!       the link projector state contains a complete same-root chain report for
+//!       that head.
 //! - [ ] Safety: reporting code does not construct, admit, project, or create
 //!       validated context.
 //! Imported theorems:
-//! - `facts::link::project`: link bytes decode to the link semantic shape.
-//! - `core::play`: replay soundness gives the validity result for `complete`.
+//! - `facts::link::project`: `LinkState.projected` is updated only by link
+//!   projection and records complete same-root chains.
+//! - `core::play`: replay soundness gives the validity result and projected state
+//!   for `complete`.
 //! - `core::index`: storage reads are untrusted observations.
 //! Proof strategy:
-//! - Prove `walk` is read-only and updates its next id only from a successfully
-//!   decoded link's `prev` field.
-//! - Prove missing storage yields an incomplete walk, while malformed bytes
-//!   return an error before `chain_report` can return `complete=true`.
-//! - Prove `chain_report.complete` is true only when the walk reaches `prev=None`,
-//!   the structural anchor agrees with the head's projected root/domain, and
-//!   replay reports the head valid.
+//! - Prove `chain_report` calls replay first, then reads the requested head's
+//!   report from `LinkState.projected`.
+//! - Prove `chain_report.complete` is true only when replay returns the head as
+//!   valid and the projector-maintained report is complete.
 //! - Prove report fields are returned as display/report data and never fed back
 //!   into core projection.
 use crate::core::index::Index;
 use crate::core::item::FactId;
-use crate::core::play::replay;
-use crate::core::projector::Projector;
+use crate::core::play::Replay;
 use crate::core::typestate::Validity;
 
-use super::project_unproven::{link_semantic_root, LinkProjector};
+use super::project_unproven::LinkProjector;
 
-/// A validated view of the chain ending at `head`.
+/// A user-facing view of the projected chain ending at `head`.
 pub struct Report {
     pub present: bool,
     pub complete: bool,
@@ -57,75 +58,34 @@ pub struct Report {
 }
 
 pub fn chain_report(idx: &dyn Index, head: FactId) -> Result<Report, String> {
-    let w = walk(idx, head)?;
-    let complete = if w.present {
-        let memo = replay::<LinkProjector>(idx, &[head])?;
-        w.reached_root
-            && w.projected_root == Some(w.root)
-            && matches!(memo.get(&head), Some(Validity::Valid))
-    } else {
-        false
+    let mut replay = Replay::<LinkProjector>::new(idx);
+    let Some(validity) = replay.play_if_present(head)? else {
+        return Ok(Report {
+            present: false,
+            complete: false,
+            root: head,
+            depth: 0,
+            length: 0,
+            ids: vec![],
+        });
     };
+    let Some(projected) = replay.engine.projector_state.projected.get(&head) else {
+        return Ok(Report {
+            present: true,
+            complete: false,
+            root: head,
+            depth: 0,
+            length: 1,
+            ids: vec![head],
+        });
+    };
+
     Ok(Report {
-        present: w.present,
-        complete,
-        root: w.root,
-        depth: w.depth,
-        length: w.length,
-        ids: w.ids,
-    })
-}
-
-pub(crate) struct Walk {
-    pub present: bool,
-    pub root: FactId,
-    pub depth: u64,
-    pub length: u64,
-    pub reached_root: bool,
-    pub projected_root: Option<FactId>,
-    pub ids: Vec<FactId>,
-}
-
-/// Read-only walk of the `prev` chain from `head` down. Pure read (no writes).
-pub(crate) fn walk(idx: &dyn Index, head: FactId) -> Result<Walk, String> {
-    let mut ids = vec![];
-    let mut cur = Some(head);
-    let mut present = false;
-    let mut reached_root = false;
-    let mut projected_root = None;
-    while let Some(id) = cur {
-        let Some(bytes) = idx.load_fact(&id)? else {
-            break;
-        };
-        if id == head {
-            present = true;
-        }
-        let link = LinkProjector::decode(&bytes)?;
-        if id == head {
-            projected_root = link_semantic_root(&link);
-        }
-        ids.push(id);
-        cur = match link.prev {
-            None => {
-                reached_root = true;
-                None
-            }
-            Some(p) => Some(p),
-        };
-    }
-    let (root, depth, length) = if ids.is_empty() {
-        (head, 0, 0)
-    } else {
-        (*ids.last().unwrap(), ids.len() as u64 - 1, ids.len() as u64)
-    };
-    ids.reverse();
-    Ok(Walk {
-        present,
-        root,
-        depth,
-        length,
-        reached_root,
-        projected_root,
-        ids,
+        present: true,
+        complete: validity == Validity::Valid && projected.complete,
+        root: projected.root,
+        depth: projected.depth,
+        length: projected.length,
+        ids: projected.ids.clone(),
     })
 }

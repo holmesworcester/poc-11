@@ -3,9 +3,9 @@
 //! Fact-family contract (do not weaken):
 //! - `project` is the only link module that defines link semantics: codec,
 //!   extraction, projection, root/domain meaning, and link-specific theorems.
-//! - `api` is only an observation/report layer. It may read storage and call
-//!   replay to report completeness, but it must not construct, admit, or project
-//!   facts directly.
+//! - `api` is only an observation/report layer. It may call replay and read the
+//!   resulting projector-owned state, but it must not construct, admit, project,
+//!   or walk persisted fact bytes directly.
 //! - `cli` is the unproven app adapter. It may call project-owned deterministic
 //!   constructors and core admission, but it must not define link semantics or
 //!   create proof evidence.
@@ -33,5 +33,5 @@ pub mod project_unproven;
 pub use api_unproven::{chain_report, Report};
 pub use project_unproven::{
     link_edges, link_from_params, link_id, link_project_validity, link_semantic_root,
-    valid_link_key, Link, LinkProjector, LinkState, LINK, TAG_LINK,
+    valid_link_key, Link, LinkProjector, LinkState, ProjectedLink, LINK, TAG_LINK,
 };

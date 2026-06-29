@@ -180,7 +180,7 @@ halves:
 
 ```rust
 fn extract(item: &Item) -> Vec<Edge>                         // syntactic, context-free
-fn project(item: &Item, ctx: Context<Validated>) -> (State, Effects)  // semantic
+fn project(item: &Item, ctx: Context<Validated>, state: &State) -> ProjectOutcome<Update>
 ```
 
 - **`extract` is context-free by signature.** It produces the syntactic edges
@@ -396,31 +396,42 @@ another name) purely to avoid native-stack overflow.
 ### The type model
 
 Confinement is the parameter list — a projector acts only on what it is handed, so its
-signature is its sandbox. One projector is one private state plus two halves (refining
-the `(State, Effects)` sketch above: state becomes a `&mut` parameter, and the effect
-channel collapses to emitted facts, since I/O moves to workers).
+signature is its sandbox. One projector is one private read-model plus two halves
+(refining the `(State, Effects)` sketch above: projection reads its own state
+immutably and returns inert, owner-scoped update records; the engine is the only
+code path that applies those updates. The effect channel collapses to emitted facts,
+since I/O moves to workers).
 
 ```rust
 trait Projector {
     type Item;
-    type State: Default;                    // PRIVATE — only this projector writes it
+    type State: Default;                    // PRIVATE — only this projector owns it
+    type Update;                            // inert state update owned by one fact
 
     // Pass 1: no &self, no state, no ctx in scope — cannot read anything but the
     // item's own bytes. Purity is the absence of parameters, not an audit.
     fn extract(item: &Self::Item) -> Vec<Edge>;
 
-    // Pass 2: &mut to its OWN state; reads others only through validated offers.
-    // Output is facts + own-state writes — no I/O, no clock, no foreign state.
-    fn project(item: &Admitted<Self::Item>, ctx: Context<Validated>, st: &mut Self::State)
-        -> Vec<EmittedFact>;
+    // Pass 2: immutable read of its OWN state; reads others only through
+    // validated offers. Output is facts + owner-scoped own-state updates — no I/O,
+    // no clock, no foreign state.
+    fn project(
+        item: &Admitted<Self::Item>,
+        ctx: Context<Validated>,
+        st: &Self::State,
+    ) -> ProjectOutcome<Self::Update>;
+
+    fn update_owner(update: &Self::Update) -> FactId;
+    fn apply_update(st: &mut Self::State, update: Self::Update);
 }
 ```
 
-- **Private state, offers-only bus.** "Only its owner writes" is `&mut Self::State`;
-  dispatch is generated code that hands the channel projector `&mut all.channels` and
-  never `&mut all.auth`, so no projector can *name* another's state (static, no `Any`).
-  The consequence: projectors never read each other's state — only the **offers a
-  projector publishes**. The validated-offer index is the entire inter-projector channel.
+- **Private state, offers-only bus.** A projector can read only its own state and
+  returns inert updates instead of receiving a mutable state handle. The engine rejects
+  updates whose owner id is not the fact currently being projected, then applies the
+  family-local update function. The consequence: projectors never read each other's
+  state — only the **offers a projector publishes**. The validated-offer index is the
+  entire inter-projector channel.
 - **`Asserted` vs `Validated` (your "adds to valid needs/offers", made precise).**
   `extract`'s edges land **`Asserted`** — that is what persist writes to the index
   (§4). They promote to **`Validated`** only when `project` validates the item in Pass

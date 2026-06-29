@@ -29,7 +29,11 @@ fn in_memory_projection_note_records_extract_project_boundary() {
     for required in [
         "persist facts and a syntactic needs/offers index; project the active range in memory; resolve cross-time matches by lookup",
         "fn extract(item: &Item) -> Vec<Edge>",
-        "fn project(item: &Item, ctx: Context<Validated>) -> (State, Effects)",
+        "fn project(",
+        "st: &Self::State",
+        ") -> ProjectOutcome<Self::Update>",
+        "fn update_owner(update: &Self::Update) -> FactId",
+        "fn apply_update(st: &mut Self::State, update: Self::Update)",
         "`extract` is context-free by signature",
         "The closure rule: addresses must be self-contained",
         "every context address a fact will ever need must be carried in — or derivable from — that fact's own fields",
@@ -89,7 +93,7 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Each invariant has one proof owner",
         "`core::engine` | In-memory id/body relation, running readiness/promotion rule, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety.",
         "`core::turn` | Deterministic turn scheduling, effect-result application into the engine, and the future fair-input liveness model.",
-        "`facts::link::project` | Link-family implementation of the projector contract and current same-root parent-chain validity theorem.",
+        "`facts::link::project` | Link-family implementation of the projector contract, projector-owned read-model state, and current same-root parent-chain validity theorem.",
         "In the current root/domain model, a root link (`prev=None, root=None`) is valid as `valid_link(self_id, self_id)`",
         "A child link is valid only when validated context contains `valid_link(parent_id, claimed_root_id)`",
         "Malformed `prev`/`root` combinations emit no edges and cannot validate",
@@ -184,9 +188,13 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "Owned invariant: validated-context provenance and ongoing engine safety",
         "Safety: every in-memory fact is paired with the id derived from its",
         "bytes before the engine hands it to a projector",
-        "Safety: a projector receives only validated offers",
+        "Safety: a projector is called only after every asserted need has a",
+        "matching validated offer",
+        "it receives only validated offers",
         "Safety: every validated offer is owned by a fact already projected valid",
         "Safety: raw bytes returned in `ProjectOutcome.emitted` do not inherit",
+        "reject any update whose owner is not the",
+        "projected fact",
         "Imported theorems:",
         "`core::item`: fact ids identify canonical bytes",
         "Proof strategy:",
@@ -232,6 +240,9 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "the child's promoted self-offer carries that same root/domain",
         "Safety: statement-to-owner",
         "was promoted from a valid link fact",
+        "Safety: projection state update scope",
+        "only insert/ignore updates keyed by `link_id`",
+        "Prove `update_owner` returns the update's owner id exactly",
         "Safety: composition with core",
         "using `core::engine` validated-context",
         "provenance, every valid child link has a valid same-root parent chain",
@@ -251,15 +262,14 @@ fn proof_target_files_have_verus_invariant_checklists() {
     let api = normalize_whitespace(&source_text(&root.join("src/facts/link/api_unproven.rs")));
     for required in [
         "Owned invariant: link reporting boundary",
-        "Safety: chain walking follows only decoded `prev` links from persisted",
-        "bytes",
-        "a missing fact stops the walk as incomplete",
-        "a malformed fact",
-        "returns an error before any complete report can be produced",
-        "Prove `walk` is read-only and updates its next id only from a successfully",
-        "decoded link's `prev` field",
-        "malformed bytes",
-        "return an error before `chain_report` can return `complete=true`",
+        "Safety: report fields are read from projector-maintained `LinkState`",
+        "after replay; this module does not compute them by walking persisted",
+        "Safety: missing requested facts return `present=false`",
+        "malformed facts",
+        "return a replay/decode error before any report can be produced",
+        "Safety: `complete` means replay projected the requested head valid",
+        "Prove `chain_report` calls replay first",
+        "report from `LinkState.projected`",
     ] {
         assert!(
             api.contains(required),
@@ -308,14 +318,13 @@ fn link_fact_family_contracts_are_strict_and_role_local() {
 
     let api = uncommented_source(&source_text(&root.join("src/facts/link/api_unproven.rs")));
     assert!(api.contains("pub fn chain_report("));
-    assert!(api.contains("replay::<LinkProjector>"));
+    assert!(api.contains("Replay::<LinkProjector>::new"));
     for forbidden in [
         "link_from_params",
         "admit::<",
         "insert_asserted",
         "flush_fact",
         "project_one",
-        "LinkState",
         "Context",
         "Offer<Validated>",
     ] {

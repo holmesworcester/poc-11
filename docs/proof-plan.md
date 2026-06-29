@@ -84,6 +84,9 @@ defines what roots, parents, and ancestry mean:
   context contains `valid_link(parent_id, claimed_root_id)`.
 - A validated `valid_link(link_id, root_id)` statement is owned by a valid link
   fact whose id is `link_id` and whose semantic root is `root_id`.
+- Link read-model state is updated by `LinkProjector::project` for each projected
+  fact; reports observe that state after replay rather than walking persisted
+  bytes on demand.
 - Link projection emits no new facts unless a later model intentionally adds
   emitted facts.
 - Current link ancestry is same-root parent-chain preserving: any valid
@@ -124,7 +127,7 @@ as if it were their own.
 | --- | --- |
 | `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
 | `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
-| `facts::link::project` | Link-family implementation of the projector contract and current same-root parent-chain validity theorem. |
+| `facts::link::project` | Link-family implementation of the projector contract, projector-owned read-model state, and current same-root parent-chain validity theorem. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |
@@ -134,7 +137,7 @@ as if it were their own.
 | `core::turn` | Deterministic turn scheduling, effect-result application into the engine, and the future fair-input liveness model. |
 | `core::play` | Replay/wake API semantics over the turn/engine invariants. |
 | `core::runtime` | IO adapter isolation; network, clock, and send outcomes do not create validity. |
-| `facts::link::api` | Reporting boundary; reports are observations, not proof evidence. |
+| `facts::link::api` | Reporting boundary; commands run replay and observe projector-owned state, but reports are not proof evidence. |
 | `facts::link::cli` | CLI adapter boundary; user input chooses constructor parameters only. |
 
 The current composition theorem is:
@@ -222,7 +225,10 @@ fact families.
    same root id, no cross-root splice validates, and emitted offers/fields carry
    only the validated link statement for this fact. Prove the link-specific
    statement-to-owner lemma: any validated `valid_link(x,r)` came from a valid
-   link fact whose own id is `x` and whose semantic root is `r`.
+   link fact whose own id is `x` and whose semantic root is `r`. Prove projector
+   state confinement: projection of fact `x` may update only link-owned state
+   entries for `x`, and complete report entries are built incrementally from
+   already-projected same-root parent entries.
 6. **Core turn proof.** Prove `State + Input -> State + Effects` by induction over
    every turn: admission, need-query result, projection, offer-query result, and
    idle all preserve validated-offer provenance and context safety.

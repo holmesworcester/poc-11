@@ -11,7 +11,11 @@
 //! - [ ] Safety: extraction and durability are content-pure: they depend on the
 //!       fact body, not storage, clocks, peers, or validation state.
 //! - [ ] Safety: projection is confined to the admitted fact, validated context,
-//!       and the family-private state it owns.
+//!       immutable family-private state it can read, and the update records it
+//!       returns.
+//! - [ ] Safety: projector state changes happen only by applying projector-output
+//!       updates through the engine, and the engine rejects updates not owned by
+//!       the admitted fact being projected.
 //! Imported theorems:
 //! - `core::typestate`: `Context` contains only validated offers.
 //! - `core::admit` and `core::engine`: projectors receive an `Admitted` token only
@@ -19,10 +23,13 @@
 //! Proof strategy:
 //! - Verify this trait as a contract surface, then require each fact-family
 //!   implementation to prove codec canonicality, extraction exactness, durability
-//!   purity, and projection semantics for its own item type.
+//!   purity, projection semantics, update-owner exactness, and
+//!   update-application scope for its own item type.
 //! - Prove confinement by signature: no projector method receives storage, clock,
-//!   socket, filesystem, or effect handles.
+//!   socket, filesystem, or effect handles, and `project` receives only immutable
+//!   access to family-private state.
 use super::admit::Admitted;
+use super::item::FactId;
 use super::offer::Offer;
 use super::typestate::{Asserted, Context, Validity};
 
@@ -32,16 +39,22 @@ pub struct EmittedFact {
     pub bytes: Vec<u8>,
 }
 
-/// What `project` returns: this item's validity plus any raw emitted bytes.
-pub struct ProjectOutcome {
+/// What `project` returns: this item's validity plus raw emitted bytes and
+/// family-private state updates. Updates are inert data until the engine applies
+/// them.
+pub struct ProjectOutcome<U> {
     pub validity: Validity,
     pub emitted: Vec<EmittedFact>,
+    pub updates: Vec<U>,
 }
 
 pub trait Projector {
     type Item;
     /// PRIVATE read-model — only this projector writes it.
     type State: Default;
+    /// Family-private read-model update emitted by projection and applied by the
+    /// engine.
+    type Update;
 
     /// Canonical bytes (the content-id source). `decode` is the exact inverse, and
     /// errors on bytes that aren't this family's (so the runtime can classify by
@@ -58,6 +71,16 @@ pub trait Projector {
     /// Returns the `Asserted` edges (needs + offers) the index persists.
     fn extract(item: &Self::Item) -> Vec<Offer<Asserted>>;
 
-    /// Pass 2: `&mut` to its OWN state; reads others only through validated `ctx`.
-    fn project(item: &Admitted<Self::Item>, ctx: Context, st: &mut Self::State) -> ProjectOutcome;
+    /// Pass 2: reads its OWN state immutably; reads others only through validated
+    /// `ctx`; returns inert updates for the engine to apply.
+    fn project(
+        item: &Admitted<Self::Item>,
+        ctx: Context,
+        st: &Self::State,
+    ) -> ProjectOutcome<Self::Update>;
+
+    /// Apply one family-private update. Implementations should make this
+    /// insert/ignore by fact id when possible, so replays are idempotent.
+    fn update_owner(update: &Self::Update) -> FactId;
+    fn apply_update(st: &mut Self::State, update: Self::Update);
 }

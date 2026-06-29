@@ -78,9 +78,20 @@ where
 
     /// Queue one item and drain all discovered admission/projection work.
     pub fn play(&mut self, id: FactId) -> Result<Validity, String> {
+        self.play_if_present(id)?
+            .ok_or_else(|| format!("missing body {}", to_hex(&id)))
+    }
+
+    /// Queue one item and drain all discovered admission/projection work. Missing
+    /// storage for the requested id is reported as `None`; decode/projection
+    /// errors still fail the replay.
+    pub fn play_if_present(&mut self, id: FactId) -> Result<Option<Validity>, String> {
         self.engine.enqueue_admit(id);
         self.drain()?;
-        self.validity_for(id)
+        if !self.engine.mem.contains(&id) {
+            return Ok(None);
+        }
+        Ok(Some(self.validity_for(id)?))
     }
 
     pub fn memo(&self) -> &HashMap<FactId, Validity> {

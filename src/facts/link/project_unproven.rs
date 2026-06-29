@@ -12,7 +12,8 @@
 //! - Scope: the only home for link semantics.
 //! - Owned here: `Link`, `LinkState`, `LinkProjector`, link codec, link
 //!   deterministic constructors, extraction, projection, root/domain
-//!   interpretation, and link-specific theorems.
+//!   interpretation, projector-owned read-model state, and link-specific
+//!   theorems.
 //! - Allowed dependency: core supplies `Admitted`, asserted/validated edge types,
 //!   `Context`, and `Validity`; core proves validated-context provenance.
 //! - Forbidden here: durable storage access, CLI/report formatting, network IO,
@@ -44,8 +45,13 @@
 //! - [ ] Safety: statement-to-owner: every validated link offer at
 //!       `valid_link_key(link_id, root_id)` was promoted from a valid link fact
 //!       whose id is `link_id` and whose semantic root is `root_id`.
+//! - [ ] Safety: projection state update scope: projecting `link_id` can return
+//!       only insert/ignore updates keyed by `link_id` for `LinkState.seen` and
+//!       `LinkState.projected`.
+//! - [ ] Safety: projected report state is materialized only by projection; a
+//!       complete child report is derived from a valid same-root parent report.
 //! - [ ] Safety: no state authority leak: starter projection records only this
-//!       link's validity and emits no new facts.
+//!       link's validity/read-model entry and emits no new facts.
 //! - [ ] Safety: composition with core: using `core::engine` validated-context
 //!       provenance, every valid child link has a valid same-root parent chain to
 //!       an anchor; no theorem here claims anchor uniqueness.
@@ -65,8 +71,14 @@
 //!   `valid_link(self_id,self_id)`; well-formed children offer
 //!   `valid_link(self_id,root_id)` and need `valid_link(prev,root_id)`;
 //!   malformed `prev`/`root` combinations emit no edges.
-//! - Prove `project` implements `link_project_validity`, writes only this link's
-//!   validity into `LinkState`, and emits no facts.
+//! - Prove `project` implements `link_project_validity`, returns only current-id
+//!   `LinkUpdate` values for `LinkState`, and emits no facts.
+//! - Prove `update_owner` returns the update's owner id exactly, and
+//!   `apply_update` is insert/ignore by fact id and cannot update any entry
+//!   except the update's owner id.
+//! - Prove complete projected reports are inductive read-model state: root case
+//!   records `[self]`; child case appends `self` to the already-projected valid
+//!   same-root parent report.
 //! - Prove the statement-to-owner lemma from `link_edges`, `valid_link_key`,
 //!   content addressing, and the engine theorem that every validated offer was
 //!   asserted by its valid owner.
@@ -95,9 +107,27 @@ pub struct Link {
 }
 
 /// The projector's private read-model: id → validity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProjectedLink {
+    pub complete: bool,
+    pub root: FactId,
+    pub depth: u64,
+    pub length: u64,
+    /// root..head order for complete reports; singleton self for incomplete
+    /// reports.
+    pub ids: Vec<FactId>,
+}
+
 #[derive(Default)]
 pub struct LinkState {
     pub seen: BTreeMap<FactId, Validity>,
+    pub projected: BTreeMap<FactId, ProjectedLink>,
+}
+
+pub struct LinkUpdate {
+    pub id: FactId,
+    pub validity: Validity,
+    pub projected: ProjectedLink,
 }
 
 pub struct LinkProjector;
@@ -153,9 +183,54 @@ pub fn link_project_validity(l: &Link, parent_validated_same_root: bool) -> Vali
     }
 }
 
+fn projected_root_or_fallback(id: FactId, l: &Link) -> FactId {
+    link_semantic_root(l).or(l.root).unwrap_or(id)
+}
+
+fn incomplete_projected_link(id: FactId, l: &Link) -> ProjectedLink {
+    ProjectedLink {
+        complete: false,
+        root: projected_root_or_fallback(id, l),
+        depth: 0,
+        length: 1,
+        ids: vec![id],
+    }
+}
+
+fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState) -> ProjectedLink {
+    match (l.prev, l.root, validity) {
+        (None, None, Validity::Valid) => ProjectedLink {
+            complete: true,
+            root: id,
+            depth: 0,
+            length: 1,
+            ids: vec![id],
+        },
+        (Some(parent), Some(root), Validity::Valid) => {
+            let Some(parent_state) = st.projected.get(&parent) else {
+                return incomplete_projected_link(id, l);
+            };
+            if !parent_state.complete || parent_state.root != root {
+                return incomplete_projected_link(id, l);
+            }
+            let mut ids = parent_state.ids.clone();
+            ids.push(id);
+            ProjectedLink {
+                complete: true,
+                root,
+                depth: parent_state.depth + 1,
+                length: parent_state.length + 1,
+                ids,
+            }
+        }
+        _ => incomplete_projected_link(id, l),
+    }
+}
+
 impl Projector for LinkProjector {
     type Item = Link;
     type State = LinkState;
+    type Update = LinkUpdate;
 
     // Canonical layout: tag | has_prev | prev[32]? | has_root | root[32]? | content.
     fn encode(l: &Link) -> Vec<u8> {
@@ -218,16 +293,30 @@ impl Projector for LinkProjector {
         link_edges(l)
     }
 
-    fn project(item: &Admitted<Link>, ctx: Context, st: &mut LinkState) -> ProjectOutcome {
+    fn project(item: &Admitted<Link>, ctx: Context, st: &LinkState) -> ProjectOutcome<LinkUpdate> {
         let parent_validated_same_root = match (item.item().prev, item.item().root) {
             (Some(parent), Some(root)) => ctx.has_offer(LINK, &valid_link_key(parent, root)),
             _ => false,
         };
         let validity = link_project_validity(item.item(), parent_validated_same_root);
-        st.seen.insert(item.id(), validity);
+        let projected = projected_link_state(item.id(), item.item(), validity, st);
         ProjectOutcome {
             validity,
             emitted: vec![],
+            updates: vec![LinkUpdate {
+                id: item.id(),
+                validity,
+                projected,
+            }],
         }
+    }
+
+    fn update_owner(update: &LinkUpdate) -> FactId {
+        update.id
+    }
+
+    fn apply_update(st: &mut LinkState, update: LinkUpdate) {
+        st.seen.entry(update.id).or_insert(update.validity);
+        st.projected.entry(update.id).or_insert(update.projected);
     }
 }
