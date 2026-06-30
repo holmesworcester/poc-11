@@ -140,6 +140,37 @@
 //!   `prev=None, root=None` gives `valid_link(self,self)`; child step assumes the
 //!   parent already has a same-root chain. The replay/engine graph proof supplies
 //!   that parent-chain premise later.
+//!
+//! Completion plan for unchecked items:
+//! - Close canonical link identity by moving the actual byte parser/encoder into
+//!   proof-friendly executable helpers in this file. The helpers should parse the
+//!   real `tag | has_prev | prev[32]? | has_root | root[32]? | content` layout,
+//!   reject bad tags, bad flags, and truncation, and prove both
+//!   `decode(encode(link)) == link` and `encode(decode(bytes)) == bytes` for
+//!   accepted bytes. After that, connect `link_id(link)` to
+//!   `core::item::fact_id_content_address` over the canonical encoded bytes.
+//! - Close exact report-vector contents by routing runtime `ids` construction
+//!   through proof-facing helpers: one root helper producing `[self]`, one child
+//!   helper producing `parent.ids + [self]`, and one incomplete helper producing
+//!   `[self]`. Prove the helpers' `Vec<FactId>` views have the expected length,
+//!   prefix, and final element, then make `projected_link_state` use only those
+//!   helpers.
+//! - Close end-to-end statement-to-owner only after core proves
+//!   `admit_establishes_id_body`, `engine_drain_prefix_sound`, and
+//!   `replay_reports_engine_validity`. Import those theorems here, then prove
+//!   that any validated `valid_link(link_id, root_id)` offer was extracted from
+//!   canonical bytes for `link_id`, projected valid by `LinkProjector`, and has
+//!   semantic root `root_id`.
+//! - Close end-to-end same-root transitive validity after statement-to-owner:
+//!   define the dependency relation as validated child
+//!   `valid_link(child, root)` depending on validated parent
+//!   `valid_link(parent, root)`, use the core drain/replay theorem to show every
+//!   dependency edge has a valid owner, and induct over that relation to reach a
+//!   root anchor. This theorem must state explicitly that anchor uniqueness is
+//!   not claimed.
+//! - After those four unchecked invariants are proved, flip their checklist
+//!   entries and imported theorem dependencies to `[x]`; only then may this file
+//!   be renamed to `project.rs`.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
