@@ -23,9 +23,11 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: link-family semantics and its `Projector` implementation.
-//! - [x] Safety: canonical link identity: accepted link bytes decode to exactly
-//!       one semantic `Link`, re-encode to the same bytes, and derive the link id
-//!       from those bytes. Verified below in this file.
+//! - [ ] Safety: canonical link identity: actual accepted link bytes decode to
+//!       exactly one semantic `Link`, re-encode to the same bytes, and derive the
+//!       link id from those bytes. The current Verus kernel proves the decoded
+//!       semantic flag/shape relation; the real byte parser/encoder at the bottom
+//!       of this file is still covered by Rust tests, not a Verus parser proof.
 //! - [x] Safety: project-owned construction: command parameters determine only
 //!       link content, `prev`, and claimed root/domain; app code cannot assign
 //!       ids, edges, or validity. Verified below in this file.
@@ -44,24 +46,29 @@
 //!       claimed root/domain matches the validated parent statement it depends on,
 //!       and the child's promoted self-offer carries that same root/domain.
 //!       Verified below in this file.
-//! - [x] Safety: statement-to-owner: every validated link offer at
+//! - [ ] Safety: end-to-end statement-to-owner: every validated link offer at
 //!       `valid_link_key(link_id, root_id)` was promoted from a valid link fact
-//!       whose id is `link_id` and whose semantic root is `root_id`. Verified
-//!       below in this file using core engine provenance.
+//!       whose id is `link_id` and whose semantic root is `root_id`. Local link
+//!       projection proves the statement it would promote; the full engine/replay
+//!       promotion provenance is still owned by core.
 //! - [x] Safety: projection output update ownership: projecting `link_id` returns
 //!       only an update owner equal to `link_id`. Verified below in this file.
 //! - [x] Safety: update application scope: `apply_update` is insert/ignore by `link_id`
 //!       for `LinkState.seen` and `LinkState.projected`. Verified below in this
 //!       file.
-//! - [x] Safety: projected report completeness shape: a complete child report is
-//!       derived only from a complete same-root parent report. Verified below in
-//!       this file.
+//! - [ ] Safety: projected report completeness shape: a complete child report is
+//!       derived only from a complete same-root parent report, preserves
+//!       root/depth/length/head shape, and has ids exactly equal to
+//!       `parent.ids + [self]`. The current Verus kernel covers all scalar fields
+//!       and modeled ids length/head; exact `Vec<FactId>` contents remain
+//!       runtime-tested.
 //! - [x] Safety: no emitted-fact authority leak: link projection emits no new raw
 //!       facts. Verified below in this file.
-//! - [x] Safety: composition with core: using `core::engine` validated-context
-//!       provenance, every valid child link has a valid same-root parent chain to
-//!       an anchor; no theorem here claims anchor uniqueness. Verified below in
-//!       this file.
+//! - [ ] Safety: end-to-end composition with core: using `core::engine` and
+//!       `core::play` provenance, every valid child link has a valid same-root
+//!       parent chain to an anchor; no theorem here claims anchor uniqueness.
+//!       The local link theorem is a conditional induction step, not the whole
+//!       replay/graph invariant.
 //! Imported theorem checklist:
 //! - [x] `core::item`: fact ids are content addresses for canonical bytes. Proven
 //!       in `src/core/item_unproven.rs::fact_id_content_address`.
@@ -70,8 +77,21 @@
 //!       `src/core/offer_unproven.rs::asserted_edge_address_shape`.
 //! - [x] `core::typestate`: `Context::has_offer` is exact validated-offer lookup.
 //!       Proven in `src/core/typestate_unproven.rs::context_lookup_exact`.
-//! - [x] `core::engine`: context offers have valid owners. Proven in
-//!       `src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`.
+//! - [x] `core::engine`: abstract context/promotion gates relate context offers
+//!       to valid owners. Proven in
+//!       `src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`
+//!       and `src/core/engine_unproven.rs::engine_promotes_only_valid_owner_offers`.
+//! - [ ] `core::engine`: every concrete engine step and drain prefix preserves
+//!       the full provenance invariant. Owner:
+//!       `src/core/engine_unproven.rs`, planned theorem
+//!       `engine_drain_prefix_sound`.
+//! - [ ] `core::play`: replay reports only sound drained engine state and
+//!       discovers the dependency closure. Owner:
+//!       `src/core/play_unproven.rs`, planned theorem
+//!       `replay_reports_engine_validity`.
+//! - [ ] `core::admit`: admitted facts always establish the id/body/extraction
+//!       relation before projection. Owner: `src/core/admit_unproven.rs`,
+//!       planned theorem `admit_establishes_id_body`.
 //! - [x] `core::projector`: the generic projector interface enforces
 //!       confinement. Proven in
 //!       `src/core/projector_unproven.rs::projector_interface_contract`.
@@ -82,8 +102,9 @@
 //!       `child_extraction_offer_and_need_same_root`,
 //!       `valid_child_requires_validated_same_root_parent`, and
 //!       `valid_projection_statement_equals_extracted_offer`.
-//! - [x] Local link/core composition kernel. Proven below by
-//!       `valid_link_composes_with_parent_chain`.
+//! - [x] Local link conditional composition step. Proven below by
+//!       `valid_link_composes_with_parent_chain`. This assumes the parent chain
+//!       predicate as an input; core/replay must still prove the graph induction.
 //! - [x] Local link output/read-model kernel. Proven below by
 //!       `projection_update_owner_is_self`,
 //!       `valid_projection_statement_owned_by_projected_link`,
@@ -107,16 +128,18 @@
 //! - Prove `update_owner` returns the update's owner id exactly, and
 //!   `apply_update` is insert/ignore by fact id and cannot update any entry
 //!   except the update's owner id.
-//! - Prove complete projected reports are inductive read-model state: root case
-//!   records `[self]`; child case appends `self` to the already-projected valid
-//!   same-root parent report.
-//! - Prove the statement-to-owner lemma from `link_edges`, `valid_link_key`,
-//!   content addressing, and the engine theorem that every validated offer was
-//!   asserted by its valid owner.
-//! - Prove same-root parent-chain transitivity by induction: root case
-//!   `prev=None, root=None` gives `valid_link(self,self)`; child step uses the
-//!   validated `valid_link(parent,r)` dependency plus the statement-to-owner lemma
-//!   to obtain a valid parent in the same root/domain, then repeats to the anchor.
+//! - Prove complete projected reports are inductive read-model state for scalar
+//!   report fields: root case records self/root/depth/length/id-count; child case
+//!   increments the already-projected valid same-root parent counters and records
+//!   `self` as the modeled head. Exact vector contents remain a pending Verus
+//!   proof over the runtime `Vec<FactId>` construction.
+//! - Prove the local statement-to-owner lemma from `link_edges`, `valid_link_key`,
+//!   and content addressing. The end-to-end validated-offer version imports the
+//!   future core drain-prefix provenance theorem.
+//! - Prove the local same-root parent-chain step by induction: root case
+//!   `prev=None, root=None` gives `valid_link(self,self)`; child step assumes the
+//!   parent already has a same-root chain. The replay/engine graph proof supplies
+//!   that parent-chain premise later.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
@@ -184,6 +207,10 @@ pub struct LinkExtractionCore {
 pub struct ProjectedReportCore {
     pub complete: bool,
     pub root: IdCore,
+    pub depth: u64,
+    pub length: u64,
+    pub ids_len: u64,
+    pub head: IdCore,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -430,28 +457,53 @@ pub open spec fn projected_report_spec(
     parent_present: bool,
     parent_complete: bool,
     parent_root: IdCore,
+    parent_depth: u64,
+    parent_length: u64,
+    parent_ids_len: u64,
 ) -> ProjectedReportCore {
     match (link.prev, link.root, validity) {
         (MaybeIdCore::None, MaybeIdCore::None, ValidityCore::Valid) => ProjectedReportCore {
             complete: true,
             root: link.self_id,
+            depth: 0,
+            length: 1,
+            ids_len: 1,
+            head: link.self_id,
         },
         (MaybeIdCore::Some(_parent), MaybeIdCore::Some(root), ValidityCore::Valid) => {
-            if parent_present && parent_complete && id_eq_spec(parent_root, root) {
+            if parent_present
+                && parent_complete
+                && id_eq_spec(parent_root, root)
+                && parent_depth < u64::MAX
+                && parent_length < u64::MAX
+                && parent_ids_len < u64::MAX
+            {
                 ProjectedReportCore {
                     complete: true,
                     root,
+                    depth: (parent_depth + 1) as u64,
+                    length: (parent_length + 1) as u64,
+                    ids_len: (parent_ids_len + 1) as u64,
+                    head: link.self_id,
                 }
             } else {
                 ProjectedReportCore {
                     complete: false,
                     root,
+                    depth: 0,
+                    length: 1,
+                    ids_len: 1,
+                    head: link.self_id,
                 }
             }
         }
         _ => ProjectedReportCore {
             complete: false,
             root: fallback_root_spec(link),
+            depth: 0,
+            length: 1,
+            ids_len: 1,
+            head: link.self_id,
         },
     }
 }
@@ -608,12 +660,16 @@ pub fn link_chain_composition_core(
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::unnecessary_cast)]
 pub fn projected_report_core(
     link: LinkCore,
     validity: ValidityCore,
     parent_present: bool,
     parent_complete: bool,
     parent_root: IdCore,
+    parent_depth: u64,
+    parent_length: u64,
+    parent_ids_len: u64,
 ) -> (report: ProjectedReportCore)
     ensures
         report == projected_report_spec(
@@ -622,13 +678,28 @@ pub fn projected_report_core(
             parent_present,
             parent_complete,
             parent_root,
+            parent_depth,
+            parent_length,
+            parent_ids_len,
         ),
         is_root(link) && validity == ValidityCore::Valid ==> (
-            report.complete && report.root == link.self_id
+            report.complete
+                && report.root == link.self_id
+                && report.depth == 0
+                && report.length == 1
+                && report.ids_len == 1
+                && report.head == link.self_id
         ),
         is_child(link) && validity == ValidityCore::Valid && report.complete ==> (
             parent_present
                 && parent_complete
+                && parent_depth < u64::MAX
+                && parent_length < u64::MAX
+                && parent_ids_len < u64::MAX
+                && report.depth == parent_depth + 1u64
+                && report.length == parent_length + 1u64
+                && report.ids_len == parent_ids_len + 1u64
+                && report.head == link.self_id
                 && match link.root {
                     MaybeIdCore::Some(root) => id_eq_spec(parent_root, root),
                     MaybeIdCore::None => false,
@@ -639,23 +710,45 @@ pub fn projected_report_core(
         (MaybeIdCore::None, MaybeIdCore::None, ValidityCore::Valid) => ProjectedReportCore {
             complete: true,
             root: link.self_id,
+            depth: 0,
+            length: 1,
+            ids_len: 1,
+            head: link.self_id,
         },
         (MaybeIdCore::Some(_parent), MaybeIdCore::Some(root), ValidityCore::Valid) => {
-            if parent_present && parent_complete && id_eq(parent_root, root) {
+            if parent_present
+                && parent_complete
+                && id_eq(parent_root, root)
+                && parent_depth < u64::MAX
+                && parent_length < u64::MAX
+                && parent_ids_len < u64::MAX
+            {
                 ProjectedReportCore {
                     complete: true,
                     root,
+                    depth: (parent_depth + 1) as u64,
+                    length: (parent_length + 1) as u64,
+                    ids_len: (parent_ids_len + 1) as u64,
+                    head: link.self_id,
                 }
             } else {
                 ProjectedReportCore {
                     complete: false,
                     root,
+                    depth: 0,
+                    length: 1,
+                    ids_len: 1,
+                    head: link.self_id,
                 }
             }
         }
         _ => ProjectedReportCore {
             complete: false,
             root: fallback_root_core(link),
+            depth: 0,
+            length: 1,
+            ids_len: 1,
+            head: link.self_id,
         },
     }
 }
@@ -872,6 +965,9 @@ pub proof fn root_projected_report_is_complete_self(link: LinkCore)
             false,
             false,
             link.self_id,
+            0,
+            0,
+            0,
         ).complete,
         projected_report_spec(
             link,
@@ -879,7 +975,40 @@ pub proof fn root_projected_report_is_complete_self(link: LinkCore)
             false,
             false,
             link.self_id,
+            0,
+            0,
+            0,
         ).root == link.self_id,
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            false,
+            false,
+            link.self_id,
+            0,
+            0,
+            0,
+        ).depth == 0,
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            false,
+            false,
+            link.self_id,
+            0,
+            0,
+            0,
+        ).length == 1,
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            false,
+            false,
+            link.self_id,
+            0,
+            0,
+            0,
+        ).ids_len == 1,
 {
 }
 
@@ -888,6 +1017,9 @@ pub proof fn complete_child_report_requires_complete_same_root_parent(
     parent_present: bool,
     parent_complete: bool,
     parent_root: IdCore,
+    parent_depth: u64,
+    parent_length: u64,
+    parent_ids_len: u64,
 )
     requires
         is_child(link),
@@ -897,10 +1029,56 @@ pub proof fn complete_child_report_requires_complete_same_root_parent(
             parent_present,
             parent_complete,
             parent_root,
+            parent_depth,
+            parent_length,
+            parent_ids_len,
         ).complete,
     ensures
         parent_present,
         parent_complete,
+        parent_depth < u64::MAX,
+        parent_length < u64::MAX,
+        parent_ids_len < u64::MAX,
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            parent_present,
+            parent_complete,
+            parent_root,
+            parent_depth,
+            parent_length,
+            parent_ids_len,
+        ).depth == parent_depth + 1u64,
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            parent_present,
+            parent_complete,
+            parent_root,
+            parent_depth,
+            parent_length,
+            parent_ids_len,
+        ).length == parent_length + 1u64,
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            parent_present,
+            parent_complete,
+            parent_root,
+            parent_depth,
+            parent_length,
+            parent_ids_len,
+        ).ids_len == parent_ids_len + 1u64,
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            parent_present,
+            parent_complete,
+            parent_root,
+            parent_depth,
+            parent_length,
+            parent_ids_len,
+        ).head == link.self_id,
         match link.root {
             MaybeIdCore::Some(root) => id_eq_spec(parent_root, root),
             MaybeIdCore::None => false,
@@ -1173,21 +1351,32 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
     let validity_core = validity_to_core(validity);
     match (l.prev, l.root, validity) {
         (None, None, Validity::Valid) => {
-            let report =
-                projected_report_core(link, validity_core, false, false, fact_id_to_core(id));
+            let report = projected_report_core(
+                link,
+                validity_core,
+                false,
+                false,
+                fact_id_to_core(id),
+                0,
+                0,
+                0,
+            );
             let composition = link_chain_composition_core(link, false, false);
             debug_assert!(composition.root_anchor);
             debug_assert!(composition.chain_to_anchor);
             ProjectedLink {
                 complete: report.complete,
                 root: core_to_fact_id(report.root),
-                depth: 0,
-                length: 1,
+                depth: report.depth,
+                length: report.length,
                 ids: vec![id],
             }
         }
         (Some(parent), Some(_root), Validity::Valid) => {
             let Some(parent_state) = st.projected.get(&parent) else {
+                return incomplete_projected_link(id, l);
+            };
+            let Ok(parent_ids_len) = u64::try_from(parent_state.ids.len()) else {
                 return incomplete_projected_link(id, l);
             };
             let report = projected_report_core(
@@ -1196,6 +1385,9 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
                 true,
                 parent_state.complete,
                 fact_id_to_core(parent_state.root),
+                parent_state.depth,
+                parent_state.length,
+                parent_ids_len,
             );
             if !report.complete {
                 return incomplete_projected_link(id, l);
@@ -1206,11 +1398,13 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
             debug_assert!(composition.chain_to_anchor);
             let mut ids = parent_state.ids.clone();
             ids.push(id);
+            debug_assert_eq!(u64::try_from(ids.len()).ok(), Some(report.ids_len));
+            debug_assert_eq!(core_to_fact_id(report.head), id);
             ProjectedLink {
                 complete: true,
                 root: core_to_fact_id(report.root),
-                depth: parent_state.depth + 1,
-                length: parent_state.length + 1,
+                depth: report.depth,
+                length: report.length,
                 ids,
             }
         }

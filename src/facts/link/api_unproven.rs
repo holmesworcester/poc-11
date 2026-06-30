@@ -27,10 +27,10 @@
 //! - [ ] Safety: reporting code does not construct, admit, project, or create
 //!       validated context.
 //! Imported theorem checklist:
-//! - [x] `facts::link::project`: `LinkState.projected` is updated only by link
+//! - [x] `facts::link::project_unproven`: `LinkState.projected` is updated only by link
 //!       projection and records complete same-root chains. Proven in
-//!       `src/facts/link/project.rs::complete_child_report_requires_complete_same_root_parent`
-//!       and `src/facts/link/project.rs::apply_update_is_insert_ignore_by_link_id`.
+//!       `src/facts/link/project_unproven.rs::complete_child_report_requires_complete_same_root_parent`
+//!       and `src/facts/link/project_unproven.rs::apply_update_is_insert_ignore_by_link_id`.
 //! - [ ] `core::play`: replay soundness gives the validity result and projected
 //!       state for `complete`. Owner: `src/core/play_unproven.rs`, planned
 //!       theorem `replay_reports_engine_validity`.
@@ -49,7 +49,7 @@ use crate::core::item::FactId;
 use crate::core::play::Replay;
 use crate::core::typestate::Validity;
 
-use super::project::LinkProjector;
+use super::project_unproven::LinkProjector;
 
 /// A user-facing view of the projected chain ending at `head`.
 pub struct Report {

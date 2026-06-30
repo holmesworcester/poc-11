@@ -2,7 +2,7 @@ use linktoy::core::engine::EngineState;
 use linktoy::core::item::fact_id;
 use linktoy::core::projector::Projector;
 use linktoy::core::typestate::Validity;
-use linktoy::facts::link::project::{
+use linktoy::facts::link::project_unproven::{
     core_to_fact_id, extract_link_core, fact_id_to_core, link_core_for,
     link_emitted_fact_count_core, maybe_fact_id_to_core, project_link_core, projected_report_core,
     LinkCore, MaybeStatementCore, ValidityCore,
@@ -94,10 +94,17 @@ fn verified_report_kernel_root_is_complete_self() {
         false,
         false,
         fact_id_to_core(id(b"ignored-parent-root")),
+        0,
+        0,
+        0,
     );
 
     assert!(report.complete);
     assert_eq!(core_to_fact_id(report.root), root_id);
+    assert_eq!(report.depth, 0);
+    assert_eq!(report.length, 1);
+    assert_eq!(report.ids_len, 1);
+    assert_eq!(core_to_fact_id(report.head), root_id);
 }
 
 #[test]
@@ -143,9 +150,16 @@ fn verified_report_kernel_child_requires_complete_same_root_parent() {
         true,
         true,
         fact_id_to_core(root_id),
+        2,
+        3,
+        3,
     );
     assert!(complete_same_root.complete);
     assert_eq!(core_to_fact_id(complete_same_root.root), root_id);
+    assert_eq!(complete_same_root.depth, 3);
+    assert_eq!(complete_same_root.length, 4);
+    assert_eq!(complete_same_root.ids_len, 4);
+    assert_eq!(core_to_fact_id(complete_same_root.head), child_id);
 
     let missing_parent = projected_report_core(
         child,
@@ -153,8 +167,13 @@ fn verified_report_kernel_child_requires_complete_same_root_parent() {
         false,
         false,
         fact_id_to_core(root_id),
+        2,
+        3,
+        3,
     );
     assert!(!missing_parent.complete);
+    assert_eq!(missing_parent.length, 1);
+    assert_eq!(missing_parent.ids_len, 1);
 
     let incomplete_parent = projected_report_core(
         child,
@@ -162,6 +181,9 @@ fn verified_report_kernel_child_requires_complete_same_root_parent() {
         true,
         false,
         fact_id_to_core(root_id),
+        2,
+        3,
+        3,
     );
     assert!(!incomplete_parent.complete);
 
@@ -171,6 +193,9 @@ fn verified_report_kernel_child_requires_complete_same_root_parent() {
         true,
         true,
         fact_id_to_core(other_root_id),
+        2,
+        3,
+        3,
     );
     assert!(!wrong_root.complete);
 }

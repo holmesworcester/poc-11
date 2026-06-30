@@ -22,10 +22,13 @@ the `_unproven` file until the whole file can be renamed.
 - `src/core/runtime_unproven.rs` is the current daemon/IO loop: sockets, sleeps,
   peer sends, and stdout readiness. It stays separate from `turn` so the
   deterministic queue/effect step can be proven without proving OS progress.
-- `src/facts/link/project.rs` contains the now-proven link codec, extraction,
-  and projection together because versioned byte interpretation is part of fact
+- `src/facts/link/project_unproven.rs` contains link codec, extraction, and
+  projection together because versioned byte interpretation is part of fact
   meaning. It also owns deterministic typed construction from explicit command
-  parameters.
+  parameters. Local projection kernels are partially proved, but the file
+  remains `_unproven` because actual byte parser/encoder proof, exact
+  `Vec<FactId>` report-content proof, and end-to-end core/replay composition are
+  still open.
 - `src/facts/link/api_unproven.rs` contains storage-backed report helpers.
 - `src/facts/link/cli_unproven.rs` contains unproven app admission and formatting.
 - `src/helpers/*_unproven.rs` contains narrow trusted boundaries for crypto/hex,
@@ -43,10 +46,12 @@ targets, not staging files:
 - `src/core/turn.rs`: deterministic `State + Input -> State + Effects`
   transition for admission, query results, projection, and wakeups, replacing
   `turn_unproven.rs` once the transition invariant is proven.
-- `src/facts/link/project.rs`: completed current proof target for link codec,
-  canonical encode/decode, deterministic typed construction from explicit
-  parameters, extraction, projection validity, emitted facts, projector-owned
-  state, and current same-root parent-chain composition.
+- `src/facts/link/project.rs`: appears only after the current
+  `src/facts/link/project_unproven.rs` proof gaps are closed: actual canonical
+  encode/decode over runtime bytes, deterministic typed construction from
+  explicit parameters, extraction, projection validity, emitted facts,
+  projector-owned state including exact report vector contents, and composition
+  with the core/replay transitive-validity theorem.
 - `src/helpers/*_unproven.rs`: narrow trusted adapters for crypto assumptions,
   SQLite, TCP sockets, filesystem, clocks, and similar external APIs.
 
@@ -73,12 +78,16 @@ Core proofs are about all possible fact families routed through the engine:
 - Route dispatch is sound: decoded family tags select the right family projector,
   and malformed or unknown facts do not become valid.
 
-Current link proofs live beside the running implementation in
-`src/facts/link/project.rs`; that file has completed its `_unproven` to
-unsuffixed migration. Only the link family defines what roots, parents, and
-ancestry mean:
+Current link proof kernels live beside the running implementation in
+`src/facts/link/project_unproven.rs`. That file has not completed its
+`_unproven` to unsuffixed migration: local semantic kernels are proved, while
+the actual byte parser/encoder, exact report vector contents, and end-to-end
+engine/replay composition remain open. Only the link family defines what roots,
+parents, and ancestry mean:
 
-- Link bytes decode canonically into the link semantic shape.
+- Link bytes should decode canonically into the link semantic shape. The current
+  Verus model proves semantic flag/shape relations; the runtime byte parser is
+  still tested but not fully proved.
 - `link_id(link) == fact_id(encode(link))`.
 - Extraction emits exactly the self-offer for `valid_link(self_id, root_id)` and,
   for a child, exactly the parent need for `valid_link(prev, root_id)`.
@@ -88,16 +97,20 @@ ancestry mean:
 - In the current root/domain model, a root link (`prev=None, root=None`) is valid
   as `valid_link(self_id, self_id)`. A child link is valid only when validated
   context contains `valid_link(parent_id, claimed_root_id)`.
-- A validated `valid_link(link_id, root_id)` statement is owned by a valid link
-  fact whose id is `link_id` and whose semantic root is `root_id`.
+- The link projector proves any local valid projection statement is for its own
+  fact id and semantic root. The stronger validated-store statement-to-owner
+  property depends on the pending core engine/replay provenance proof.
 - Link read-model state is updated by `LinkProjector::project` for each projected
   fact; reports observe that state after replay rather than walking persisted
-  bytes on demand.
+  bytes on demand. The current Verus report kernel covers scalar shape
+  (`root`, `depth`, `length`, modeled id count, and head id); exact vector
+  contents remain pending.
 - Link projection emits no new facts unless a later model intentionally adds
   emitted facts.
-- Current link ancestry is same-root parent-chain preserving: any valid
-  descendant has a valid parent chain ending at an anchor in the same
-  root/domain.
+- Current local link ancestry is same-root preserving as a conditional step: a
+  valid child requires a same-root parent statement, and if the parent already
+  has an anchor chain then the child extends it. The whole graph/replay
+  transitivity theorem remains a core composition target.
 
 ## Invariant Checklist Style
 
@@ -135,7 +148,7 @@ as if it were their own.
 | --- | --- |
 | `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
 | `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
-| `facts::link::project` | Link-family implementation of the projector contract, projector-owned read-model state, and current same-root parent-chain validity theorem. |
+| `facts::link::project_unproven` | Link-family implementation of the projector contract, local projection kernels, projector-owned read-model state, and pending byte-codec/report-vector/end-to-end composition proof. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |
@@ -148,10 +161,11 @@ as if it were their own.
 | `facts::link::api` | Reporting boundary; commands run replay and observe projector-owned state, but reports are not proof evidence. |
 | `facts::link::cli` | CLI adapter boundary; user input chooses constructor parameters only. |
 
-The current composition theorem is:
+The target composition theorem is:
 
 ```text
-core validated-context provenance
+core drain-prefix validated-context provenance
++ core replay dependency-closure soundness
 + link's parent/root projection contract
 => every valid child link is backed by a valid parent link, transitively to an
    anchor in the same root/domain
