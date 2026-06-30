@@ -195,6 +195,10 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Malformed `prev`/`root` combinations emit no edges and cannot validate",
         "The link projector proves any valid projection statement is for its own fact id and semantic root",
         "imports the core engine theorem that every proof-facing validated offer has a valid owner",
+        "derivable-chain transitive validity over decoded link facts",
+        "The stronger link-owned theorem models a decoded-link world",
+        "link derivable through its own `prev/root` fields",
+        "runtime refinement showing concrete replay state supplies that decoded-link world",
         "The target composition theorem is",
         "core drain-prefix validated-context provenance",
         "core replay dependency-closure soundness",
@@ -205,7 +209,7 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Fair-input liveness model",
         "A file loses `_unproven` only after its invariant-bearing behavior is covered by Verus-verified executable code",
         "statement-to-owner lemma",
-        "ancestry chain to its claimed anchor by induction over `prev`",
+        "The current link proof proves the induction over decoded links and `prev/root` dependencies",
     ] {
         assert!(
             normalized.contains(required),
@@ -589,6 +593,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "root_link_chain_to_anchor",
         "child_extends_link_chain",
         "replay_preserves_supplied_link_chain_to_anchor",
+        "derivable_link_has_transitive_validity",
     ] {
         assert!(
             rust_symbol_exists(&project, required_symbol),
@@ -1004,6 +1009,9 @@ fn link_project_proof_audit_is_structural_not_prose_status() {
         "replay_preserves_supplied_link_chain_to_anchor",
         "chain_dependencies_recorded_in_core",
         "core_recorded_link_chain_has_only_valid_links",
+        "link_derivable_from_recorded_dependencies",
+        "link_transitive_validity_closure",
+        "derivable_link_has_transitive_validity",
     ] {
         assert!(
             rust_symbol_exists(&project, required_symbol),
@@ -1037,6 +1045,7 @@ fn link_project_keeps_local_theorems_out_of_imported_checklist() {
         "Local link same-root extraction/projection kernel",
         "Local link sequence composition step",
         "Local link output/read-model kernel",
+        "Link-owned derivable-chain transitive validity over decoded links",
     ] {
         assert!(
             !imported.contains(forbidden),

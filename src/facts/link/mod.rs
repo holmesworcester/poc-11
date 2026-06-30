@@ -23,8 +23,10 @@
 //!       Enforced by source-contract tests.
 //! Imported theorem checklist:
 //! - [x] `facts::link::project` owns link-family semantics and proof-facing
-//!       supplied-chain link/core preservation. Proven in
-//!       `src/facts/link/project.rs::replay_preserves_supplied_link_chain_to_anchor`.
+//!       supplied-chain link/core preservation plus derivable-chain transitive
+//!       validity. Proven in
+//!       `src/facts/link/project.rs::replay_preserves_supplied_link_chain_to_anchor`
+//!       and `src/facts/link/project.rs::derivable_link_has_transitive_validity`.
 //! - [ ] `facts::link::api_unproven` and `facts::link::cli_unproven` own their
 //!       adapter/reporting local invariants. Owners:
 //!       `src/facts/link/api_unproven.rs`, and

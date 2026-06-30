@@ -20,8 +20,8 @@
 //!   5. PROJECT. A valid projection promotes only its own statement and emits no
 //!      raw facts.
 //!   6. STATE. Projection updates only this link id's read-model entry.
-//!   7. COMPOSE. The local child step composes with core/replay provenance for
-//!      supplied proof-facing same-root chains.
+//!   7. COMPOSE. The local child step composes with core/replay provenance into
+//!      a recursively derivable same-root chain.
 //!
 //! Fact-family contract (do not weaken):
 //! - Scope: the only home for link semantics.
@@ -106,6 +106,12 @@
 //!       dependencies are recorded by core, every link id in the chain is valid
 //!       and each child depends on a validated same-root parent offer. Verified
 //!       below by `core_recorded_link_chain_has_only_valid_links`.
+//! - [x] Safety: proof-facing derivable transitive link validity: for any
+//!       decoded-link world, if a link recursively derives through its declared
+//!       `prev/root` fields and core-recorded dependency edges to a root, then
+//!       that derivation's head and every recursively reached ancestor are valid
+//!       and every child step is backed by a validated same-root parent offer.
+//!       Verified below by `derivable_link_has_transitive_validity`.
 //! Imported theorem checklist:
 //! - [x] `core::item`: fact ids are content addresses for canonical bytes. Proven
 //!       in `src/core/item_unproven.rs::fact_id_content_address`.
@@ -158,6 +164,9 @@
 //!       `replay_preserves_supplied_link_chain_to_anchor`.
 //! - [x] Link/core transitive validity over recorded dependencies. Proven below
 //!       by `core_recorded_link_chain_has_only_valid_links`.
+//! - [x] Link-owned derivable-chain transitive validity over decoded links and
+//!       core-recorded dependencies. Proven below by
+//!       `derivable_link_has_transitive_validity`.
 //! Proof strategy:
 //! - Prove the executable canonical byte builder preserves prev/root/content
 //!   segments and prove rejection cases for tag/flag/truncation.
@@ -187,6 +196,11 @@
 //! - Prove the link/core recorded-dependency theorem by combining the link chain
 //!   predicate, the link statement-to-owner theorem, and core's recorded
 //!   dependency-provider theorem.
+//! - Prove the stronger link-owned derivability theorem by induction on a bounded
+//!   parent walk through decoded link facts: root derivations end at
+//!   `prev=None, root=None`; child derivations must name a decoded parent,
+//!   preserve root/domain id, carry a core-recorded dependency to the parent's
+//!   statement, and recursively derive the parent.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
@@ -900,6 +914,121 @@ pub closed spec fn chain_dependencies_recorded_in_core(
                 engine_id_for_link_id(chain[i - 1].self_id),
                 link_statement_addr_core(chain[i - 1].self_id, root),
             )
+}
+
+pub closed spec fn decoded_world_contains_link(
+    world: Seq<LinkCore>,
+    id: IdCore,
+    link: LinkCore,
+) -> bool {
+    exists |i: int| 0 <= i < world.len() && world[i].self_id == id && world[i] == link
+}
+
+pub closed spec fn link_derivable_from_recorded_dependencies(
+    state: crate::core::engine::EngineStateCore,
+    world: Seq<LinkCore>,
+    link: LinkCore,
+    root: IdCore,
+    fuel: nat,
+) -> bool
+    decreases fuel,
+{
+    if fuel == 0 {
+        false
+    } else {
+        decoded_world_contains_link(world, link.self_id, link)
+            && match (link.prev, link.root) {
+                (MaybeIdCore::None, MaybeIdCore::None) => {
+                    link.self_id == root
+                        && projection_spec(link, false).validity == ValidityCore::Valid
+                        && crate::core::engine::validated_offer_for(
+                            state.validated,
+                            engine_id_for_link_id(link.self_id),
+                            link_statement_addr_core(link.self_id, root),
+                        )
+                }
+                (MaybeIdCore::Some(parent_id), MaybeIdCore::Some(claimed_root)) => {
+                    claimed_root == root
+                        && projection_spec(link, true).validity == ValidityCore::Valid
+                        && crate::core::engine::validated_offer_for(
+                            state.validated,
+                            engine_id_for_link_id(link.self_id),
+                            link_statement_addr_core(link.self_id, root),
+                        )
+                        && exists |parent: LinkCore|
+                            decoded_world_contains_link(world, parent_id, parent)
+                                && crate::core::engine::dependency_edge_for(
+                                    state.dependencies,
+                                    engine_id_for_link_id(link.self_id),
+                                    engine_id_for_link_id(parent_id),
+                                    link_statement_addr_core(parent_id, root),
+                                )
+                                && link_derivable_from_recorded_dependencies(
+                                    state,
+                                    world,
+                                    parent,
+                                    root,
+                                    (fuel - 1) as nat,
+                                )
+                }
+                _ => false,
+            }
+    }
+}
+
+pub closed spec fn link_transitive_validity_closure(
+    state: crate::core::engine::EngineStateCore,
+    world: Seq<LinkCore>,
+    link: LinkCore,
+    root: IdCore,
+    fuel: nat,
+) -> bool
+    decreases fuel,
+{
+    if fuel == 0 {
+        false
+    } else {
+        link_derivable_from_recorded_dependencies(state, world, link, root, fuel)
+            && crate::core::engine::contains_id(
+                state.valid,
+                engine_id_for_link_id(link.self_id),
+            )
+            && crate::core::engine::validated_offer_for(
+                state.validated,
+                engine_id_for_link_id(link.self_id),
+                link_statement_addr_core(link.self_id, root),
+            )
+            && match (link.prev, link.root) {
+                (MaybeIdCore::None, MaybeIdCore::None) => link.self_id == root,
+                (MaybeIdCore::Some(parent_id), MaybeIdCore::Some(_)) => {
+                    exists |parent: LinkCore|
+                        decoded_world_contains_link(world, parent_id, parent)
+                            && crate::core::engine::dependency_edge_for(
+                                state.dependencies,
+                                engine_id_for_link_id(link.self_id),
+                                engine_id_for_link_id(parent_id),
+                                link_statement_addr_core(parent_id, root),
+                            )
+                            && crate::core::engine::contains_id(
+                                state.valid,
+                                engine_id_for_link_id(parent_id),
+                            )
+                            && crate::core::engine::validated_offer_for(
+                                state.validated,
+                                engine_id_for_link_id(parent_id),
+                                link_statement_addr_core(parent_id, root),
+                            )
+                            && link_transitive_validity_closure(
+                                state,
+                                world,
+                                parent,
+                                root,
+                                (fuel - 1) as nat,
+                            )
+                }
+                _ => false,
+            }
+    }
 }
 
 // 11. Projected Report Model.
@@ -1737,6 +1866,89 @@ pub proof fn core_recorded_link_chain_has_only_valid_links(
             engine_id_for_link_id(chain[i - 1].self_id),
             link_statement_addr_core(chain[i - 1].self_id, root),
         );
+    }
+}
+
+pub proof fn derivable_link_has_transitive_validity(
+    state: crate::core::engine::EngineStateCore,
+    world: Seq<LinkCore>,
+    link: LinkCore,
+    root: IdCore,
+    fuel: nat,
+)
+    requires
+        crate::core::engine::engine_invariant(state),
+        link_derivable_from_recorded_dependencies(state, world, link, root, fuel),
+    ensures
+        link_transitive_validity_closure(state, world, link, root, fuel),
+    decreases fuel,
+{
+    assert(fuel > 0);
+    assert(crate::core::engine::validated_offer_for(
+        state.validated,
+        engine_id_for_link_id(link.self_id),
+        link_statement_addr_core(link.self_id, root),
+    ));
+    validated_link_offer_statement_to_owner_from_engine(state, link.self_id, root);
+
+    match (link.prev, link.root) {
+        (MaybeIdCore::None, MaybeIdCore::None) => {
+            assert(link.self_id == root);
+        }
+        (MaybeIdCore::Some(parent_id), MaybeIdCore::Some(_claimed_root)) => {
+            let parent = choose |parent: LinkCore|
+                decoded_world_contains_link(world, parent_id, parent)
+                    && crate::core::engine::dependency_edge_for(
+                        state.dependencies,
+                        engine_id_for_link_id(link.self_id),
+                        engine_id_for_link_id(parent_id),
+                        link_statement_addr_core(parent_id, root),
+                    )
+                    && link_derivable_from_recorded_dependencies(
+                        state,
+                        world,
+                        parent,
+                        root,
+                        (fuel - 1) as nat,
+                    );
+
+            crate::core::engine::engine_dependency_edge_has_valid_provider(
+                state,
+                engine_id_for_link_id(link.self_id),
+                engine_id_for_link_id(parent_id),
+                link_statement_addr_core(parent_id, root),
+            );
+            derivable_link_has_transitive_validity(state, world, parent, root, (fuel - 1) as nat);
+
+            assert(exists |ancestor: LinkCore|
+                decoded_world_contains_link(world, parent_id, ancestor)
+                    && crate::core::engine::dependency_edge_for(
+                        state.dependencies,
+                        engine_id_for_link_id(link.self_id),
+                        engine_id_for_link_id(parent_id),
+                        link_statement_addr_core(parent_id, root),
+                    )
+                    && crate::core::engine::contains_id(
+                        state.valid,
+                        engine_id_for_link_id(parent_id),
+                    )
+                    && crate::core::engine::validated_offer_for(
+                        state.validated,
+                        engine_id_for_link_id(parent_id),
+                        link_statement_addr_core(parent_id, root),
+                    )
+                    && link_transitive_validity_closure(
+                        state,
+                        world,
+                        ancestor,
+                        root,
+                        (fuel - 1) as nat,
+                    )
+            );
+        }
+        _ => {
+            assert(false);
+        }
     }
 }
 

@@ -26,9 +26,10 @@ the `_unproven` file until the whole file can be renamed.
   projection together because versioned byte interpretation is part of fact
   meaning. It also owns deterministic typed construction from explicit command
   parameters. Its stylized link invariants, including proof-facing
-  supplied-chain preservation with core/replay provenance, are covered by Verus
-  kernels in the running file. Full derivation of chain existence from concrete
-  replay state remains a core graph-composition target.
+  supplied-chain preservation with core/replay provenance and link-owned
+  derivable-chain transitive validity over decoded link facts, are covered by
+  Verus kernels in the running file. Concrete runtime queues/maps still need a
+  refinement proof into that proof-facing model.
 - `src/facts/link/api_unproven.rs` contains storage-backed report helpers.
 - `src/facts/link/cli_unproven.rs` contains unproven app admission and formatting.
 - `src/helpers/*_unproven.rs` contains narrow trusted boundaries for crypto/hex,
@@ -49,8 +50,8 @@ targets, not staging files:
 - `src/facts/link/project.rs`: proved link fact-family module for the stylized
   model: canonical encode/decode shape, deterministic typed construction from
   explicit parameters, extraction, projection validity, emitted facts,
-  projector-owned state, and supplied-chain preservation with the proof-facing
-  core/replay transition theorem.
+  projector-owned state, supplied-chain preservation with the proof-facing
+  core/replay transition theorem, and link-owned derivable-chain transitivity.
 - `src/helpers/*_unproven.rs`: narrow trusted adapters for crypto assumptions,
   SQLite, TCP sockets, filesystem, clocks, and similar external APIs.
 
@@ -117,8 +118,12 @@ and ancestry mean:
   and preserves the root/domain id, and the replay trace theorem preserves the
   engine invariant needed by that supplied chain. The link file also proves that
   a supplied same-root chain with recorded core child-parent dependencies has
-  only valid link ids and validated same-root parent offers. The link file does
-  not prove that concrete replay can derive such a chain from engine state alone.
+  only valid link ids and validated same-root parent offers.
+- The stronger link-owned theorem models a decoded-link world and proves by
+  induction that any link derivable through its own `prev/root` fields and
+  core-recorded dependencies has a transitively valid same-root ancestry to its
+  anchor. This is not yet a refinement theorem from the concrete runtime
+  `EngineState` queues/maps into the proof-facing decoded-link world.
 
 ## Invariant Checklist Style
 
@@ -160,7 +165,7 @@ as if it were their own.
 | --- | --- |
 | `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
 | `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
-| `facts::link::project` | Link-family implementation of the projector contract, local codec/extraction/projection kernels, projector-owned read-model state, and proof-facing supplied-chain preservation for the stylized link model. |
+| `facts::link::project` | Link-family implementation of the projector contract, local codec/extraction/projection kernels, projector-owned read-model state, proof-facing supplied-chain preservation, and derivable same-root transitivity for the stylized link model. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |
@@ -275,9 +280,11 @@ fact families.
    verified decode/admission/extraction path, and that errors cannot create
    validated state.
 9. **Composition proof.** Instantiate the core transitive-validity theorem with
-   the link projection contract. Prove every valid link has a domain-preserving
-   ancestry chain to its claimed anchor by induction over `prev`, while making
-   no uniqueness claim about anchors.
+   the link projection contract. The current link proof proves the induction
+   over decoded links and `prev/root` dependencies; the remaining work is the
+   runtime refinement showing concrete replay state supplies that decoded-link
+   world and recorded dependency relation for every projected link. Make no
+   uniqueness claim about anchors.
 10. **Rename only when complete.** A file loses `_unproven` only after its
    invariant-bearing behavior is covered by Verus-verified executable code and
    realistic Rust tests. Until then, keep the `_unproven` label.
