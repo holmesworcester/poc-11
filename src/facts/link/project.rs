@@ -174,6 +174,14 @@
 //!   `prev=None, root=None` gives `valid_link(self,self)`; child step extends an
 //!   existing sequence only when the child names the previous head and preserves
 //!   the same root/domain id.
+//!
+//! Reader map:
+//! - Vocabulary defines the runtime and proof-facing nouns.
+//! - Spec models define intended meaning.
+//! - Executable kernels prove running proof-facing implementations.
+//! - Lemmas expose reusable theorem facts.
+//! - Runtime implementation routes real Rust behavior through the kernels.
+//! - Wiring and boundary code connects link semantics to the generic projector.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
@@ -183,11 +191,21 @@ use crate::core::projector::{ProjectOutcome, Projector};
 use crate::core::typestate::{Asserted, Context, Validity};
 use vstd::prelude::*;
 
-// 1. Runtime Surface.
+// === Vocabulary ===
 //
-// These are the public runtime nouns the rest of the file explains and proves:
-// `Link` is the semantic fact, `ProjectedLink` is the family-owned read model,
-// and `LinkProjector` is the only runtime path that can validate/update links.
+// Role: establish the runtime and proof-facing nouns before making claims.
+// Invariants covered: none directly; this is the language every later
+// invariant uses.
+// Phase: naming. Readers see what a link, projected entry, statement, and
+// root/child/malformed shape mean before reading models or proofs.
+// Correctness narrative: later claims are only understandable because every
+// runtime object has a small proof-facing counterpart.
+
+// Runtime Surface.
+//
+// Defines the user-visible Rust objects: `Link`, `ProjectedLink`, `LinkState`,
+// `LinkUpdate`, and `LinkProjector`. This is the public behavior the proof must
+// stay attached to.
 
 /// Wire tag distinguishing a link fact from other frames on the network.
 pub const TAG_LINK: u8 = 0x01;
@@ -227,11 +245,11 @@ pub struct LinkUpdate {
 
 pub struct LinkProjector;
 
-// 2. Proof Vocabulary.
+// Proof Vocabulary.
 //
-// These proof-facing nouns mirror the runtime surface with small, explicit
-// shapes that Verus can reason about directly. The later sections prove the
-// runtime functions by delegating through these kernels.
+// Defines compact Verus-facing ids, statements, validity, projection outputs,
+// and report inputs. These are not alternate semantics; they are the proof
+// vocabulary used by executable kernels called from runtime/tests.
 
 verus! {
 
@@ -351,11 +369,11 @@ pub struct LinkDecodedBytesCore {
     pub content: Vec<u8>,
 }
 
-// 3. Shape Predicates And Statement Helpers.
+// Shape Predicates And Statement Helpers.
 //
-// These helpers define the three semantic branches used everywhere below:
-// root, child, and malformed. Later extraction/projection/report sections all
-// reduce to these branch predicates.
+// Defines the root/child/malformed split and canonical statement constructors.
+// Covers the SHAPE policy vocabulary and prevents every later phase from
+// reinterpreting `prev` and `root` independently.
 
 pub closed spec fn id_eq_spec(left: IdCore, right: IdCore) -> bool {
     left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
@@ -492,10 +510,30 @@ pub closed spec fn link_statement_addr_core(
     }
 }
 
-// 4. Projection Validity Model.
+// === Spec Models ===
 //
-// A root is valid by itself. A child is valid only when the caller supplies the
-// exact validated same-root parent context. Malformed shapes are invalid.
+// Role: define intended meaning in pure proof terms.
+// Invariants covered: codec shape, extraction, validity, update scope, report
+// shape, and composition policy.
+// Phase: specification. Each model says what a correct executable kernel must
+// implement.
+// Correctness narrative: the models are the contract; later kernels and
+// runtime calls show that real code follows it.
+
+// Projection Validity Model.
+//
+// This is the central validity rule for the link family. It says which
+// statement a link is allowed to promote, and under what authority.
+//
+// A root link is self-authorizing: it promotes `valid_link(self, self)`. A
+// child link is not self-authorizing: it may promote `valid_link(self, root)`
+// only when validated context already contains `valid_link(parent, root)`.
+// Malformed links promote nothing.
+//
+// This section covers the CONTEXT, PROJECT, malformed-shape, and same-root
+// preservation invariants. It is a model section, so it does not prove runtime
+// behavior by itself; it names the rule that the executable projection kernel
+// and runtime projector must implement.
 
 pub closed spec fn projection_spec(
     link: LinkCore,
@@ -530,11 +568,19 @@ pub closed spec fn projection_spec(
     }
 }
 
-// 5. Extraction Model.
+// Extraction Model.
 //
-// Extraction is context-free. It names the one self statement a well-formed
-// link may later promote and, for children, the exact parent/root statement it
-// needs from validated context.
+// Extraction is the fact's declaration of what it may later claim and what it
+// must first obtain from context. This is deliberately context-free:
+// extraction does not decide validity, it only exposes the offer/need shape.
+//
+// Roots offer `valid_link(self, self)`. Children offer `valid_link(self, root)`
+// and need `valid_link(parent, root)`. Malformed `prev`/`root` combinations
+// expose no edges, so they cannot acquire authority through the engine.
+//
+// This section covers the EXTRACT invariant and the well-formed parent naming
+// invariant. It is the reason projection can later prove that any promoted
+// statement equals an extracted offer.
 
 pub closed spec fn extraction_spec(link: LinkCore) -> LinkExtractionCore {
     match link_shape_spec(link) {
@@ -553,10 +599,11 @@ pub closed spec fn extraction_spec(link: LinkCore) -> LinkExtractionCore {
     }
 }
 
-// 6. Report Fallback Model.
+// Report Fallback Model.
 //
-// Incomplete reports are read-model observations only; they do not create
-// validity evidence. The fallback root keeps display/report shape deterministic.
+// Defines deterministic read-model fallback for incomplete observations.
+// Covers the distinction that incomplete reports are display/read-model state,
+// not validity evidence.
 
 pub closed spec fn fallback_root_spec(link: LinkCore) -> IdCore {
     match (link.root, link.prev) {
@@ -565,10 +612,11 @@ pub closed spec fn fallback_root_spec(link: LinkCore) -> IdCore {
     }
 }
 
-// 7. Construction Proof Model.
+// Construction Proof Model.
 //
-// Construction can copy only caller-supplied link parameters into the typed
-// fact. It cannot assign ids, edges, or validity.
+// Defines what command construction may copy: content, `prev`, and `root`
+// only. Covers project-owned construction: app code cannot assign ids, edges,
+// or validity.
 
 pub closed spec fn link_from_params_spec(prev: MaybeIdCore, root: MaybeIdCore) -> LinkConstructionCore {
     LinkConstructionCore {
@@ -580,10 +628,11 @@ pub closed spec fn link_from_params_spec(prev: MaybeIdCore, root: MaybeIdCore) -
     }
 }
 
-// 8. Update Application Model.
+// Update Application Model.
 //
-// Updates are owner-scoped and insert/ignore. Projection of one fact cannot
-// overwrite another fact's projected state.
+// Defines owner-scoped insert/ignore update behavior. Covers update ownership
+// and why projection of one fact cannot overwrite another fact's projected
+// state.
 
 pub closed spec fn link_update_apply_spec(
     owner: IdCore,
@@ -598,11 +647,19 @@ pub closed spec fn link_update_apply_spec(
     }
 }
 
-// 9. Canonical Codec Model.
+// Canonical Codec Model.
 //
-// The byte layout is `tag | has_prev | prev[32]? | has_root | root[32]? |
-// content`. These helpers model the accepted layout, rejection cases, and
-// semantic flag shape used by runtime encode/decode.
+// The codec model fixes the byte-level identity of a link. Since fact ids are
+// content addresses, validity must be tied to exactly the bytes the runtime
+// accepts and emits.
+//
+// The accepted layout is `tag | has_prev | prev[32]? | has_root | root[32]? |
+// content`. The model names flag meaning, optional id widths, content offsets,
+// accepted layouts, decoded headers, and rejection cases.
+//
+// This section covers the CODEC invariant. Without it, the proof could show
+// facts about a logical `Link` while runtime accepted a different byte shape.
+// The later codec kernels prove that encode/decode follow this model.
 
 pub closed spec fn codec_flag_spec(id: MaybeIdCore) -> u8 {
     match id {
@@ -810,11 +867,20 @@ pub closed spec fn complete_child_report_extends_parent(
         }
 }
 
-// 10. Composition Model.
+// Composition Model.
 //
-// Link ancestry is a concrete sequence: the first element is an anchor root and
-// each later child names the previous head as `prev` and preserves the same
-// root/domain id. This replaces the old caller-supplied parent-chain boolean.
+// Local projection proves one link step at a time. Composition explains how
+// those local steps fit into a supplied same-root chain.
+//
+// The chain model is intentionally concrete: the first element is a root
+// anchor, each child names the previous head as `prev`, and each child
+// preserves the same root/domain id. Core engine and replay proofs are imported
+// only for validated statement provenance and replay preservation.
+//
+// This section covers the COMPOSE invariant while avoiding overclaiming. It
+// does not prove anchor uniqueness or discover chains from engine state. It
+// proves that a supplied same-root chain remains meaningful when paired with
+// core provenance.
 
 pub closed spec fn link_chain_to_anchor(chain: Seq<LinkCore>, root: IdCore) -> bool
     decreases chain.len(),
@@ -850,10 +916,19 @@ pub closed spec fn chain_contains_validated_link_statements(
             )
 }
 
-// 11. Projected Report Model.
+// Projected Report Model.
 //
-// Complete child reports can be constructed only from complete same-root parent
-// reports. All other cases produce a singleton incomplete observation.
+// Projected reports are read-model state, not validity evidence. This model
+// keeps that distinction explicit.
+//
+// A valid root produces a complete singleton report. A valid child produces a
+// complete report only when the parent report is present, complete, same-root,
+// and has counters that can be incremented. Otherwise the child still gets a
+// deterministic incomplete observation for the current fact only.
+//
+// This section covers projected chain entry shape: root, depth, length, head,
+// and id path. It explains why reports can be useful to users without becoming
+// a second source of authority.
 
 pub closed spec fn projected_report_spec(
     link: LinkCore,
@@ -907,7 +982,19 @@ pub closed spec fn projected_report_spec(
     }
 }
 
-// 12. Report Helper Kernel.
+// === Executable Kernels ===
+//
+// Role: implement the spec models as verified executable functions.
+// Invariants covered: the same invariant slices as the model layer, now tied
+// to running proof-facing code.
+// Phase: implementation proof. These are the bridge from abstract meaning to
+// code that runtime/tests actually call.
+// Correctness narrative: runtime correctness does not rest on specs alone;
+// runtime routes through these kernels.
+
+// Report Helper Kernel.
+//
+// Implements fallback-root selection used by incomplete projected reports.
 
 pub fn fallback_root_core(link: LinkCore) -> (root: IdCore)
     ensures
@@ -919,7 +1006,10 @@ pub fn fallback_root_core(link: LinkCore) -> (root: IdCore)
     }
 }
 
-// 13. Construction Kernel.
+// Construction Kernel.
+//
+// Proves construction copies only caller-supplied link fields and assigns no
+// authority-bearing facts.
 
 pub fn link_from_params_core(prev: MaybeIdCore, root: MaybeIdCore) -> (construction: LinkConstructionCore)
     ensures
@@ -939,7 +1029,10 @@ pub fn link_from_params_core(prev: MaybeIdCore, root: MaybeIdCore) -> (construct
     }
 }
 
-// 14. Extraction Kernel.
+// Extraction Kernel.
+//
+// Proves executable extraction matches the extraction model for root, child,
+// and malformed shapes.
 
 pub fn extract_link_core(link: LinkCore) -> (extraction: LinkExtractionCore)
     ensures
@@ -969,7 +1062,9 @@ pub fn extract_link_core(link: LinkCore) -> (extraction: LinkExtractionCore)
     }
 }
 
-// 15. Update Application Kernel.
+// Update Application Kernel.
+//
+// Proves update application decisions are owner-keyed insert/ignore decisions.
 
 pub fn link_update_apply_core(
     owner: IdCore,
@@ -991,7 +1086,18 @@ pub fn link_update_apply_core(
     }
 }
 
-// 16. Codec Kernels.
+// Codec Kernels.
+//
+// These executable helpers implement the canonical byte model. Runtime encode
+// and decode route through them, so codec correctness is attached to running
+// behavior rather than a spec-only mirror.
+//
+// The kernels prove flag meaning, accepted layout, header decoding, id/content
+// segmentation, byte appending, and canonical byte construction. Rejection
+// lemmas sit nearby because malformed byte handling is part of the same story.
+//
+// This section is what binds runtime `FactId` computation to proof-facing
+// `Link` semantics.
 
 pub fn codec_flag_core(id: MaybeIdCore) -> (flag: u8)
     ensures
@@ -1239,7 +1345,10 @@ pub fn link_encode_bytes_core(
     append_bytes_core(out, content)
 }
 
-// 17. Projected Id Vector Kernels.
+// Projected Id Vector Kernels.
+//
+// Prove singleton and child id-vector construction: `[self]` and
+// `parent + [self]`.
 
 #[allow(clippy::vec_init_then_push)]
 pub fn singleton_projected_ids_core(self_id: IdCore) -> (ids: Vec<IdCore>)
@@ -1265,7 +1374,18 @@ pub fn child_projected_ids_core(parent_ids: Vec<IdCore>, self_id: IdCore) -> (id
     ids
 }
 
-// 18. Projected Report Kernel.
+// Projected Report Kernel.
+//
+// This executable kernel implements the report model used by runtime read-model
+// updates. It is where complete root reports, complete child reports, and
+// incomplete fallbacks become running code.
+//
+// The child case is the important one: completion requires a present complete
+// same-root parent report and bounded counters. If those conditions fail, the
+// result is incomplete and local to the current fact.
+//
+// This section proves that the read model can summarize chains without
+// creating extra validity authority.
 
 #[allow(clippy::unnecessary_cast)]
 pub fn projected_report_core(
@@ -1326,7 +1446,18 @@ pub fn projected_report_core(
     }
 }
 
-// 19. Projection Validity Kernel.
+// Projection Validity Kernel.
+//
+// This is the executable implementation of the projection validity model.
+// Runtime projection calls this function after converting the context lookup
+// into `parent_validated_same_root`.
+//
+// The important guarantee is not just that the returned validity is correct.
+// When the result is valid, the promoted statement is exactly the offer exposed
+// by extraction. That connects extraction, context readiness, and promotion
+// into one authority path.
+//
+// This kernel is the main proof target for user-visible validity behavior.
 
 pub fn project_link_core(
     link: LinkCore,
@@ -1376,7 +1507,7 @@ pub fn project_link_core(
     }
 }
 
-// 20. Emitted-Fact Kernel.
+// Emitted-Fact Kernel.
 //
 // Link projection currently emits no raw facts; authority comes only from
 // promoted offers for the projected owner.
@@ -1388,7 +1519,20 @@ pub fn link_emitted_fact_count_core() -> (count: usize)
     0
 }
 
-// 21. Projection Lemmas.
+// === Lemmas ===
+//
+// Role: expose named proof facts used by documentation, tests, and future
+// proofs.
+// Invariants covered: ownership, same-root preservation, malformed behavior,
+// report shape, codec rejection, and composition.
+// Phase: theorem surface. Kernels prove behavior; lemmas package the reusable
+// conclusions.
+// Correctness narrative: these are the named reasons a reader can cite when
+// asking why a policy bullet follows from the code.
+
+// Projection Lemmas.
+//
+// Root projection emits exactly self/root validity evidence.
 
 pub proof fn root_projection_emits_self_root(link: LinkCore)
     requires
@@ -1399,7 +1543,9 @@ pub proof fn root_projection_emits_self_root(link: LinkCore)
 {
 }
 
-// 22. Output Ownership Lemmas.
+// Output Ownership Lemmas.
+//
+// Projection updates are owned by the projected link id.
 
 pub proof fn projection_update_owner_is_self(link: LinkCore, parent_validated_same_root: bool)
     ensures
@@ -1407,7 +1553,9 @@ pub proof fn projection_update_owner_is_self(link: LinkCore, parent_validated_sa
 {
 }
 
-// 23. Construction Lemma.
+// Construction Lemma.
+//
+// Construction cannot assign id, edges, or validity.
 
 pub proof fn link_from_params_constructs_only_link_fields(prev: MaybeIdCore, root: MaybeIdCore)
     ensures
@@ -1419,7 +1567,9 @@ pub proof fn link_from_params_constructs_only_link_fields(prev: MaybeIdCore, roo
 {
 }
 
-// 24. Update Application Lemma.
+// Update Application Lemma.
+//
+// Apply-update is insert/ignore by owner id.
 
 pub proof fn apply_update_is_insert_ignore_by_link_id(
     owner: IdCore,
@@ -1434,7 +1584,10 @@ pub proof fn apply_update_is_insert_ignore_by_link_id(
 {
 }
 
-// 25. Codec Lemmas.
+// Codec Lemmas.
+//
+// Canonical byte construction, accepted layout, and rejection cases are
+// explicit theorem facts.
 
 pub proof fn canonical_link_bytes_round_trip(
     prev_present: bool,
@@ -1513,7 +1666,9 @@ pub proof fn decode_header_accepts_only_canonical_layout(bytes: Seq<u8>)
 {
 }
 
-// 26. Projected Id Vector Lemmas.
+// Projected Id Vector Lemmas.
+//
+// Projected id vectors are exactly singleton self or parent plus self.
 
 pub proof fn singleton_projected_ids_are_exact(self_id: IdCore)
     ensures
@@ -1530,7 +1685,10 @@ pub proof fn child_projected_ids_are_parent_plus_self(parent_ids: Seq<IdCore>, s
 {
 }
 
-// 27. Composition Lemmas.
+// Composition Lemmas.
+//
+// Root chains start at anchors; child links extend same-root chains; replay
+// preserves supplied validated same-root chains.
 
 pub proof fn root_link_chain_to_anchor(link: LinkCore)
     requires
@@ -1591,7 +1749,9 @@ pub proof fn replay_preserves_supplied_link_chain_to_anchor(
     crate::core::play::replay_reports_engine_validity(state, transitions);
 }
 
-// 28. Extraction Lemmas.
+// Extraction Lemmas.
+//
+// Child extraction asserts same-root offer and same-root parent need.
 
 pub proof fn child_extraction_offer_and_need_same_root(
     self_id: IdCore,
@@ -1617,7 +1777,10 @@ pub proof fn child_extraction_offer_and_need_same_root(
 {
 }
 
-// 29. Projection Statement Lemmas.
+// Projection Statement Lemmas.
+//
+// Valid projected statements are owned by the projected link and match
+// extracted offers.
 
 pub proof fn valid_projection_statement_owned_by_projected_link(
     link: LinkCore,
@@ -1679,7 +1842,9 @@ pub proof fn validated_link_offer_statement_to_owner_from_engine(
     crate::core::engine::engine_validated_offer_for_has_valid_owner(state, owner, addr);
 }
 
-// 30. Malformed Shape Lemmas.
+// Malformed Shape Lemmas.
+//
+// Malformed shapes are invalid and extract no edges.
 
 pub proof fn malformed_projection_is_invalid(link: LinkCore, parent_validated_same_root: bool)
     requires
@@ -1699,7 +1864,10 @@ pub proof fn malformed_extraction_is_empty(link: LinkCore)
 {
 }
 
-// 31. Projected Report Lemmas.
+// Projected Report Lemmas.
+//
+// Complete root reports are self-complete; complete child reports require a
+// complete same-root parent and extend its counters/id path.
 
 pub proof fn root_projected_report_is_complete_self(link: LinkCore)
     requires
@@ -1793,11 +1961,23 @@ pub proof fn invalid_child_emits_no_statement(
 
 } // verus!
 
-// 32. Runtime Construction.
+// === Runtime Implementation ===
+//
+// Role: real Rust behavior, routed through verified kernels.
+// Invariants covered: user-facing behavior claims observable from
+// construction, codec, extraction, projection, and read-model updates.
+// Phase: runtime. This is where the proof story reconnects to actual app
+// execution.
+// Correctness narrative: runtime code stays small because decisions are made by
+// kernels whose specs and lemmas were established above.
+
+// Runtime Construction.
 //
 // Primary runtime function: `link_from_params`.
 // Proof handlers: `link_from_params_spec`, `link_from_params_core`, and
 // `link_from_params_constructs_only_link_fields`.
+// Builds `Link` from command parameters and calls the construction kernel to
+// keep authority out of app inputs.
 
 /// Deterministic constructor from command parameters to the typed link fact.
 pub fn link_from_params(at: u64, prev: Option<FactId>, root: Option<FactId>, label: &str) -> Link {
@@ -1815,24 +1995,27 @@ pub fn link_from_params(at: u64, prev: Option<FactId>, root: Option<FactId>, lab
     }
 }
 
-// 33. Runtime Canonical Codec.
+// Runtime Canonical Codec.
 //
 // Primary runtime functions: `LinkProjector::encode`, `LinkProjector::decode`,
 // and `link_id`.
 // Proof handlers: `codec_flag_*`, `link_codec_layout_*`, and the codec layout
 // rejection lemmas.
+// Computes ids from canonical bytes and routes encode/decode through verified
+// codec kernels.
 
 pub fn link_id(l: &Link) -> FactId {
     fact_id(&LinkProjector::encode(l))
 }
 
-// 34. Runtime Extraction.
+// Runtime Extraction.
 //
 // Primary runtime functions: `link_edges`, `link_semantic_root`, and
 // `valid_link_key`.
 // Proof handlers: `extraction_spec`, `extract_link_core`,
 // `child_extraction_offer_and_need_same_root`, and
 // `malformed_extraction_is_empty`.
+// Converts extracted proof statements into runtime offer/need edges.
 
 pub fn link_edges(l: &Link) -> Vec<Offer<Asserted>> {
     let extraction = extract_link_core(link_core_for(link_id(l), l.prev, l.root));
@@ -1874,12 +2057,14 @@ pub fn valid_link_key(link_id: FactId, root_id: FactId) -> Key {
     Key(fact_id(&bytes))
 }
 
-// 35. Runtime Projection Validity.
+// Runtime Projection Validity.
 //
 // Primary runtime functions: `LinkProjector::project`, `link_project_decision`,
 // and `link_project_validity`.
 // Proof handlers: `projection_spec`, `project_link_core`, and the root/child/
 // malformed projection lemmas.
+// Converts runtime parent-context lookup into the proof kernel's validity
+// input.
 
 pub fn link_project_decision(
     id: FactId,
@@ -1897,7 +2082,7 @@ pub fn link_project_validity(l: &Link, parent_validated_same_root: bool) -> Vali
     validity_from_core(projection.validity)
 }
 
-// 36. Runtime Output And Read Model.
+// Runtime Output And Read Model.
 //
 // Primary runtime functions: `projected_link_state`,
 // `incomplete_projected_link`, `LinkProjector::update_owner`, and
@@ -1905,6 +2090,18 @@ pub fn link_project_validity(l: &Link, parent_validated_same_root: bool) -> Vali
 // Proof handlers: `projected_report_*`, `link_update_apply_*`,
 // `singleton_projected_ids_*`, `child_projected_ids_*`, and
 // `link_emitted_fact_count_core`.
+//
+// This is where projection consequences become `LinkState` entries. It calls
+// the projected-report and id-vector kernels instead of rebuilding
+// proof-sensitive shape in ordinary Rust.
+//
+// The runtime behavior is intentionally conservative: every projection writes
+// only the current fact's entry, complete child entries extend an already
+// complete same-root parent report, and incomplete entries remain singleton
+// observations.
+//
+// This section is the user-facing read-model story: what users can inspect
+// after projection, and why that state is scoped to the projected fact.
 
 fn projected_root_or_fallback(id: FactId, l: &Link) -> FactId {
     link_semantic_root(l).or(l.root).unwrap_or(id)
@@ -2002,11 +2199,30 @@ fn optional_id_bytes(id: Option<FactId>) -> Vec<u8> {
     id.map(|id| id.to_vec()).unwrap_or_default()
 }
 
-// 37. Projector Trait Wiring.
+// === Wiring And Boundary ===
 //
-// The trait methods are the runtime entry points. Each method delegates to the
-// sectioned helpers above so the implementation reads in the same order as the
-// policy: codec, extraction, projection, and owner-scoped state update.
+// Role: connect the fact-family implementation to the generic `Projector`
+// trait and convert runtime ids/enums to proof-facing ids/enums.
+// Invariants covered: no emitted-fact authority leak, update ownership,
+// context-gated projection, and runtime/proof boundary consistency.
+// Phase: integration.
+// Correctness narrative: this is the only place where the generic engine calls
+// into link semantics; every method delegates back to the named phases above.
+
+// Projector Trait Wiring.
+//
+// These methods are the engine-facing boundary for link semantics. The generic
+// engine knows how to admit, index, validate, and apply updates; this trait
+// implementation supplies the link-specific codec, extraction, projection, and
+// update behavior.
+//
+// The methods should stay thin. Their job is to route runtime values through
+// the named kernels above, convert proof-facing results back into runtime
+// values, and avoid adding hidden authority at the boundary.
+//
+// This section closes the correctness narrative: the earlier models and
+// kernels matter because the engine reaches link behavior through exactly these
+// calls.
 
 impl Projector for LinkProjector {
     type Item = Link;
@@ -2119,11 +2335,12 @@ impl Projector for LinkProjector {
     }
 }
 
-// 38. Runtime Bridge Helpers.
+// Runtime Bridge Helpers.
 //
 // Runtime code uses `[u8; 32]` fact ids and core typestates. The proof kernels
 // use small proof-facing ids and enums. These conversions keep that boundary
 // explicit and local to this file.
+// Keeps proof-facing representation changes contained in this file.
 
 fn chunk_u64(id: &FactId, offset: usize) -> u64 {
     u64::from_le_bytes([

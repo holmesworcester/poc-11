@@ -117,11 +117,10 @@ close it.
 
 ## Section Outline
 
-Use numbered section comments for implementation sections and keep those
-numbers strictly increasing in file order. The exact Rust syntax can vary, and
-the policy/checklist preface may remain top-level module docs rather than a
-`// N.` code section, but the implementation section numbers should not repeat,
-reset, or move backward.
+Use named phase headers and named subsections. Do not use numeric section
+comments as the hierarchy; numbers make ordering visible, but they do not tell
+the reader why a block exists. The policy/checklist preface may remain
+top-level module docs rather than a code section.
 
 ```text
 Opening Policy And Reader Map
@@ -133,109 +132,67 @@ Opening Policy And Reader Map
    - Proof strategy.
    - Completion plan.
 
-1. Runtime Surface
-   - Link
-   - ProjectedLink
-   - LinkState
-   - LinkUpdate
-   - LinkProjector
+=== Vocabulary ===
+Role: define the nouns before making claims.
+Subsections:
+   - Runtime Surface
+   - Proof Vocabulary
+   - Shape Predicates And Statement Helpers
 
-2. Proof Vocabulary
-   - IdCore
-   - MaybeIdCore
-   - LinkShapeCore
-   - LinkCore
-   - ValidityCore
-   - LinkStatementCore
-   - LinkProjectionCore
-   - LinkExtractionCore
-   - ProjectedReportCore
-   - ParentReportCore
+=== Spec Models ===
+Role: define intended meaning.
+Subsections:
+   - Projection Validity Model
+   - Extraction Model
+   - Report Fallback Model
+   - Construction Proof Model
+   - Update Application Model
+   - Canonical Codec Model
+   - Composition Model
+   - Projected Report Model
 
-3. Shape Predicates And Statement Helpers
-   - root / child / malformed classifier
-   - statement constructors and predicates
-   - report-shape predicates
+=== Executable Kernels ===
+Role: implement the spec models as verified running proof-facing functions.
+Subsections:
+   - Report Helper Kernel
+   - Construction Kernel
+   - Extraction Kernel
+   - Update Application Kernel
+   - Codec Kernels
+   - Projected Id Vector Kernels
+   - Projected Report Kernel
+   - Projection Validity Kernel
+   - Emitted-Fact Kernel
 
-4+. Behavior Sections
-   Use monotonically increasing sections for each model, executable kernel,
-   lemma group, runtime section, projector trait wiring, and runtime bridge.
-   If Verus macro boundaries keep proof handlers together, mirror the behavior
-   names in the later runtime sections so readers can follow the same story.
+=== Lemmas ===
+Role: package reusable theorem facts over the kernels.
+Subsections:
+   - Projection Lemmas
+   - Output Ownership Lemmas
+   - Construction Lemma
+   - Update Application Lemma
+   - Codec Lemmas
+   - Projected Id Vector Lemmas
+   - Composition Lemmas
+   - Extraction Lemmas
+   - Projection Statement Lemmas
+   - Malformed Shape Lemmas
+   - Projected Report Lemmas
 
-Construction
-   Primary:
-   - link_from_params
-   Handlers:
-   - link_from_params_spec
-   - link_from_params_core
-   - link_from_params_constructs_only_link_fields
+=== Runtime Implementation ===
+Role: route real Rust behavior through verified kernels.
+Subsections:
+   - Runtime Construction
+   - Runtime Canonical Codec
+   - Runtime Extraction
+   - Runtime Projection Validity
+   - Runtime Output And Read Model
 
-Canonical Codec
-   Primary:
-   - LinkProjector::encode
-   - LinkProjector::decode
-   - link_id
-   Handlers:
-   - codec_flag_spec/core
-   - link_encode_bytes_core
-   - link_decode_header_core
-   - canonical byte/header acceptance lemmas
-
-Extraction
-   Primary:
-   - link_edges
-   - link_semantic_root
-   - valid_link_key
-   Handlers:
-   - extraction_spec
-   - extract_link_core
-   - child_extraction_offer_and_need_same_root
-   - malformed_extraction_is_empty
-
-Projection Validity
-   Primary:
-   - LinkProjector::project
-   - link_project_decision
-   - link_project_validity
-   Handlers:
-   - projection_spec
-   - project_link_core
-   - root_projection_emits_self_root
-   - valid_child_requires_validated_same_root_parent
-   - valid_child_preserves_claimed_root
-   - invalid_child_emits_no_statement
-   - malformed_projection_is_invalid
-   - valid_projection_statement_equals_extracted_offer
-
-Output And Read Model
-   Primary:
-   - projected_link_state
-   - incomplete_projected_link
-   - LinkProjector::update_owner
-   - LinkProjector::apply_update
-   Handlers:
-   - projected_report_spec/core
-   - link_update_apply_spec/core
-   - projection_update_owner_is_self
-   - apply_update_is_insert_ignore_by_link_id
-   - complete_child_report_requires_complete_same_root_parent
-   - link_emitted_fact_count_core
-
-Composition
-   Primary:
-   - replay_preserves_supplied_link_chain_to_anchor
-   Handlers and imports:
-   - link_chain_to_anchor
-   - root_link_chain_to_anchor
-   - child_extends_link_chain
-   - imported core engine validated-offer provenance
-   - imported replay_reports_engine_validity over modeled dependency closure
-
-Runtime Bridge Helpers
-    - fact_id_to_core / core_to_fact_id
-    - maybe conversions
-    - validity conversions
+=== Wiring And Boundary ===
+Role: connect the fact-family implementation to the generic Projector trait.
+Subsections:
+   - Projector Trait Wiring
+   - Runtime Bridge Helpers
 
 Tests
     - Codec

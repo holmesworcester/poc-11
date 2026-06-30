@@ -262,6 +262,20 @@ fn proof_projector_style_guide_records_narrative_structure() {
         "Proof vocabulary after runtime types",
         "each primary runtime function is followed by its proof handlers",
         "Do not group all Verus specs first and all runtime code last",
+        "Use named phase headers and named subsections",
+        "Do not use numeric section comments as the hierarchy",
+        "=== Vocabulary ===",
+        "Role: define the nouns before making claims",
+        "=== Spec Models ===",
+        "Role: define intended meaning",
+        "=== Executable Kernels ===",
+        "Role: implement the spec models as verified running proof-facing functions",
+        "=== Lemmas ===",
+        "Role: package reusable theorem facts over the kernels",
+        "=== Runtime Implementation ===",
+        "Role: route real Rust behavior through verified kernels",
+        "=== Wiring And Boundary ===",
+        "Role: connect the fact-family implementation to the generic Projector trait",
         "POLICY. A link is valid iff",
         "CODEC. Its bytes decode canonically",
         "SHAPE. It is either a root, a child, or malformed",
@@ -325,35 +339,51 @@ fn link_project_file_follows_proof_projector_narrative_sections() {
         "Imported theorem checklist:",
         "Local theorem checklist:",
         "Proof strategy:",
-        "1. Runtime Surface.",
-        "2. Proof Vocabulary.",
-        "3. Shape Predicates And Statement Helpers.",
-        "4. Projection Validity Model.",
-        "5. Extraction Model.",
-        "7. Construction Proof Model.",
-        "9. Canonical Codec Model.",
-        "10. Composition Model.",
-        "11. Projected Report Model.",
-        "13. Construction Kernel.",
-        "14. Extraction Kernel.",
-        "16. Codec Kernels.",
-        "18. Projected Report Kernel.",
-        "19. Projection Validity Kernel.",
-        "21. Projection Lemmas.",
-        "23. Construction Lemma.",
-        "25. Codec Lemmas.",
-        "27. Composition Lemmas.",
-        "28. Extraction Lemmas.",
-        "31. Projected Report Lemmas.",
-        "32. Runtime Construction.",
-        "33. Runtime Canonical Codec.",
-        "34. Runtime Extraction.",
-        "35. Runtime Projection Validity.",
-        "36. Runtime Output And Read Model.",
-        "37. Projector Trait Wiring.",
-        "38. Runtime Bridge Helpers.",
-        "Each method delegates to the",
-        "sectioned helpers above",
+        "Reader map:",
+        "Vocabulary defines the runtime and proof-facing nouns",
+        "Spec models define intended meaning",
+        "Executable kernels prove running proof-facing implementations",
+        "Lemmas expose reusable theorem facts",
+        "Runtime implementation routes real Rust behavior through the kernels",
+        "Wiring and boundary code connects link semantics to the generic projector",
+        "=== Vocabulary ===",
+        "Runtime Surface.",
+        "Proof Vocabulary.",
+        "Shape Predicates And Statement Helpers.",
+        "=== Spec Models ===",
+        "Projection Validity Model.",
+        "This is the central validity rule for the link family",
+        "Extraction Model.",
+        "Extraction is the fact's declaration of what it may later claim",
+        "Canonical Codec Model.",
+        "The codec model fixes the byte-level identity of a link",
+        "Composition Model.",
+        "Local projection proves one link step at a time",
+        "Projected Report Model.",
+        "Projected reports are read-model state, not validity evidence",
+        "=== Executable Kernels ===",
+        "Codec Kernels.",
+        "These executable helpers implement the canonical byte model",
+        "Projected Report Kernel.",
+        "This executable kernel implements the report model",
+        "used by runtime read-model",
+        "Projection Validity Kernel.",
+        "This kernel is the main proof target for user-visible validity behavior",
+        "=== Lemmas ===",
+        "Projection Lemmas.",
+        "Composition Lemmas.",
+        "Projected Report Lemmas.",
+        "=== Runtime Implementation ===",
+        "Runtime Construction.",
+        "Runtime Canonical Codec.",
+        "Runtime Extraction.",
+        "Runtime Projection Validity.",
+        "Runtime Output And Read Model.",
+        "This is where projection consequences become `LinkState` entries",
+        "=== Wiring And Boundary ===",
+        "Projector Trait Wiring.",
+        "These methods are the engine-facing boundary for link semantics",
+        "Runtime Bridge Helpers.",
     ] {
         assert!(
             normalized.contains(required),
@@ -361,36 +391,58 @@ fn link_project_file_follows_proof_projector_narrative_sections() {
         );
     }
 
+    let vocabulary = project
+        .find("// === Vocabulary ===")
+        .expect("vocabulary phase");
+    let spec_models = project
+        .find("// === Spec Models ===")
+        .expect("spec models phase");
+    let executable_kernels = project
+        .find("// === Executable Kernels ===")
+        .expect("executable kernels phase");
+    let lemmas = project.find("// === Lemmas ===").expect("lemmas phase");
+    let runtime_impl = project
+        .find("// === Runtime Implementation ===")
+        .expect("runtime implementation phase");
+    let boundary = project
+        .find("// === Wiring And Boundary ===")
+        .expect("wiring and boundary phase");
     let runtime_surface = project
-        .find("// 1. Runtime Surface.")
+        .find("// Runtime Surface.")
         .expect("runtime surface section");
     let proof_vocabulary = project
-        .find("// 2. Proof Vocabulary.")
+        .find("// Proof Vocabulary.")
         .expect("proof vocabulary section");
-    let construction = project
-        .find("// 32. Runtime Construction.")
-        .expect("construction section");
+    let runtime_construction = project
+        .find("// Runtime Construction.")
+        .expect("runtime construction section");
     let bridge = project
-        .find("// 38. Runtime Bridge Helpers.")
+        .find("// Runtime Bridge Helpers.")
         .expect("runtime bridge section");
     assert!(
-        runtime_surface < proof_vocabulary
-            && proof_vocabulary < construction
-            && construction < bridge,
-        "link project sections should read policy, runtime surface, proof vocabulary, behavior, bridge"
+        vocabulary < spec_models
+            && spec_models < executable_kernels
+            && executable_kernels < lemmas
+            && lemmas < runtime_impl
+            && runtime_impl < boundary
+            && vocabulary < runtime_surface
+            && runtime_surface < proof_vocabulary
+            && proof_vocabulary < runtime_construction
+            && runtime_construction < bridge,
+        "link project sections should read as vocabulary, models, kernels, lemmas, runtime, boundary"
     );
 
-    let section_numbers: Vec<u32> = project
+    let numeric_section_comments: Vec<&str> = project
         .lines()
         .filter_map(|line| {
             let section = line.trim_start().strip_prefix("// ")?;
             let (number, _) = section.split_once('.')?;
-            number.parse().ok()
+            number.parse::<u32>().ok().map(|_| line.trim())
         })
         .collect();
     assert!(
-        section_numbers.windows(2).all(|pair| pair[0] < pair[1]),
-        "link project section numbers should be strictly increasing in file order: {section_numbers:?}"
+        numeric_section_comments.is_empty(),
+        "link project should use named hierarchical sections, not numeric section comments: {numeric_section_comments:?}"
     );
 }
 
