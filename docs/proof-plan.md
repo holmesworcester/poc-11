@@ -28,8 +28,9 @@ the `_unproven` file until the whole file can be renamed.
   parameters. Its stylized link invariants, including proof-facing
   supplied-chain preservation with core/replay provenance and link-owned
   derivable-chain transitive validity over decoded link facts, are covered by
-  Verus kernels in the running file. Concrete runtime queues/maps still need a
-  refinement proof into that proof-facing model.
+  Verus kernels in the running file. The engine runtime has been simplified to
+  Vec-backed state so the next proof step can target running transitions
+  directly, before any HashMap/view optimization.
 - `src/facts/link/api_unproven.rs` contains storage-backed report helpers.
 - `src/facts/link/cli_unproven.rs` contains unproven app admission and formatting.
 - `src/helpers/*_unproven.rs` contains narrow trusted boundaries for crypto/hex,
@@ -79,8 +80,9 @@ Core proofs are about all possible fact families routed through the engine:
   offer provenance, recorded dependency provenance, and per-owner/per-address
   promotion uniqueness for any allowed modeled transition prefix. Runtime
   `EngineState` records dependency edges when a valid projection consumes
-  validated context. The remaining core proof is to show the concrete runtime
-  queues/maps refine the full proof-facing model.
+  validated context and now uses Vec-backed stores/queues to match the proof
+  shape. The remaining core proof is to move the transition theorem onto those
+  running Vec-backed helpers directly.
 - Route dispatch is sound: decoded family tags select the right family projector,
   and malformed or unknown facts do not become valid.
 
@@ -122,8 +124,8 @@ and ancestry mean:
 - The stronger link-owned theorem models a decoded-link world and proves by
   induction that any link derivable through its own `prev/root` fields and
   core-recorded dependencies has a transitively valid same-root ancestry to its
-  anchor. This is not yet a refinement theorem from the concrete runtime
-  `EngineState` queues/maps into the proof-facing decoded-link world.
+  anchor. This still depends on the core proof target being moved from the
+  abstract transition helpers onto the running Vec-backed engine transitions.
 
 ## Invariant Checklist Style
 
@@ -282,7 +284,7 @@ fact families.
 9. **Composition proof.** Instantiate the core transitive-validity theorem with
    the link projection contract. The current link proof proves the induction
    over decoded links and `prev/root` dependencies; the remaining work is the
-   runtime refinement showing concrete replay state supplies that decoded-link
+   direct runtime proof showing concrete replay state supplies that decoded-link
    world and recorded dependency relation for every projected link. Make no
    uniqueness claim about anchors.
 10. **Rename only when complete.** A file loses `_unproven` only after its

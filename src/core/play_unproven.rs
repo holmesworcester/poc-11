@@ -33,7 +33,7 @@
 //! - [ ] `core::turn`: draining preserves the engine invariant and applies helper
 //!       results through the engine. Owner: `src/core/turn_unproven.rs`, planned
 //!       theorem `turn_preserves_engine_invariant`.
-//! - [x] `core::engine`: proof-facing transition traces preserve the engine
+//! - [x] `core::engine`: abstract transition helper traces preserve the engine
 //!       invariant. Proven in
 //!       `src/core/engine_unproven.rs::engine_transition_trace_preserves_invariant`.
 //! - [x] `core::index`: storage lookups return only untrusted discovery data.
@@ -162,8 +162,12 @@ where
         Ok(Some(self.validity_for(id)?))
     }
 
-    pub fn memo(&self) -> &HashMap<FactId, Validity> {
-        &self.engine.validity
+    pub fn memo(&self) -> HashMap<FactId, Validity> {
+        self.validity_map()
+    }
+
+    fn validity_map(&self) -> HashMap<FactId, Validity> {
+        self.engine.validity.iter().collect()
     }
 
     fn drain(&mut self) -> Result<usize, String> {
@@ -213,7 +217,7 @@ where
         debug_assert!(report.seeds_schedule_admission_only);
         debug_assert!(!report.rewrites_persisted_storage);
     }
-    Ok(r.engine.validity)
+    Ok(r.validity_map())
 }
 
 /// Live offer→need wake (§5 "re-demand wavefront"): validate the arrived fact,
@@ -232,5 +236,5 @@ where
     let report = replay_surface_core();
     debug_assert!(report.seeds_schedule_admission_only);
     debug_assert!(!report.rewrites_persisted_storage);
-    Ok(r.engine.validity)
+    Ok(r.validity_map())
 }
