@@ -117,11 +117,14 @@ close it.
 
 ## Section Outline
 
-Use numbered section comments. The exact Rust syntax can vary, but the order
-should not drift unless the proof story genuinely changes.
+Use numbered section comments for implementation sections and keep those
+numbers strictly increasing in file order. The exact Rust syntax can vary, and
+the policy/checklist preface may remain top-level module docs rather than a
+`// N.` code section, but the implementation section numbers should not repeat,
+reset, or move backward.
 
 ```text
-1. Policy And Reader Map
+Opening Policy And Reader Map
    - Top-level policy.
    - Fact-family contract.
    - Opening proof checklist.
@@ -130,24 +133,37 @@ should not drift unless the proof story genuinely changes.
    - Proof strategy.
    - Completion plan.
 
-2. Runtime Surface
+1. Runtime Surface
    - Link
    - ProjectedLink
    - LinkState
    - LinkUpdate
    - LinkProjector
 
-3. Proof Vocabulary
+2. Proof Vocabulary
    - IdCore
    - MaybeIdCore
+   - LinkShapeCore
    - LinkCore
    - ValidityCore
    - LinkStatementCore
    - LinkProjectionCore
    - LinkExtractionCore
    - ProjectedReportCore
+   - ParentReportCore
 
-4. Construction
+3. Shape Predicates And Statement Helpers
+   - root / child / malformed classifier
+   - statement constructors and predicates
+   - report-shape predicates
+
+4+. Behavior Sections
+   Use monotonically increasing sections for each model, executable kernel,
+   lemma group, runtime section, projector trait wiring, and runtime bridge.
+   If Verus macro boundaries keep proof handlers together, mirror the behavior
+   names in the later runtime sections so readers can follow the same story.
+
+Construction
    Primary:
    - link_from_params
    Handlers:
@@ -155,7 +171,7 @@ should not drift unless the proof story genuinely changes.
    - link_from_params_core
    - link_from_params_constructs_only_link_fields
 
-5. Canonical Codec
+Canonical Codec
    Primary:
    - LinkProjector::encode
    - LinkProjector::decode
@@ -168,7 +184,7 @@ should not drift unless the proof story genuinely changes.
    - link_decode_header_core
    - canonical byte/header acceptance lemmas
 
-6. Extraction
+Extraction
    Primary:
    - link_edges
    - link_semantic_root
@@ -179,7 +195,7 @@ should not drift unless the proof story genuinely changes.
    - child_extraction_offer_and_need_same_root
    - malformed_extraction_is_empty
 
-7. Projection Validity
+Projection Validity
    Primary:
    - LinkProjector::project
    - link_project_decision
@@ -194,7 +210,7 @@ should not drift unless the proof story genuinely changes.
    - malformed_projection_is_invalid
    - valid_projection_statement_equals_extracted_offer
 
-8. Output And Read Model
+Output And Read Model
    Primary:
    - projected_link_state
    - incomplete_projected_link
@@ -208,7 +224,7 @@ should not drift unless the proof story genuinely changes.
    - complete_child_report_requires_complete_same_root_parent
    - link_emitted_fact_count_core
 
-9. Composition
+Composition
    Primary:
    - replay_preserves_supplied_link_chain_to_anchor
    Handlers and imports:
@@ -218,12 +234,12 @@ should not drift unless the proof story genuinely changes.
    - imported core engine validated-offer provenance
    - imported replay_reports_engine_validity over modeled dependency closure
 
-10. Runtime Bridge Helpers
+Runtime Bridge Helpers
     - fact_id_to_core / core_to_fact_id
     - maybe conversions
     - validity conversions
 
-11. Tests
+Tests
     - Codec
     - Construction
     - Extraction

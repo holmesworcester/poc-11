@@ -6,7 +6,7 @@ use linktoy::facts::link::project::{
     child_projected_ids_core, core_to_fact_id, extract_link_core, fact_id_to_core,
     link_codec_layout_core, link_core_for, link_decode_bytes_core, link_decode_header_core,
     link_emitted_fact_count_core, maybe_fact_id_to_core, project_link_core, projected_report_core,
-    singleton_projected_ids_core, LinkCore, MaybeStatementCore, ValidityCore,
+    singleton_projected_ids_core, LinkCore, MaybeStatementCore, ParentReportCore, ValidityCore,
 };
 use linktoy::facts::link::{
     link_edges, link_id, link_project_validity, valid_link_key, Link, LinkProjector, TAG_LINK,
@@ -175,12 +175,14 @@ fn verified_report_kernel_root_is_complete_self() {
             root: maybe_fact_id_to_core(None),
         },
         ValidityCore::Valid,
-        false,
-        false,
-        fact_id_to_core(id(b"ignored-parent-root")),
-        0,
-        0,
-        0,
+        ParentReportCore {
+            present: false,
+            complete: false,
+            root: fact_id_to_core(id(b"ignored-parent-root")),
+            depth: 0,
+            length: 0,
+            ids_len: 0,
+        },
     );
 
     assert!(report.complete);
@@ -231,12 +233,14 @@ fn verified_report_kernel_child_requires_complete_same_root_parent() {
     let complete_same_root = projected_report_core(
         child,
         ValidityCore::Valid,
-        true,
-        true,
-        fact_id_to_core(root_id),
-        2,
-        3,
-        3,
+        ParentReportCore {
+            present: true,
+            complete: true,
+            root: fact_id_to_core(root_id),
+            depth: 2,
+            length: 3,
+            ids_len: 3,
+        },
     );
     assert!(complete_same_root.complete);
     assert_eq!(core_to_fact_id(complete_same_root.root), root_id);
@@ -248,12 +252,14 @@ fn verified_report_kernel_child_requires_complete_same_root_parent() {
     let missing_parent = projected_report_core(
         child,
         ValidityCore::Valid,
-        false,
-        false,
-        fact_id_to_core(root_id),
-        2,
-        3,
-        3,
+        ParentReportCore {
+            present: false,
+            complete: false,
+            root: fact_id_to_core(root_id),
+            depth: 2,
+            length: 3,
+            ids_len: 3,
+        },
     );
     assert!(!missing_parent.complete);
     assert_eq!(missing_parent.length, 1);
@@ -262,24 +268,28 @@ fn verified_report_kernel_child_requires_complete_same_root_parent() {
     let incomplete_parent = projected_report_core(
         child,
         ValidityCore::Valid,
-        true,
-        false,
-        fact_id_to_core(root_id),
-        2,
-        3,
-        3,
+        ParentReportCore {
+            present: true,
+            complete: false,
+            root: fact_id_to_core(root_id),
+            depth: 2,
+            length: 3,
+            ids_len: 3,
+        },
     );
     assert!(!incomplete_parent.complete);
 
     let wrong_root = projected_report_core(
         child,
         ValidityCore::Valid,
-        true,
-        true,
-        fact_id_to_core(other_root_id),
-        2,
-        3,
-        3,
+        ParentReportCore {
+            present: true,
+            complete: true,
+            root: fact_id_to_core(other_root_id),
+            depth: 2,
+            length: 3,
+            ids_len: 3,
+        },
     );
     assert!(!wrong_root.complete);
 }

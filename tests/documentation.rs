@@ -325,33 +325,33 @@ fn link_project_file_follows_proof_projector_narrative_sections() {
         "Imported theorem checklist:",
         "Local theorem checklist:",
         "Proof strategy:",
-        "2. Runtime Surface.",
-        "3. Proof Vocabulary.",
-        "3a. Shape Predicates And Statement Helpers.",
-        "4. Construction.",
-        "4. Construction Proof Model.",
-        "4. Construction Kernel.",
-        "4a. Construction Lemma.",
-        "5. Canonical Codec.",
-        "5. Canonical Codec Model.",
-        "5. Codec Kernels.",
-        "5a. Codec Lemmas.",
-        "6. Extraction.",
-        "6. Extraction Model.",
-        "6. Extraction Kernel.",
-        "6a. Extraction Lemmas.",
-        "7. Projection Validity.",
-        "7. Projection Validity Model.",
-        "7. Projection Validity Kernel.",
-        "7a. Projection Lemmas.",
-        "8. Output And Read Model.",
-        "8c. Projected Report Model.",
-        "8g. Projected Report Kernel.",
-        "8l. Projected Report Lemmas.",
-        "9. Composition Model.",
-        "9a. Composition Lemmas.",
-        "10. Runtime Bridge Helpers.",
-        "Projector trait wiring.",
+        "1. Runtime Surface.",
+        "2. Proof Vocabulary.",
+        "3. Shape Predicates And Statement Helpers.",
+        "4. Projection Validity Model.",
+        "5. Extraction Model.",
+        "7. Construction Proof Model.",
+        "9. Canonical Codec Model.",
+        "10. Composition Model.",
+        "11. Projected Report Model.",
+        "13. Construction Kernel.",
+        "14. Extraction Kernel.",
+        "16. Codec Kernels.",
+        "18. Projected Report Kernel.",
+        "19. Projection Validity Kernel.",
+        "21. Projection Lemmas.",
+        "23. Construction Lemma.",
+        "25. Codec Lemmas.",
+        "27. Composition Lemmas.",
+        "28. Extraction Lemmas.",
+        "31. Projected Report Lemmas.",
+        "32. Runtime Construction.",
+        "33. Runtime Canonical Codec.",
+        "34. Runtime Extraction.",
+        "35. Runtime Projection Validity.",
+        "36. Runtime Output And Read Model.",
+        "37. Projector Trait Wiring.",
+        "38. Runtime Bridge Helpers.",
         "Each method delegates to the",
         "sectioned helpers above",
     ] {
@@ -362,22 +362,35 @@ fn link_project_file_follows_proof_projector_narrative_sections() {
     }
 
     let runtime_surface = project
-        .find("// 2. Runtime Surface.")
+        .find("// 1. Runtime Surface.")
         .expect("runtime surface section");
     let proof_vocabulary = project
-        .find("// 3. Proof Vocabulary.")
+        .find("// 2. Proof Vocabulary.")
         .expect("proof vocabulary section");
     let construction = project
-        .find("// 4. Construction.")
+        .find("// 32. Runtime Construction.")
         .expect("construction section");
     let bridge = project
-        .find("// 10. Runtime Bridge Helpers.")
+        .find("// 38. Runtime Bridge Helpers.")
         .expect("runtime bridge section");
     assert!(
         runtime_surface < proof_vocabulary
             && proof_vocabulary < construction
             && construction < bridge,
         "link project sections should read policy, runtime surface, proof vocabulary, behavior, bridge"
+    );
+
+    let section_numbers: Vec<u32> = project
+        .lines()
+        .filter_map(|line| {
+            let section = line.trim_start().strip_prefix("// ")?;
+            let (number, _) = section.split_once('.')?;
+            number.parse().ok()
+        })
+        .collect();
+    assert!(
+        section_numbers.windows(2).all(|pair| pair[0] < pair[1]),
+        "link project section numbers should be strictly increasing in file order: {section_numbers:?}"
     );
 }
 

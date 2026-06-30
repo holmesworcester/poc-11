@@ -183,7 +183,7 @@ use crate::core::projector::{ProjectOutcome, Projector};
 use crate::core::typestate::{Asserted, Context, Validity};
 use vstd::prelude::*;
 
-// 2. Runtime Surface.
+// 1. Runtime Surface.
 //
 // These are the public runtime nouns the rest of the file explains and proves:
 // `Link` is the semantic fact, `ProjectedLink` is the family-owned read model,
@@ -227,7 +227,7 @@ pub struct LinkUpdate {
 
 pub struct LinkProjector;
 
-// 3. Proof Vocabulary.
+// 2. Proof Vocabulary.
 //
 // These proof-facing nouns mirror the runtime surface with small, explicit
 // shapes that Verus can reason about directly. The later sections prove the
@@ -247,6 +247,13 @@ pub struct IdCore {
 pub enum MaybeIdCore {
     None,
     Some(IdCore),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkShapeCore {
+    Root,
+    Child(IdCore, IdCore),
+    Malformed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -295,6 +302,16 @@ pub struct ProjectedReportCore {
     pub length: u64,
     pub ids_len: u64,
     pub head: IdCore,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParentReportCore {
+    pub present: bool,
+    pub complete: bool,
+    pub root: IdCore,
+    pub depth: u64,
+    pub length: u64,
+    pub ids_len: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -348,7 +365,7 @@ pub struct LinkDecodedBytesCore {
     pub content: Vec<u8>,
 }
 
-// 3a. Shape Predicates And Statement Helpers.
+// 3. Shape Predicates And Statement Helpers.
 //
 // These helpers define the three semantic branches used everywhere below:
 // root, child, and malformed. Later extraction/projection/report sections all
@@ -363,6 +380,25 @@ pub fn id_eq(left: IdCore, right: IdCore) -> (equal: bool)
         equal == id_eq_spec(left, right),
 {
     left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
+}
+
+pub closed spec fn link_shape_spec(link: LinkCore) -> LinkShapeCore {
+    match (link.prev, link.root) {
+        (MaybeIdCore::None, MaybeIdCore::None) => LinkShapeCore::Root,
+        (MaybeIdCore::Some(parent), MaybeIdCore::Some(root)) => LinkShapeCore::Child(parent, root),
+        _ => LinkShapeCore::Malformed,
+    }
+}
+
+pub fn link_shape_core(link: LinkCore) -> (shape: LinkShapeCore)
+    ensures
+        shape == link_shape_spec(link),
+{
+    match (link.prev, link.root) {
+        (MaybeIdCore::None, MaybeIdCore::None) => LinkShapeCore::Root,
+        (MaybeIdCore::Some(parent), MaybeIdCore::Some(root)) => LinkShapeCore::Child(parent, root),
+        _ => LinkShapeCore::Malformed,
+    }
 }
 
 pub closed spec fn is_root(link: LinkCore) -> bool {
@@ -405,11 +441,23 @@ pub fn is_child_core(link: LinkCore) -> (child: bool)
     }
 }
 
+pub closed spec fn link_statement_spec(link_id: IdCore, root_id: IdCore) -> MaybeStatementCore {
+    MaybeStatementCore::Some(LinkStatementCore { link_id, root_id })
+}
+
+pub closed spec fn no_link_statement_spec() -> MaybeStatementCore {
+    MaybeStatementCore::None
+}
+
+pub fn link_statement_core(link_id: IdCore, root_id: IdCore) -> (statement: MaybeStatementCore)
+    ensures
+        statement == link_statement_spec(link_id, root_id),
+{
+    MaybeStatementCore::Some(LinkStatementCore { link_id, root_id })
+}
+
 pub closed spec fn statement_is_self_root(statement: MaybeStatementCore, self_id: IdCore) -> bool {
-    statement == MaybeStatementCore::Some(LinkStatementCore {
-        link_id: self_id,
-        root_id: self_id,
-    })
+    statement == link_statement_spec(self_id, self_id)
 }
 
 pub closed spec fn statement_is_self_claimed_root(
@@ -417,10 +465,7 @@ pub closed spec fn statement_is_self_claimed_root(
     self_id: IdCore,
     claimed_root: IdCore,
 ) -> bool {
-    statement == MaybeStatementCore::Some(LinkStatementCore {
-        link_id: self_id,
-        root_id: claimed_root,
-    })
+    statement == link_statement_spec(self_id, claimed_root)
 }
 
 pub closed spec fn zero_id_core() -> IdCore {
@@ -461,7 +506,7 @@ pub closed spec fn link_statement_addr_core(
     }
 }
 
-// 7. Projection Validity Model.
+// 4. Projection Validity Model.
 //
 // A root is valid by itself. A child is valid only when the caller supplies the
 // exact validated same-root parent context. Malformed shapes are invalid.
@@ -470,74 +515,59 @@ pub closed spec fn projection_spec(
     link: LinkCore,
     parent_validated_same_root: bool,
 ) -> LinkProjectionCore {
-    match (link.prev, link.root) {
-        (MaybeIdCore::None, MaybeIdCore::None) => LinkProjectionCore {
+    match link_shape_spec(link) {
+        LinkShapeCore::Root => LinkProjectionCore {
             validity: ValidityCore::Valid,
             update_owner: link.self_id,
-            statement: MaybeStatementCore::Some(LinkStatementCore {
-                link_id: link.self_id,
-                root_id: link.self_id,
-            }),
+            statement: link_statement_spec(link.self_id, link.self_id),
         },
-        (MaybeIdCore::Some(_parent), MaybeIdCore::Some(root)) => {
+        LinkShapeCore::Child(_parent, root) => {
             if parent_validated_same_root {
                 LinkProjectionCore {
                     validity: ValidityCore::Valid,
                     update_owner: link.self_id,
-                    statement: MaybeStatementCore::Some(LinkStatementCore {
-                        link_id: link.self_id,
-                        root_id: root,
-                    }),
+                    statement: link_statement_spec(link.self_id, root),
                 }
             } else {
                 LinkProjectionCore {
                     validity: ValidityCore::Invalid,
                     update_owner: link.self_id,
-                    statement: MaybeStatementCore::None,
+                    statement: no_link_statement_spec(),
                 }
             }
         }
-        _ => LinkProjectionCore {
+        LinkShapeCore::Malformed => LinkProjectionCore {
             validity: ValidityCore::Invalid,
             update_owner: link.self_id,
-            statement: MaybeStatementCore::None,
+            statement: no_link_statement_spec(),
         },
     }
 }
 
-// 6. Extraction Model.
+// 5. Extraction Model.
 //
 // Extraction is context-free. It names the one self statement a well-formed
 // link may later promote and, for children, the exact parent/root statement it
 // needs from validated context.
 
 pub closed spec fn extraction_spec(link: LinkCore) -> LinkExtractionCore {
-    match (link.prev, link.root) {
-        (MaybeIdCore::None, MaybeIdCore::None) => LinkExtractionCore {
-            offer: MaybeStatementCore::Some(LinkStatementCore {
-                link_id: link.self_id,
-                root_id: link.self_id,
-            }),
-            need: MaybeStatementCore::None,
+    match link_shape_spec(link) {
+        LinkShapeCore::Root => LinkExtractionCore {
+            offer: link_statement_spec(link.self_id, link.self_id),
+            need: no_link_statement_spec(),
         },
-        (MaybeIdCore::Some(parent), MaybeIdCore::Some(root)) => LinkExtractionCore {
-            offer: MaybeStatementCore::Some(LinkStatementCore {
-                link_id: link.self_id,
-                root_id: root,
-            }),
-            need: MaybeStatementCore::Some(LinkStatementCore {
-                link_id: parent,
-                root_id: root,
-            }),
+        LinkShapeCore::Child(parent, root) => LinkExtractionCore {
+            offer: link_statement_spec(link.self_id, root),
+            need: link_statement_spec(parent, root),
         },
-        _ => LinkExtractionCore {
-            offer: MaybeStatementCore::None,
-            need: MaybeStatementCore::None,
+        LinkShapeCore::Malformed => LinkExtractionCore {
+            offer: no_link_statement_spec(),
+            need: no_link_statement_spec(),
         },
     }
 }
 
-// 8a. Report Fallback Model.
+// 6. Report Fallback Model.
 //
 // Incomplete reports are read-model observations only; they do not create
 // validity evidence. The fallback root keeps display/report shape deterministic.
@@ -549,7 +579,7 @@ pub closed spec fn fallback_root_spec(link: LinkCore) -> IdCore {
     }
 }
 
-// 4. Construction Proof Model.
+// 7. Construction Proof Model.
 //
 // Construction can copy only caller-supplied link parameters into the typed
 // fact. It cannot assign ids, edges, or validity.
@@ -564,7 +594,7 @@ pub closed spec fn link_from_params_spec(prev: MaybeIdCore, root: MaybeIdCore) -
     }
 }
 
-// 8b. Update Application Model.
+// 8. Update Application Model.
 //
 // Updates are owner-scoped and insert/ignore. Projection of one fact cannot
 // overwrite another fact's projected state.
@@ -582,7 +612,7 @@ pub closed spec fn link_update_apply_spec(
     }
 }
 
-// 5. Canonical Codec Model.
+// 9. Canonical Codec Model.
 //
 // The byte layout is `tag | has_prev | prev[32]? | has_root | root[32]? |
 // content`. These helpers model the accepted layout, rejection cases, and
@@ -764,7 +794,47 @@ pub closed spec fn child_projected_ids_spec(parent_ids: Seq<IdCore>, self_id: Id
     parent_ids.push(self_id)
 }
 
-// 9. Composition Model.
+pub closed spec fn absent_parent_report_spec(root: IdCore) -> ParentReportCore {
+    ParentReportCore {
+        present: false,
+        complete: false,
+        root,
+        depth: 0,
+        length: 0,
+        ids_len: 0,
+    }
+}
+
+pub closed spec fn root_report_is_complete_self(report: ProjectedReportCore, link: LinkCore) -> bool {
+    report.complete
+        && report.root == link.self_id
+        && report.depth == 0
+        && report.length == 1
+        && report.ids_len == 1
+        && report.head == link.self_id
+}
+
+pub closed spec fn complete_child_report_extends_parent(
+    report: ProjectedReportCore,
+    parent: ParentReportCore,
+    link: LinkCore,
+) -> bool {
+    parent.present
+        && parent.complete
+        && parent.depth < u64::MAX
+        && parent.length < u64::MAX
+        && parent.ids_len < u64::MAX
+        && report.depth == parent.depth + 1u64
+        && report.length == parent.length + 1u64
+        && report.ids_len == parent.ids_len + 1u64
+        && report.head == link.self_id
+        && match link.root {
+            MaybeIdCore::Some(root) => id_eq_spec(parent.root, root),
+            MaybeIdCore::None => false,
+        }
+}
+
+// 10. Composition Model.
 //
 // Link ancestry is a concrete sequence: the first element is an anchor root and
 // each later child names the previous head as `prev` and preserves the same
@@ -804,7 +874,7 @@ pub closed spec fn chain_contains_validated_link_statements(
             )
 }
 
-// 8c. Projected Report Model.
+// 11. Projected Report Model.
 //
 // Complete child reports can be constructed only from complete same-root parent
 // reports. All other cases produce a singleton incomplete observation.
@@ -812,12 +882,7 @@ pub closed spec fn chain_contains_validated_link_statements(
 pub closed spec fn projected_report_spec(
     link: LinkCore,
     validity: ValidityCore,
-    parent_present: bool,
-    parent_complete: bool,
-    parent_root: IdCore,
-    parent_depth: u64,
-    parent_length: u64,
-    parent_ids_len: u64,
+    parent: ParentReportCore,
 ) -> ProjectedReportCore {
     match (link.prev, link.root, validity) {
         (MaybeIdCore::None, MaybeIdCore::None, ValidityCore::Valid) => ProjectedReportCore {
@@ -829,19 +894,19 @@ pub closed spec fn projected_report_spec(
             head: link.self_id,
         },
         (MaybeIdCore::Some(_parent), MaybeIdCore::Some(root), ValidityCore::Valid) => {
-            if parent_present
-                && parent_complete
-                && id_eq_spec(parent_root, root)
-                && parent_depth < u64::MAX
-                && parent_length < u64::MAX
-                && parent_ids_len < u64::MAX
+            if parent.present
+                && parent.complete
+                && id_eq_spec(parent.root, root)
+                && parent.depth < u64::MAX
+                && parent.length < u64::MAX
+                && parent.ids_len < u64::MAX
             {
                 ProjectedReportCore {
                     complete: true,
                     root,
-                    depth: (parent_depth + 1) as u64,
-                    length: (parent_length + 1) as u64,
-                    ids_len: (parent_ids_len + 1) as u64,
+                    depth: (parent.depth + 1) as u64,
+                    length: (parent.length + 1) as u64,
+                    ids_len: (parent.ids_len + 1) as u64,
                     head: link.self_id,
                 }
             } else {
@@ -866,7 +931,7 @@ pub closed spec fn projected_report_spec(
     }
 }
 
-// 8d. Report Helper Kernel.
+// 12. Report Helper Kernel.
 
 pub fn fallback_root_core(link: LinkCore) -> (root: IdCore)
     ensures
@@ -878,7 +943,7 @@ pub fn fallback_root_core(link: LinkCore) -> (root: IdCore)
     }
 }
 
-// 4. Construction Kernel.
+// 13. Construction Kernel.
 
 pub fn link_from_params_core(prev: MaybeIdCore, root: MaybeIdCore) -> (construction: LinkConstructionCore)
     ensures
@@ -898,7 +963,7 @@ pub fn link_from_params_core(prev: MaybeIdCore, root: MaybeIdCore) -> (construct
     }
 }
 
-// 6. Extraction Kernel.
+// 14. Extraction Kernel.
 
 pub fn extract_link_core(link: LinkCore) -> (extraction: LinkExtractionCore)
     ensures
@@ -912,32 +977,23 @@ pub fn extract_link_core(link: LinkCore) -> (extraction: LinkExtractionCore)
                 && extraction.need == MaybeStatementCore::None
         ),
 {
-    match (link.prev, link.root) {
-        (MaybeIdCore::None, MaybeIdCore::None) => LinkExtractionCore {
-            offer: MaybeStatementCore::Some(LinkStatementCore {
-                link_id: link.self_id,
-                root_id: link.self_id,
-            }),
+    match link_shape_core(link) {
+        LinkShapeCore::Root => LinkExtractionCore {
+            offer: link_statement_core(link.self_id, link.self_id),
             need: MaybeStatementCore::None,
         },
-        (MaybeIdCore::Some(parent), MaybeIdCore::Some(root)) => LinkExtractionCore {
-            offer: MaybeStatementCore::Some(LinkStatementCore {
-                link_id: link.self_id,
-                root_id: root,
-            }),
-            need: MaybeStatementCore::Some(LinkStatementCore {
-                link_id: parent,
-                root_id: root,
-            }),
+        LinkShapeCore::Child(parent, root) => LinkExtractionCore {
+            offer: link_statement_core(link.self_id, root),
+            need: link_statement_core(parent, root),
         },
-        _ => LinkExtractionCore {
+        LinkShapeCore::Malformed => LinkExtractionCore {
             offer: MaybeStatementCore::None,
             need: MaybeStatementCore::None,
         },
     }
 }
 
-// 8e. Update Application Kernel.
+// 15. Update Application Kernel.
 
 pub fn link_update_apply_core(
     owner: IdCore,
@@ -959,7 +1015,7 @@ pub fn link_update_apply_core(
     }
 }
 
-// 5. Codec Kernels.
+// 16. Codec Kernels.
 
 pub fn codec_flag_core(id: MaybeIdCore) -> (flag: u8)
     ensures
@@ -1228,7 +1284,7 @@ pub fn link_encode_bytes_core(
     append_bytes_core(out, content)
 }
 
-// 8f. Projected Id Vector Kernels.
+// 17. Projected Id Vector Kernels.
 
 #[allow(clippy::vec_init_then_push)]
 pub fn singleton_projected_ids_core(self_id: IdCore) -> (out: ProjectedIdsCore)
@@ -1254,53 +1310,19 @@ pub fn child_projected_ids_core(parent_ids: Vec<IdCore>, self_id: IdCore) -> (ou
     ProjectedIdsCore { ids }
 }
 
-// 8g. Projected Report Kernel.
+// 18. Projected Report Kernel.
 
-#[allow(clippy::too_many_arguments, clippy::unnecessary_cast)]
+#[allow(clippy::unnecessary_cast)]
 pub fn projected_report_core(
     link: LinkCore,
     validity: ValidityCore,
-    parent_present: bool,
-    parent_complete: bool,
-    parent_root: IdCore,
-    parent_depth: u64,
-    parent_length: u64,
-    parent_ids_len: u64,
+    parent: ParentReportCore,
 ) -> (report: ProjectedReportCore)
     ensures
-        report == projected_report_spec(
-            link,
-            validity,
-            parent_present,
-            parent_complete,
-            parent_root,
-            parent_depth,
-            parent_length,
-            parent_ids_len,
-        ),
-        is_root(link) && validity == ValidityCore::Valid ==> (
-            report.complete
-                && report.root == link.self_id
-                && report.depth == 0
-                && report.length == 1
-                && report.ids_len == 1
-                && report.head == link.self_id
-        ),
-        is_child(link) && validity == ValidityCore::Valid && report.complete ==> (
-            parent_present
-                && parent_complete
-                && parent_depth < u64::MAX
-                && parent_length < u64::MAX
-                && parent_ids_len < u64::MAX
-                && report.depth == parent_depth + 1u64
-                && report.length == parent_length + 1u64
-                && report.ids_len == parent_ids_len + 1u64
-                && report.head == link.self_id
-                && match link.root {
-                    MaybeIdCore::Some(root) => id_eq_spec(parent_root, root),
-                    MaybeIdCore::None => false,
-                }
-        ),
+        report == projected_report_spec(link, validity, parent),
+        is_root(link) && validity == ValidityCore::Valid ==> root_report_is_complete_self(report, link),
+        is_child(link) && validity == ValidityCore::Valid && report.complete
+            ==> complete_child_report_extends_parent(report, parent, link),
 {
     match (link.prev, link.root, validity) {
         (MaybeIdCore::None, MaybeIdCore::None, ValidityCore::Valid) => ProjectedReportCore {
@@ -1312,19 +1334,19 @@ pub fn projected_report_core(
             head: link.self_id,
         },
         (MaybeIdCore::Some(_parent), MaybeIdCore::Some(root), ValidityCore::Valid) => {
-            if parent_present
-                && parent_complete
-                && id_eq(parent_root, root)
-                && parent_depth < u64::MAX
-                && parent_length < u64::MAX
-                && parent_ids_len < u64::MAX
+            if parent.present
+                && parent.complete
+                && id_eq(parent.root, root)
+                && parent.depth < u64::MAX
+                && parent.length < u64::MAX
+                && parent.ids_len < u64::MAX
             {
                 ProjectedReportCore {
                     complete: true,
                     root,
-                    depth: (parent_depth + 1) as u64,
-                    length: (parent_length + 1) as u64,
-                    ids_len: (parent_ids_len + 1) as u64,
+                    depth: (parent.depth + 1) as u64,
+                    length: (parent.length + 1) as u64,
+                    ids_len: (parent.ids_len + 1) as u64,
                     head: link.self_id,
                 }
             } else {
@@ -1349,7 +1371,7 @@ pub fn projected_report_core(
     }
 }
 
-// 7. Projection Validity Kernel.
+// 19. Projection Validity Kernel.
 
 pub fn project_link_core(
     link: LinkCore,
@@ -1370,24 +1392,18 @@ pub fn project_link_core(
         projection.validity == ValidityCore::Valid ==> projection.statement == extraction_spec(link).offer,
         projection.validity == ValidityCore::Valid ==> projection.statement != MaybeStatementCore::None,
 {
-    match (link.prev, link.root) {
-        (MaybeIdCore::None, MaybeIdCore::None) => LinkProjectionCore {
+    match link_shape_core(link) {
+        LinkShapeCore::Root => LinkProjectionCore {
             validity: ValidityCore::Valid,
             update_owner: link.self_id,
-            statement: MaybeStatementCore::Some(LinkStatementCore {
-                link_id: link.self_id,
-                root_id: link.self_id,
-            }),
+            statement: link_statement_core(link.self_id, link.self_id),
         },
-        (MaybeIdCore::Some(_parent), MaybeIdCore::Some(root)) => {
+        LinkShapeCore::Child(_parent, root) => {
             if parent_validated_same_root {
                 LinkProjectionCore {
                     validity: ValidityCore::Valid,
                     update_owner: link.self_id,
-                    statement: MaybeStatementCore::Some(LinkStatementCore {
-                        link_id: link.self_id,
-                        root_id: root,
-                    }),
+                    statement: link_statement_core(link.self_id, root),
                 }
             } else {
                 LinkProjectionCore {
@@ -1397,7 +1413,7 @@ pub fn project_link_core(
                 }
             }
         }
-        _ => LinkProjectionCore {
+        LinkShapeCore::Malformed => LinkProjectionCore {
             validity: ValidityCore::Invalid,
             update_owner: link.self_id,
             statement: MaybeStatementCore::None,
@@ -1405,7 +1421,7 @@ pub fn project_link_core(
     }
 }
 
-// 8h. Emitted-Fact Kernel.
+// 20. Emitted-Fact Kernel.
 //
 // Link projection currently emits no raw facts; authority comes only from
 // promoted offers for the projected owner.
@@ -1417,7 +1433,7 @@ pub fn link_emitted_fact_count_core() -> (count: usize)
     0
 }
 
-// 7a. Projection Lemmas.
+// 21. Projection Lemmas.
 
 pub proof fn root_projection_emits_self_root(link: LinkCore)
     requires
@@ -1428,7 +1444,7 @@ pub proof fn root_projection_emits_self_root(link: LinkCore)
 {
 }
 
-// 8i. Output Ownership Lemmas.
+// 22. Output Ownership Lemmas.
 
 pub proof fn projection_update_owner_is_self(link: LinkCore, parent_validated_same_root: bool)
     ensures
@@ -1436,7 +1452,7 @@ pub proof fn projection_update_owner_is_self(link: LinkCore, parent_validated_sa
 {
 }
 
-// 4a. Construction Lemma.
+// 23. Construction Lemma.
 
 pub proof fn link_from_params_constructs_only_link_fields(prev: MaybeIdCore, root: MaybeIdCore)
     ensures
@@ -1448,7 +1464,7 @@ pub proof fn link_from_params_constructs_only_link_fields(prev: MaybeIdCore, roo
 {
 }
 
-// 8j. Update Application Lemma.
+// 24. Update Application Lemma.
 
 pub proof fn apply_update_is_insert_ignore_by_link_id(
     owner: IdCore,
@@ -1463,7 +1479,7 @@ pub proof fn apply_update_is_insert_ignore_by_link_id(
 {
 }
 
-// 5a. Codec Lemmas.
+// 25. Codec Lemmas.
 
 pub proof fn canonical_link_identity(prev: MaybeIdCore, root: MaybeIdCore)
     ensures
@@ -1552,7 +1568,7 @@ pub proof fn decode_header_accepts_only_canonical_layout(bytes: Seq<u8>)
 {
 }
 
-// 8k. Projected Id Vector Lemmas.
+// 26. Projected Id Vector Lemmas.
 
 pub proof fn singleton_projected_ids_are_exact(self_id: IdCore)
     ensures
@@ -1569,7 +1585,7 @@ pub proof fn child_projected_ids_are_parent_plus_self(parent_ids: Seq<IdCore>, s
 {
 }
 
-// 9a. Composition Lemmas.
+// 27. Composition Lemmas.
 
 pub proof fn root_link_chain_to_anchor(link: LinkCore)
     requires
@@ -1630,7 +1646,7 @@ pub proof fn replay_preserves_supplied_link_chain_to_anchor(
     crate::core::play::replay_reports_engine_validity(state, transitions);
 }
 
-// 6a. Extraction Lemmas.
+// 28. Extraction Lemmas.
 
 pub proof fn child_extraction_offer_and_need_same_root(
     self_id: IdCore,
@@ -1656,7 +1672,7 @@ pub proof fn child_extraction_offer_and_need_same_root(
 {
 }
 
-// 7b. Projection Statement Lemmas.
+// 29. Projection Statement Lemmas.
 
 pub proof fn valid_projection_statement_owned_by_projected_link(
     link: LinkCore,
@@ -1718,7 +1734,7 @@ pub proof fn validated_link_offer_statement_to_owner_from_engine(
     crate::core::engine::engine_validated_offer_for_has_valid_owner(state, owner, addr);
 }
 
-// 7c. Malformed Shape Lemmas.
+// 30. Malformed Shape Lemmas.
 
 pub proof fn malformed_projection_is_invalid(link: LinkCore, parent_validated_same_root: bool)
     requires
@@ -1738,136 +1754,32 @@ pub proof fn malformed_extraction_is_empty(link: LinkCore)
 {
 }
 
-// 8l. Projected Report Lemmas.
+// 31. Projected Report Lemmas.
 
 pub proof fn root_projected_report_is_complete_self(link: LinkCore)
     requires
         is_root(link),
     ensures
-        projected_report_spec(
+        root_report_is_complete_self(
+            projected_report_spec(link, ValidityCore::Valid, absent_parent_report_spec(link.self_id)),
             link,
-            ValidityCore::Valid,
-            false,
-            false,
-            link.self_id,
-            0,
-            0,
-            0,
-        ).complete,
-        projected_report_spec(
-            link,
-            ValidityCore::Valid,
-            false,
-            false,
-            link.self_id,
-            0,
-            0,
-            0,
-        ).root == link.self_id,
-        projected_report_spec(
-            link,
-            ValidityCore::Valid,
-            false,
-            false,
-            link.self_id,
-            0,
-            0,
-            0,
-        ).depth == 0,
-        projected_report_spec(
-            link,
-            ValidityCore::Valid,
-            false,
-            false,
-            link.self_id,
-            0,
-            0,
-            0,
-        ).length == 1,
-        projected_report_spec(
-            link,
-            ValidityCore::Valid,
-            false,
-            false,
-            link.self_id,
-            0,
-            0,
-            0,
-        ).ids_len == 1,
+        ),
 {
 }
 
 pub proof fn complete_child_report_requires_complete_same_root_parent(
     link: LinkCore,
-    parent_present: bool,
-    parent_complete: bool,
-    parent_root: IdCore,
-    parent_depth: u64,
-    parent_length: u64,
-    parent_ids_len: u64,
+    parent: ParentReportCore,
 )
     requires
         is_child(link),
-        projected_report_spec(
-            link,
-            ValidityCore::Valid,
-            parent_present,
-            parent_complete,
-            parent_root,
-            parent_depth,
-            parent_length,
-            parent_ids_len,
-        ).complete,
+        projected_report_spec(link, ValidityCore::Valid, parent).complete,
     ensures
-        parent_present,
-        parent_complete,
-        parent_depth < u64::MAX,
-        parent_length < u64::MAX,
-        parent_ids_len < u64::MAX,
-        projected_report_spec(
+        complete_child_report_extends_parent(
+            projected_report_spec(link, ValidityCore::Valid, parent),
+            parent,
             link,
-            ValidityCore::Valid,
-            parent_present,
-            parent_complete,
-            parent_root,
-            parent_depth,
-            parent_length,
-            parent_ids_len,
-        ).depth == parent_depth + 1u64,
-        projected_report_spec(
-            link,
-            ValidityCore::Valid,
-            parent_present,
-            parent_complete,
-            parent_root,
-            parent_depth,
-            parent_length,
-            parent_ids_len,
-        ).length == parent_length + 1u64,
-        projected_report_spec(
-            link,
-            ValidityCore::Valid,
-            parent_present,
-            parent_complete,
-            parent_root,
-            parent_depth,
-            parent_length,
-            parent_ids_len,
-        ).ids_len == parent_ids_len + 1u64,
-        projected_report_spec(
-            link,
-            ValidityCore::Valid,
-            parent_present,
-            parent_complete,
-            parent_root,
-            parent_depth,
-            parent_length,
-            parent_ids_len,
-        ).head == link.self_id,
-        match link.root {
-            MaybeIdCore::Some(root) => id_eq_spec(parent_root, root),
-            MaybeIdCore::None => false,
-        },
+        ),
 {
 }
 
@@ -1936,7 +1848,7 @@ pub proof fn invalid_child_emits_no_statement(
 
 } // verus!
 
-// 4. Construction.
+// 32. Runtime Construction.
 //
 // Primary runtime function: `link_from_params`.
 // Proof handlers: `link_from_params_spec`, `link_from_params_core`, and
@@ -1958,7 +1870,7 @@ pub fn link_from_params(at: u64, prev: Option<FactId>, root: Option<FactId>, lab
     }
 }
 
-// 5. Canonical Codec.
+// 33. Runtime Canonical Codec.
 //
 // Primary runtime functions: `LinkProjector::encode`, `LinkProjector::decode`,
 // and `link_id`.
@@ -1969,7 +1881,7 @@ pub fn link_id(l: &Link) -> FactId {
     fact_id(&LinkProjector::encode(l))
 }
 
-// 6. Extraction.
+// 34. Runtime Extraction.
 //
 // Primary runtime functions: `link_edges`, `link_semantic_root`, and
 // `valid_link_key`.
@@ -2017,7 +1929,7 @@ pub fn valid_link_key(link_id: FactId, root_id: FactId) -> Key {
     Key(fact_id(&bytes))
 }
 
-// 7. Projection Validity.
+// 35. Runtime Projection Validity.
 //
 // Primary runtime functions: `LinkProjector::project`, `link_project_decision`,
 // and `link_project_validity`.
@@ -2040,7 +1952,7 @@ pub fn link_project_validity(l: &Link, parent_validated_same_root: bool) -> Vali
     validity_from_core(projection.validity)
 }
 
-// 8. Output And Read Model.
+// 36. Runtime Output And Read Model.
 //
 // Primary runtime functions: `projected_link_state`,
 // `incomplete_projected_link`, `LinkProjector::update_owner`, and
@@ -2087,12 +1999,14 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
             let report = projected_report_core(
                 link,
                 validity_core,
-                false,
-                false,
-                fact_id_to_core(id),
-                0,
-                0,
-                0,
+                ParentReportCore {
+                    present: false,
+                    complete: false,
+                    root: fact_id_to_core(id),
+                    depth: 0,
+                    length: 0,
+                    ids_len: 0,
+                },
             );
             ProjectedLink {
                 complete: report.complete,
@@ -2112,12 +2026,14 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
             let report = projected_report_core(
                 link,
                 validity_core,
-                true,
-                parent_state.complete,
-                fact_id_to_core(parent_state.root),
-                parent_state.depth,
-                parent_state.length,
-                parent_ids_len,
+                ParentReportCore {
+                    present: true,
+                    complete: parent_state.complete,
+                    root: fact_id_to_core(parent_state.root),
+                    depth: parent_state.depth,
+                    length: parent_state.length,
+                    ids_len: parent_ids_len,
+                },
             );
             if !report.complete {
                 return incomplete_projected_link(id, l);
@@ -2141,7 +2057,7 @@ fn optional_id_bytes(id: Option<FactId>) -> Vec<u8> {
     id.map(|id| id.to_vec()).unwrap_or_default()
 }
 
-// Projector trait wiring.
+// 37. Projector Trait Wiring.
 //
 // The trait methods are the runtime entry points. Each method delegates to the
 // sectioned helpers above so the implementation reads in the same order as the
@@ -2254,7 +2170,7 @@ impl Projector for LinkProjector {
     }
 }
 
-// 10. Runtime Bridge Helpers.
+// 38. Runtime Bridge Helpers.
 //
 // Runtime code uses `[u8; 32]` fact ids and core typestates. The proof kernels
 // use small proof-facing ids and enums. These conversions keep that boundary
