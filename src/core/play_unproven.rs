@@ -10,28 +10,28 @@
 //! Owned invariant: replay/wake API semantics.
 //! - [x] Safety: replay seeds schedule admission work only; validity comes from
 //!       the engine drain they trigger.
-//!       Verified below in this file by `replay_reports_engine_validity`.
+//!       Verified below in this file by `replay_report_surface_contract`.
 //! - [ ] Liveness: replay may discover the dependency closure through
 //!       need-to-offer lookup.
 //! - [x] Safety: replay does not rewrite already-persisted facts or asserted
 //!       edges.
-//!       Verified below in this file by `replay_reports_engine_validity`.
+//!       Verified below in this file by `replay_report_surface_contract`.
 //! - [ ] Liveness: wake schedules work from newly available facts through
 //!       matching needers.
 //! - [x] Safety: successful replay/wake results report the engine validity map
 //!       after the work queue drains; bounded drain exhaustion is an error.
-//!       Verified below in this file by `replay_reports_engine_validity`.
-//! - [x] Safety: soundness of each drain prefix belongs to `core::engine` and
+//!       Verified below in this file by `replay_report_core`.
+//! - [ ] Safety: soundness of each drain prefix belongs to `core::engine` and
 //!       `core::turn`.
-//!       Verified below by importing `engine_drain_prefix_sound` and
-//!       `turn_preserves_engine_invariant`.
+//! - [ ] Safety: replay discovers the full dependency closure needed for
+//!       transitive validity.
 //! Imported theorem checklist:
-//! - [x] `core::turn`: draining preserves the engine invariant and applies helper
-//!       results through the engine. Proven in
-//!       `src/core/turn_unproven.rs::turn_preserves_engine_invariant`.
-//! - [x] `core::engine`: validity maps and validated offers are sound for every
-//!       drain prefix. Proven in
-//!       `src/core/engine_unproven.rs::engine_drain_prefix_sound`.
+//! - [ ] `core::turn`: draining preserves the engine invariant and applies helper
+//!       results through the engine. Owner: `src/core/turn_unproven.rs`, planned
+//!       theorem `turn_preserves_engine_invariant`.
+//! - [ ] `core::engine`: validity maps and validated offers are sound for every
+//!       drain prefix. Owner: `src/core/engine_unproven.rs`, planned theorem
+//!       `engine_drain_prefix_sound`.
 //! - [x] `core::index`: storage lookups return only untrusted discovery data.
 //!       Proven in `src/core/index_unproven.rs::index_lookup_discovery_only`.
 //! Proof strategy:
@@ -64,7 +64,7 @@ pub struct ReplayReportCore {
     pub rewrites_persisted_storage: bool,
 }
 
-pub open spec fn replay_report_spec(
+pub closed spec fn replay_report_spec(
     drain_completed: bool,
     pending_work_empty: bool,
     requested_fact_present: bool,
@@ -100,7 +100,7 @@ pub fn replay_report_core(
     }
 }
 
-pub proof fn replay_reports_engine_validity(
+pub proof fn replay_report_surface_contract(
     drain_completed: bool,
     pending_work_empty: bool,
     requested_fact_present: bool,
@@ -111,16 +111,10 @@ pub proof fn replay_reports_engine_validity(
             pending_work_empty,
             requested_fact_present,
         ).seeds_schedule_admission_only,
-        replay_report_spec(
-            drain_completed,
-            pending_work_empty,
-            requested_fact_present,
-        ).reports_engine_validity ==> drain_completed,
-        replay_report_spec(
-            drain_completed,
-            pending_work_empty,
-            requested_fact_present,
-        ).reports_engine_validity ==> pending_work_empty,
+        replay_report_spec(drain_completed, pending_work_empty, requested_fact_present)
+            .reports_engine_validity ==> drain_completed,
+        replay_report_spec(drain_completed, pending_work_empty, requested_fact_present)
+            .reports_engine_validity ==> pending_work_empty,
         !replay_report_spec(
             drain_completed,
             pending_work_empty,

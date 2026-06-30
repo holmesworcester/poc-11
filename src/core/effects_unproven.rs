@@ -12,9 +12,9 @@
 //!       helper boundary in an effect payload. Verified below by
 //!       `effect_payloads_carry_no_validated_state`.
 //! Imported theorem checklist:
-//! - [x] `core::engine::EdgeAddr`: effect query addresses have the same address
-//!       representation the engine uses. Proven in
-//!       `src/core/engine_unproven.rs::edge_addr_matches_offer_address`.
+//! - [ ] `core::engine::EdgeAddr`: effect query addresses have the same address
+//!       representation the engine uses. Owner: `src/core/engine_unproven.rs`,
+//!       planned theorem `engine_effect_addr_matches_offer_address`.
 //! Proof strategy:
 //! - Prove by enum inspection that every request/result variant carries only
 //!   `FactId`, `EdgeAddr`, raw bytes, or lists of ids.
@@ -34,7 +34,7 @@ pub struct EffectPayloadCore {
     pub carries_validated_offer: bool,
 }
 
-pub open spec fn effect_payload_spec() -> EffectPayloadCore {
+pub closed spec fn effect_payload_spec() -> EffectPayloadCore {
     EffectPayloadCore {
         requests_raw_bytes_or_edge_queries: true,
         results_untrusted_bytes_ids_or_addresses: true,

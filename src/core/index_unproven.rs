@@ -44,7 +44,7 @@ pub struct IndexContractCore {
     pub creates_validated_offer: bool,
 }
 
-pub open spec fn index_contract_spec() -> IndexContractCore {
+pub closed spec fn index_contract_spec() -> IndexContractCore {
     IndexContractCore {
         fact_load_is_candidate_bytes: true,
         edge_queries_are_discovery_only: true,

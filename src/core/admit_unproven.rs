@@ -54,7 +54,7 @@ pub struct AdmissionCore {
     pub creates_validated_offer: bool,
 }
 
-pub open spec fn admission_spec(durable: bool) -> AdmissionCore {
+pub closed spec fn admission_spec(durable: bool) -> AdmissionCore {
     AdmissionCore {
         id_from_canonical_bytes: true,
         token_contains_original_item: true,

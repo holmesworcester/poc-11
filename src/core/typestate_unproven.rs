@@ -16,9 +16,9 @@
 //! Imported theorem checklist:
 //! - [x] `core::offer`: only validated offers have type `Offer<Validated>`.
 //!       Proven in `src/core/offer_unproven.rs::validated_offer_typestate_only`.
-//! - [x] `core::engine`: every validated offer placed into context has a valid
-//!       owner. Proven in
-//!       `src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`.
+//! - [ ] `core::engine`: every validated offer placed into context has a valid
+//!       owner. Owner: `src/core/engine_unproven.rs`, planned theorem
+//!       `engine_context_offers_have_valid_owners`.
 //! - [x] Local context representation and exact lookup. Proven below by
 //!       `src/core/typestate_unproven.rs::context_validated_only` and
 //!       `src/core/typestate_unproven.rs::context_lookup_exact`.
@@ -46,14 +46,14 @@ pub struct ContextShapeCore {
     pub accepts_validated: bool,
 }
 
-pub open spec fn context_shape_spec() -> ContextShapeCore {
+pub closed spec fn context_shape_spec() -> ContextShapeCore {
     ContextShapeCore {
         accepts_asserted: false,
         accepts_validated: true,
     }
 }
 
-pub open spec fn context_lookup_spec(role_matches: bool, key_matches: bool) -> ContextLookupCore {
+pub closed spec fn context_lookup_spec(role_matches: bool, key_matches: bool) -> ContextLookupCore {
     ContextLookupCore {
         role_matches,
         key_matches,

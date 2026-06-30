@@ -25,9 +25,9 @@
 //!       `src/core/offer_unproven.rs::asserted_edge_address_shape`,
 //!       `src/core/offer_unproven.rs::validate_preserves_offer_address`, and
 //!       `src/core/offer_unproven.rs::validated_offer_typestate_only`.
-//! - [x] `core::engine`: promotion authority for
-//!       `Offer<Asserted>::validate`. Proven in
-//!       `src/core/engine_unproven.rs::engine_promotes_only_valid_owner_offers`.
+//! - [ ] `core::engine`: promotion authority for
+//!       `Offer<Asserted>::validate`. Owner: `src/core/engine_unproven.rs`,
+//!       planned theorem `engine_promotes_only_valid_owner_offers`.
 //! Proof strategy:
 //! - Prove `Offer<Asserted>` constructors set only the requested direction and
 //!   match address with fixed default scope/polarity/binding.
@@ -85,7 +85,7 @@ pub struct TypedEdgeCore {
     pub shape: EdgeShapeCore,
 }
 
-pub open spec fn asserted_edge_shape_spec(kind: EdgeKindCore) -> EdgeShapeCore {
+pub closed spec fn asserted_edge_shape_spec(kind: EdgeKindCore) -> EdgeShapeCore {
     EdgeShapeCore {
         kind,
         scope: ScopeCore::Local,
@@ -94,18 +94,18 @@ pub open spec fn asserted_edge_shape_spec(kind: EdgeKindCore) -> EdgeShapeCore {
     }
 }
 
-pub open spec fn validate_shape_spec(shape: EdgeShapeCore) -> EdgeShapeCore {
+pub closed spec fn validate_shape_spec(shape: EdgeShapeCore) -> EdgeShapeCore {
     shape
 }
 
-pub open spec fn asserted_edge_spec(kind: EdgeKindCore) -> TypedEdgeCore {
+pub closed spec fn asserted_edge_spec(kind: EdgeKindCore) -> TypedEdgeCore {
     TypedEdgeCore {
         layer: EdgeLayerCore::Asserted,
         shape: asserted_edge_shape_spec(kind),
     }
 }
 
-pub open spec fn validate_edge_spec(edge: TypedEdgeCore) -> TypedEdgeCore {
+pub closed spec fn validate_edge_spec(edge: TypedEdgeCore) -> TypedEdgeCore {
     TypedEdgeCore {
         layer: EdgeLayerCore::Validated,
         shape: validate_shape_spec(edge.shape),

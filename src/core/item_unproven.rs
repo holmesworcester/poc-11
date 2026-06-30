@@ -38,7 +38,7 @@ pub struct FactIdContractCore {
     pub collision_resistant_crypto: bool,
 }
 
-pub open spec fn fact_id_contract_spec() -> FactIdContractCore {
+pub closed spec fn fact_id_contract_spec() -> FactIdContractCore {
     FactIdContractCore {
         is_content_address: true,
         deterministic_crypto: true,

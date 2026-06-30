@@ -1,6 +1,6 @@
 //! Link CLI formatting helpers. Parsing/formatting and command admission remain
-//! unproven; semantic link construction lives in the proven link `project`
-//! module.
+//! unproven; semantic link construction lives in `project_unproven` until the
+//! full link/core composition proof lands.
 //!
 //! Fact-family contract (do not weaken):
 //! - Scope: app adapter only: call deterministic link construction, call core
@@ -22,16 +22,17 @@
 //! - [ ] Safety: CLI code cannot construct `Validity`, `Context`, or
 //!       `Offer<Validated>`.
 //! Imported theorem checklist:
-//! - [x] `facts::link::project`: `link_from_params` owns link construction
+//! - [x] `facts::link::project_unproven`: `link_from_params` owns link construction
 //!       semantics. Proven in
-//!       `src/facts/link/project.rs::link_from_params_constructs_only_link_fields`.
+//!       `src/facts/link/project_unproven.rs::link_from_params_constructs_only_link_fields`.
 //! - [x] `core::admit`: admission creates only asserted state. Proven in
 //!       `src/core/admit_unproven.rs::admit_establishes_id_body`.
 //! - [ ] `facts::link::api`: reports are observations of projected state. Owner:
 //!       `src/facts/link/api_unproven.rs::chain_report`, planned theorem
 //!       `chain_report_observation_only`.
-//! - [x] `core::play`: replay reports drained engine validity. Proven in
-//!       `src/core/play_unproven.rs::replay_reports_engine_validity`.
+//! - [ ] `core::play`: replay reports drained engine validity. Owner:
+//!       `src/core/play_unproven.rs`, planned theorem
+//!       `replay_reports_engine_validity`.
 //! Proof strategy:
 //! - Prove CLI functions delegate construction to `link_from_params`, admission
 //!   to `core::admit`, and report fields to `chain_report`/`replay`.
@@ -47,7 +48,7 @@ use crate::core::play::replay;
 use crate::helpers::hex_unproven::to_hex;
 
 use super::api_unproven::chain_report;
-use super::project::{link_from_params, LinkProjector};
+use super::project_unproven::{link_from_params, LinkProjector};
 
 pub fn link_lines(
     idx: &dyn Index,

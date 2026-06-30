@@ -7,8 +7,9 @@ understand what the logic proves, what the proof assumes, and which remaining
 claims are still owned elsewhere.
 
 Use this guide for fact-family projectors such as
-`src/facts/link/project.rs`, and for future `src/facts/*/project.rs`
-files once their owned invariants are fully proven.
+`src/facts/link/project_unproven.rs`, and for future `src/facts/*/project.rs`
+files once their owned invariants and imported composition theorems are fully
+proven.
 
 ## Core Rule
 
@@ -207,9 +208,9 @@ should not drift unless the proof story genuinely changes.
    - valid_link_composes_with_parent_chain
    Handlers and imports:
    - link_chain_composition_spec/core
-   - admit_establishes_id_body
-   - engine_drain_prefix_sound
-   - replay_reports_engine_validity
+   - local conditional chain step
+   - planned core engine_drain_prefix_sound over modeled state
+   - planned replay_reports_engine_validity over modeled dependency closure
 
 10. Runtime Bridge Helpers
     - fact_id_to_core / core_to_fact_id

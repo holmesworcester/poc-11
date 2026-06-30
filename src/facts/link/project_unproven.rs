@@ -50,12 +50,11 @@
 //!       claimed root/domain matches the validated parent statement it depends on,
 //!       and the child's promoted self-offer carries that same root/domain.
 //!       Verified below in this file.
-//! - [x] Safety: end-to-end statement-to-owner: every validated link offer at
+//! - [ ] Safety: end-to-end statement-to-owner: every validated link offer at
 //!       `valid_link_key(link_id, root_id)` was promoted from a valid link fact
 //!       whose id is `link_id` and whose semantic root is `root_id`. Local link
-//!       projection proves the statement it would promote; the full engine/replay
-//!       promotion provenance is imported from core. Verified below in this file
-//!       by `end_to_end_validated_link_offer_statement_to_owner`.
+//!       projection proves only the statement it would promote; the full
+//!       validated-store provenance theorem is still owned by core/replay.
 //! - [x] Safety: projection output update ownership: projecting `link_id` returns
 //!       only an update owner equal to `link_id`. Verified below in this file.
 //! - [x] Safety: update application scope: `apply_update` is insert/ignore by `link_id`
@@ -74,12 +73,11 @@
 //!       `child_projected_ids_are_parent_plus_self`.
 //! - [x] Safety: no emitted-fact authority leak: link projection emits no new raw
 //!       facts. Verified below in this file.
-//! - [x] Safety: end-to-end composition with core: using `core::engine` and
+//! - [ ] Safety: end-to-end composition with core: using `core::engine` and
 //!       `core::play` provenance, every valid child link has a valid same-root
 //!       parent chain to an anchor; no theorem here claims anchor uniqueness.
 //!       The local link theorem is a conditional induction step, not the whole
-//!       replay/graph invariant. Verified below in this file by
-//!       `end_to_end_valid_link_has_same_root_chain`.
+//!       replay/graph invariant.
 //! Imported theorem checklist:
 //! - [x] `core::item`: fact ids are content addresses for canonical bytes. Proven
 //!       in `src/core/item_unproven.rs::fact_id_content_address`.
@@ -88,16 +86,15 @@
 //!       `src/core/offer_unproven.rs::asserted_edge_address_shape`.
 //! - [x] `core::typestate`: `Context::has_offer` is exact validated-offer lookup.
 //!       Proven in `src/core/typestate_unproven.rs::context_lookup_exact`.
-//! - [x] `core::engine`: abstract context/promotion gates relate context offers
-//!       to valid owners. Proven in
-//!       `src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`
-//!       and `src/core/engine_unproven.rs::engine_promotes_only_valid_owner_offers`.
-//! - [x] `core::engine`: every concrete engine step and drain prefix preserves
-//!       the full provenance invariant. Proven in
-//!       `src/core/engine_unproven.rs::engine_drain_prefix_sound`.
-//! - [x] `core::play`: replay reports only sound drained engine state and
-//!       discovers the dependency closure. Proven in
-//!       `src/core/play_unproven.rs::replay_reports_engine_validity`.
+//! - [ ] `core::engine`: abstract context/promotion gates relate context offers
+//!       to valid owners. Owner: `src/core/engine_unproven.rs`, planned theorem
+//!       `engine_transition_preserves_validated_context_provenance`.
+//! - [ ] `core::engine`: every concrete engine step and drain prefix preserves
+//!       the full provenance invariant. Owner: `src/core/engine_unproven.rs`,
+//!       planned theorem `engine_drain_prefix_sound`.
+//! - [ ] `core::play`: replay reports only sound drained engine state and
+//!       discovers the dependency closure. Owner: `src/core/play_unproven.rs`,
+//!       planned theorem `replay_reports_engine_validity`.
 //! - [x] `core::admit`: admitted facts always establish the id/body/extraction
 //!       relation before projection. Proven in
 //!       `src/core/admit_unproven.rs::admit_establishes_id_body`.
@@ -131,9 +128,9 @@
 //!       `singleton_projected_ids_are_exact`,
 //!       `child_projected_ids_are_parent_plus_self`, and
 //!       `link_emitted_fact_count_core`.
-//! - [x] End-to-end link/core composition. Proven below by
-//!       `end_to_end_validated_link_offer_statement_to_owner` and
-//!       `end_to_end_valid_link_has_same_root_chain`.
+//! - [ ] End-to-end link/core composition. Owner: this file after core proves
+//!       real engine/replay graph provenance; planned theorem
+//!       `valid_link_chain_to_anchor_from_replay`.
 //! Proof strategy:
 //! - Prove codec round trips and rejection cases for the current
 //!   tag/prev/root/content layout.
@@ -155,17 +152,21 @@
 //!   modeled head. Runtime id-vector construction routes through proof-facing
 //!   `[self]` and `parent + [self]` helpers.
 //! - Prove the local statement-to-owner lemma from `link_edges`, `valid_link_key`,
-//!   and content addressing. The end-to-end validated-offer version imports the
-//!   core drain-prefix provenance theorem.
+//!   and content addressing. The end-to-end validated-offer version will import
+//!   the future core drain-prefix provenance theorem.
 //! - Prove the local same-root parent-chain step by induction: root case
 //!   `prev=None, root=None` gives `valid_link(self,self)`; child step assumes the
-//!   parent already has a same-root chain. The end-to-end wrapper imports the
-//!   replay/engine graph proof that supplies that parent-chain premise.
+//!   parent already has a same-root chain. The missing replay/engine graph proof
+//!   must supply that parent-chain premise without a caller-provided boolean.
 //!
 //! Completion plan for unchecked items:
-//! - No unchecked projector-owned invariant remains in the stylized link model.
-//!   Future link semantics must add new checked invariants here before changing
-//!   behavior.
+//! - Replace the caller-supplied `parent_chain_to_anchor: bool` composition
+//!   premise with a real modeled dependency relation or sequence and an
+//!   induction/decreases proof.
+//! - Import real core/replay transition theorems over engine state once
+//!   `src/core/engine_unproven.rs` and `src/core/play_unproven.rs` prove them.
+//! - Rename this file to `project.rs` only after those end-to-end invariants are
+//!   proven, not merely documented.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
@@ -292,7 +293,7 @@ pub struct LinkChainCompositionCore {
     pub chain_to_anchor: bool,
 }
 
-pub open spec fn id_eq_spec(left: IdCore, right: IdCore) -> bool {
+pub closed spec fn id_eq_spec(left: IdCore, right: IdCore) -> bool {
     left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
 }
 
@@ -303,21 +304,21 @@ pub fn id_eq(left: IdCore, right: IdCore) -> (equal: bool)
     left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
 }
 
-pub open spec fn is_root(link: LinkCore) -> bool {
+pub closed spec fn is_root(link: LinkCore) -> bool {
     match (link.prev, link.root) {
         (MaybeIdCore::None, MaybeIdCore::None) => true,
         _ => false,
     }
 }
 
-pub open spec fn is_child(link: LinkCore) -> bool {
+pub closed spec fn is_child(link: LinkCore) -> bool {
     match (link.prev, link.root) {
         (MaybeIdCore::Some(_), MaybeIdCore::Some(_)) => true,
         _ => false,
     }
 }
 
-pub open spec fn is_malformed(link: LinkCore) -> bool {
+pub closed spec fn is_malformed(link: LinkCore) -> bool {
     !is_root(link) && !is_child(link)
 }
 
@@ -343,14 +344,14 @@ pub fn is_child_core(link: LinkCore) -> (child: bool)
     }
 }
 
-pub open spec fn statement_is_self_root(statement: MaybeStatementCore, self_id: IdCore) -> bool {
+pub closed spec fn statement_is_self_root(statement: MaybeStatementCore, self_id: IdCore) -> bool {
     statement == MaybeStatementCore::Some(LinkStatementCore {
         link_id: self_id,
         root_id: self_id,
     })
 }
 
-pub open spec fn statement_is_self_claimed_root(
+pub closed spec fn statement_is_self_claimed_root(
     statement: MaybeStatementCore,
     self_id: IdCore,
     claimed_root: IdCore,
@@ -361,7 +362,7 @@ pub open spec fn statement_is_self_claimed_root(
     })
 }
 
-pub open spec fn projection_spec(
+pub closed spec fn projection_spec(
     link: LinkCore,
     parent_validated_same_root: bool,
 ) -> LinkProjectionCore {
@@ -400,7 +401,7 @@ pub open spec fn projection_spec(
     }
 }
 
-pub open spec fn extraction_spec(link: LinkCore) -> LinkExtractionCore {
+pub closed spec fn extraction_spec(link: LinkCore) -> LinkExtractionCore {
     match (link.prev, link.root) {
         (MaybeIdCore::None, MaybeIdCore::None) => LinkExtractionCore {
             offer: MaybeStatementCore::Some(LinkStatementCore {
@@ -426,14 +427,14 @@ pub open spec fn extraction_spec(link: LinkCore) -> LinkExtractionCore {
     }
 }
 
-pub open spec fn fallback_root_spec(link: LinkCore) -> IdCore {
+pub closed spec fn fallback_root_spec(link: LinkCore) -> IdCore {
     match (link.root, link.prev) {
         (MaybeIdCore::Some(root), _) => root,
         _ => link.self_id,
     }
 }
 
-pub open spec fn link_from_params_spec(prev: MaybeIdCore, root: MaybeIdCore) -> LinkConstructionCore {
+pub closed spec fn link_from_params_spec(prev: MaybeIdCore, root: MaybeIdCore) -> LinkConstructionCore {
     LinkConstructionCore {
         prev,
         root,
@@ -443,7 +444,7 @@ pub open spec fn link_from_params_spec(prev: MaybeIdCore, root: MaybeIdCore) -> 
     }
 }
 
-pub open spec fn link_update_apply_spec(
+pub closed spec fn link_update_apply_spec(
     owner: IdCore,
     seen_present: bool,
     projected_present: bool,
@@ -456,14 +457,14 @@ pub open spec fn link_update_apply_spec(
     }
 }
 
-pub open spec fn codec_flag_spec(id: MaybeIdCore) -> u8 {
+pub closed spec fn codec_flag_spec(id: MaybeIdCore) -> u8 {
     match id {
         MaybeIdCore::None => 0,
         MaybeIdCore::Some(_) => 1,
     }
 }
 
-pub open spec fn link_codec_identity_spec(prev: MaybeIdCore, root: MaybeIdCore) -> LinkCodecIdentityCore {
+pub closed spec fn link_codec_identity_spec(prev: MaybeIdCore, root: MaybeIdCore) -> LinkCodecIdentityCore {
     LinkCodecIdentityCore {
         prev,
         root,
@@ -476,15 +477,15 @@ pub open spec fn link_codec_identity_spec(prev: MaybeIdCore, root: MaybeIdCore) 
     }
 }
 
-pub open spec fn id_bytes_width() -> u64 {
+pub closed spec fn id_bytes_width() -> u64 {
     32
 }
 
-pub open spec fn tag_link_core() -> u8 {
+pub closed spec fn tag_link_core() -> u8 {
     1
 }
 
-pub open spec fn flag_bytes(flag: u8) -> u64 {
+pub closed spec fn flag_bytes(flag: u8) -> u64 {
     if flag == 1 {
         32u64
     } else {
@@ -492,11 +493,11 @@ pub open spec fn flag_bytes(flag: u8) -> u64 {
     }
 }
 
-pub open spec fn valid_codec_flag(flag: u8) -> bool {
+pub closed spec fn valid_codec_flag(flag: u8) -> bool {
     flag == 0 || flag == 1
 }
 
-pub open spec fn link_codec_layout_spec(
+pub closed spec fn link_codec_layout_spec(
     tag: u8,
     prev_flag: u8,
     root_flag: u8,
@@ -517,15 +518,15 @@ pub open spec fn link_codec_layout_spec(
     }
 }
 
-pub open spec fn singleton_projected_ids_spec(self_id: IdCore) -> Seq<IdCore> {
+pub closed spec fn singleton_projected_ids_spec(self_id: IdCore) -> Seq<IdCore> {
     seq![self_id]
 }
 
-pub open spec fn child_projected_ids_spec(parent_ids: Seq<IdCore>, self_id: IdCore) -> Seq<IdCore> {
+pub closed spec fn child_projected_ids_spec(parent_ids: Seq<IdCore>, self_id: IdCore) -> Seq<IdCore> {
     parent_ids.push(self_id)
 }
 
-pub open spec fn link_chain_composition_spec(
+pub closed spec fn link_chain_composition_spec(
     link: LinkCore,
     parent_validated_same_root: bool,
     parent_chain_to_anchor: bool,
@@ -543,7 +544,7 @@ pub open spec fn link_chain_composition_spec(
     }
 }
 
-pub open spec fn projected_report_spec(
+pub closed spec fn projected_report_spec(
     link: LinkCore,
     validity: ValidityCore,
     parent_present: bool,
@@ -1360,57 +1361,6 @@ pub proof fn invalid_child_emits_no_statement(
                 && projection.statement == MaybeStatementCore::None
         }),
 {
-}
-
-pub proof fn end_to_end_validated_link_offer_statement_to_owner(
-    link: LinkCore,
-    parent_validated_same_root: bool,
-)
-    requires
-        projection_spec(link, parent_validated_same_root).validity == ValidityCore::Valid,
-    ensures
-        match (
-            projection_spec(link, parent_validated_same_root).statement,
-            extraction_spec(link).offer,
-        ) {
-            (MaybeStatementCore::Some(projected), MaybeStatementCore::Some(extracted)) => {
-                projected.link_id == link.self_id
-                    && extracted.link_id == link.self_id
-                    && projected.root_id == extracted.root_id
-            }
-            _ => false,
-        },
-{
-    crate::core::admit_unproven::admit_establishes_id_body(true);
-    crate::core::engine_unproven::engine_drain_prefix_sound(true, true);
-    crate::core::play_unproven::replay_reports_engine_validity(true, true, true);
-    valid_projection_statement_to_owner_and_root(link, parent_validated_same_root);
-}
-
-pub proof fn end_to_end_valid_link_has_same_root_chain(
-    link: LinkCore,
-    parent_validated_same_root: bool,
-    parent_chain_to_anchor: bool,
-)
-    requires
-        projection_spec(link, parent_validated_same_root).validity == ValidityCore::Valid,
-        is_root(link) || parent_chain_to_anchor,
-    ensures
-        link_chain_composition_spec(
-            link,
-            parent_validated_same_root,
-            parent_chain_to_anchor,
-        ).chain_to_anchor,
-        is_child(link) ==> parent_validated_same_root,
-{
-    crate::core::admit_unproven::admit_establishes_id_body(true);
-    crate::core::engine_unproven::engine_drain_prefix_sound(true, true);
-    crate::core::play_unproven::replay_reports_engine_validity(true, true, true);
-    valid_link_composes_with_parent_chain(
-        link,
-        parent_validated_same_root,
-        parent_chain_to_anchor,
-    );
 }
 
 } // verus!

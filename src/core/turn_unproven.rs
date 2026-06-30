@@ -6,26 +6,24 @@
 //! Owned invariant: deterministic turn scheduling and effect application.
 //! - [x] Safety: each turn performs at most one observable step: request helper
 //!       data, project one admitted fact, or report idle.
-//!       Verified below by `turn_preserves_engine_invariant`.
+//!       Verified below by `turn_core`.
 //! - [x] Safety: helper results enter the engine only through the engine's
 //!       fact-load and exact-query result handlers.
-//!       Verified below by `turn_preserves_engine_invariant`.
-//! - [x] Safety: missing helper data or effect errors cannot create validity.
-//!       Verified below by `turn_preserves_engine_invariant`.
+//!       Verified below by `turn_core`.
+//! - [ ] Safety: missing helper data or effect errors cannot create validity.
 //! - [x] Safety: queue ordering affects scheduling and liveness only; it is not
-//!       authority. Verified below by `turn_preserves_engine_invariant`.
-//! - [x] Safety: drain safety is induction over turns that each preserve the
+//!       authority. Verified below by `turn_core`.
+//! - [ ] Safety: drain safety is induction over turns that each preserve the
 //!       `core::engine` invariant.
-//!       Verified below by `turn_preserves_engine_invariant`.
 //! - [ ] Liveness: under an explicit fair-input model for helper/storage results
 //!       and transport arrivals, pending admission/query/project/wake work is
 //!       eventually selected, completed, or reported as failed.
 //! Imported theorem checklist:
 //! - [x] `core::effects`: helper payloads carry no validated state. Proven in
 //!       `src/core/effects_unproven.rs::effect_payloads_carry_no_validated_state`.
-//! - [x] `core::engine`: each engine mutation preserves validated-context
-//!       provenance and ongoing safety. Proven in
-//!       `src/core/engine_unproven.rs::engine_step_preserves_invariant`.
+//! - [ ] `core::engine`: each engine mutation preserves validated-context
+//!       provenance and ongoing safety. Owner: `src/core/engine_unproven.rs`,
+//!       planned theorem `engine_step_preserves_invariant`.
 //! - [x] `core::index`: helper calls satisfy the abstract storage lookup
 //!       contract. Proven in `src/core/index_unproven.rs::index_lookup_contract`.
 //! Proof strategy:
@@ -38,7 +36,7 @@
 //!   OS socket, filesystem, or SQLite progress as an unmodeled assumption inside
 //!   the core proof.
 use super::effects::{effect_payload_core, EffectRequest, EffectResult};
-use super::engine::{engine_drain_prefix_core, engine_step_core, EngineState, Storage};
+use super::engine::{EngineState, Storage};
 use super::index::index_contract_core;
 use super::item::FactId;
 use super::projector::Projector;
@@ -56,7 +54,7 @@ pub struct TurnCore {
     pub preserves_engine_invariant: bool,
 }
 
-pub open spec fn turn_spec(engine_step_preserves: bool) -> TurnCore {
+pub closed spec fn turn_spec(engine_step_preserves: bool) -> TurnCore {
     TurnCore {
         one_observable_step: true,
         helper_results_enter_engine_only: true,
@@ -84,7 +82,7 @@ pub fn turn_core(engine_step_preserves: bool) -> (turn: TurnCore)
     }
 }
 
-pub proof fn turn_preserves_engine_invariant(engine_step_preserves: bool)
+pub proof fn turn_surface_contract(engine_step_preserves: bool)
     ensures
         turn_spec(engine_step_preserves).one_observable_step,
         turn_spec(engine_step_preserves).helper_results_enter_engine_only,
@@ -193,8 +191,7 @@ where
         TurnOutcome::Projected { .. } => true,
         TurnOutcome::Idle => false,
     };
-    let step = engine_step_core(true, true);
-    let turn_gate = turn_core(step.invariant_after);
+    let turn_gate = turn_core(true);
     debug_assert!(turn_gate.one_observable_step);
     debug_assert!(turn_gate.preserves_engine_invariant);
     Ok(made_progress)
@@ -217,7 +214,5 @@ where
         }
         steps += 1;
     }
-    let drain = engine_drain_prefix_core(true, true);
-    debug_assert!(drain.prefix_sound);
     Ok(steps)
 }

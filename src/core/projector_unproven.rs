@@ -22,11 +22,13 @@
 //! Imported theorem checklist:
 //! - [x] `core::typestate`: `Context` contains only validated offers. Proven in
 //!       `src/core/typestate_unproven.rs::context_validated_only`.
-//! - [x] `core::admit` and `core::engine`: projectors receive an `Admitted` token
-//!       only after the id/body relation has been established. Proven in
-//!       `src/core/admit_unproven.rs::admit_establishes_id_body`,
-//!       `src/core/engine_unproven.rs::engine_admit_local_establishes_id_body`,
-//!       and `src/core/engine_unproven.rs::engine_admit_loaded_establishes_id_body`.
+//! - [x] `core::admit`: projectors receive an `Admitted` token only after the
+//!       id/body relation has been established on the local admission path.
+//!       Proven in `src/core/admit_unproven.rs::admit_establishes_id_body`.
+//! - [ ] `core::engine`: projectors receive an `Admitted` token only after the
+//!       id/body relation has been established on in-memory and storage-loaded
+//!       paths. Owner: `src/core/engine_unproven.rs`, planned theorem
+//!       `engine_admission_establishes_id_body`.
 //! - [x] Local projector interface confinement. Proven below by
 //!       `src/core/projector_unproven.rs::projector_interface_contract`.
 //! Proof strategy:
@@ -56,7 +58,7 @@ pub struct ProjectorInterfaceCore {
     pub project_updates_are_inert: bool,
 }
 
-pub open spec fn projector_interface_spec() -> ProjectorInterfaceCore {
+pub closed spec fn projector_interface_spec() -> ProjectorInterfaceCore {
     ProjectorInterfaceCore {
         extract_has_storage: false,
         extract_has_clock: false,
