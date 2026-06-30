@@ -1,10 +1,14 @@
+use linktoy::core::engine::EngineState;
 use linktoy::core::item::fact_id;
 use linktoy::core::typestate::Validity;
 use linktoy::facts::link::project_unproven::{
-    core_to_fact_id, extract_link_core, fact_id_to_core, link_core_for, maybe_fact_id_to_core,
-    project_link_core, LinkCore, MaybeStatementCore, ValidityCore,
+    core_to_fact_id, extract_link_core, fact_id_to_core, link_core_for,
+    link_emitted_fact_count_core, maybe_fact_id_to_core, project_link_core, projected_report_core,
+    LinkCore, MaybeStatementCore, ValidityCore,
 };
-use linktoy::facts::link::{link_edges, link_id, link_project_validity, valid_link_key, Link};
+use linktoy::facts::link::{
+    link_edges, link_id, link_project_validity, valid_link_key, Link, LinkProjector,
+};
 
 fn id(label: &[u8]) -> [u8; 32] {
     fact_id(label)
@@ -47,6 +51,25 @@ fn verified_kernel_runtime_root_shape_matches_link_projector() {
 }
 
 #[test]
+fn verified_report_kernel_root_is_complete_self() {
+    let root_id = id(b"root-id");
+    let report = projected_report_core(
+        LinkCore {
+            self_id: fact_id_to_core(root_id),
+            prev: maybe_fact_id_to_core(None),
+            root: maybe_fact_id_to_core(None),
+        },
+        ValidityCore::Valid,
+        false,
+        false,
+        fact_id_to_core(id(b"ignored-parent-root")),
+    );
+
+    assert!(report.complete);
+    assert_eq!(core_to_fact_id(report.root), root_id);
+}
+
+#[test]
 fn verified_extraction_runtime_root_offer_matches_edges() {
     let root = Link {
         content: b"root".to_vec(),
@@ -69,6 +92,93 @@ fn verified_extraction_runtime_root_offer_matches_edges() {
     assert_eq!(edges.len(), 1);
     assert!(edges[0].is_offer());
     assert_eq!(edges[0].key, valid_link_key(root_id, root_id));
+}
+
+#[test]
+fn verified_report_kernel_child_requires_complete_same_root_parent() {
+    let child_id = id(b"child-id");
+    let parent_id = id(b"parent-id");
+    let root_id = id(b"root-id");
+    let other_root_id = id(b"other-root-id");
+    let child = LinkCore {
+        self_id: fact_id_to_core(child_id),
+        prev: maybe_fact_id_to_core(Some(parent_id)),
+        root: maybe_fact_id_to_core(Some(root_id)),
+    };
+
+    let complete_same_root = projected_report_core(
+        child,
+        ValidityCore::Valid,
+        true,
+        true,
+        fact_id_to_core(root_id),
+    );
+    assert!(complete_same_root.complete);
+    assert_eq!(core_to_fact_id(complete_same_root.root), root_id);
+
+    let missing_parent = projected_report_core(
+        child,
+        ValidityCore::Valid,
+        false,
+        false,
+        fact_id_to_core(root_id),
+    );
+    assert!(!missing_parent.complete);
+
+    let incomplete_parent = projected_report_core(
+        child,
+        ValidityCore::Valid,
+        true,
+        false,
+        fact_id_to_core(root_id),
+    );
+    assert!(!incomplete_parent.complete);
+
+    let wrong_root = projected_report_core(
+        child,
+        ValidityCore::Valid,
+        true,
+        true,
+        fact_id_to_core(other_root_id),
+    );
+    assert!(!wrong_root.complete);
+}
+
+#[test]
+fn verified_link_projection_emits_no_raw_facts() {
+    assert_eq!(link_emitted_fact_count_core(), 0);
+}
+
+#[test]
+fn link_projector_runtime_projection_keeps_state_owned_and_emits_no_facts() {
+    let root = Link {
+        content: b"root".to_vec(),
+        prev: None,
+        root: None,
+    };
+    let root_id = link_id(&root);
+    let mut engine = EngineState::<LinkProjector>::new();
+
+    assert_eq!(engine.admit_item(root), root_id);
+    assert_eq!(engine.project_one(root_id).unwrap(), Some(Validity::Valid));
+
+    assert_eq!(
+        engine.mem.len(),
+        1,
+        "link projection must not emit raw facts"
+    );
+    assert_eq!(
+        engine.projector_state.seen.get(&root_id),
+        Some(&Validity::Valid)
+    );
+    let projected = engine
+        .projector_state
+        .projected
+        .get(&root_id)
+        .expect("projection should write the root's own read-model entry");
+    assert!(projected.complete);
+    assert_eq!(projected.root, root_id);
+    assert_eq!(projected.ids, vec![root_id]);
 }
 
 #[test]

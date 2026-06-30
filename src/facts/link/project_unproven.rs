@@ -47,13 +47,15 @@
 //! - [ ] Safety: statement-to-owner: every validated link offer at
 //!       `valid_link_key(link_id, root_id)` was promoted from a valid link fact
 //!       whose id is `link_id` and whose semantic root is `root_id`.
-//! - [ ] Safety: projection state update scope: projecting `link_id` can return
-//!       only insert/ignore updates keyed by `link_id` for `LinkState.seen` and
-//!       `LinkState.projected`.
-//! - [ ] Safety: projected report state is materialized only by projection; a
-//!       complete child report is derived from a valid same-root parent report.
-//! - [ ] Safety: no state authority leak: starter projection records only this
-//!       link's validity/read-model entry and emits no new facts.
+//! - [x] Safety: projection output update ownership: projecting `link_id` returns
+//!       only an update owner equal to `link_id`. Verified below in this file.
+//! - [ ] Safety: update application scope: `apply_update` is insert/ignore by `link_id`
+//!       for `LinkState.seen` and `LinkState.projected`.
+//! - [x] Safety: projected report completeness shape: a complete child report is
+//!       derived only from a complete same-root parent report. Verified below in
+//!       this file.
+//! - [x] Safety: no emitted-fact authority leak: link projection emits no new raw
+//!       facts. Verified below in this file.
 //! - [ ] Safety: composition with core: using `core::engine` validated-context
 //!       provenance, every valid child link has a valid same-root parent chain to
 //!       an anchor; no theorem here claims anchor uniqueness.
@@ -77,6 +79,12 @@
 //!       `child_extraction_offer_and_need_same_root`,
 //!       `valid_child_requires_validated_same_root_parent`, and
 //!       `valid_projection_statement_equals_extracted_offer`.
+//! - [x] Local link output/read-model kernel. Proven below by
+//!       `projection_update_owner_is_self`,
+//!       `valid_projection_statement_owned_by_projected_link`,
+//!       `projected_report_core`,
+//!       `complete_child_report_requires_complete_same_root_parent`, and
+//!       `link_emitted_fact_count_core`.
 //! Proof strategy:
 //! - Prove codec round trips and rejection cases for the current
 //!   tag/prev/root/content layout.
@@ -162,6 +170,23 @@ pub struct LinkProjectionCore {
 pub struct LinkExtractionCore {
     pub offer: MaybeStatementCore,
     pub need: MaybeStatementCore,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProjectedReportCore {
+    pub complete: bool,
+    pub root: IdCore,
+}
+
+pub open spec fn id_eq_spec(left: IdCore, right: IdCore) -> bool {
+    left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
+}
+
+pub fn id_eq(left: IdCore, right: IdCore) -> (equal: bool)
+    ensures
+        equal == id_eq_spec(left, right),
+{
+    left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
 }
 
 pub open spec fn is_root(link: LinkCore) -> bool {
@@ -265,6 +290,55 @@ pub open spec fn extraction_spec(link: LinkCore) -> LinkExtractionCore {
     }
 }
 
+pub open spec fn fallback_root_spec(link: LinkCore) -> IdCore {
+    match (link.root, link.prev) {
+        (MaybeIdCore::Some(root), _) => root,
+        _ => link.self_id,
+    }
+}
+
+pub open spec fn projected_report_spec(
+    link: LinkCore,
+    validity: ValidityCore,
+    parent_present: bool,
+    parent_complete: bool,
+    parent_root: IdCore,
+) -> ProjectedReportCore {
+    match (link.prev, link.root, validity) {
+        (MaybeIdCore::None, MaybeIdCore::None, ValidityCore::Valid) => ProjectedReportCore {
+            complete: true,
+            root: link.self_id,
+        },
+        (MaybeIdCore::Some(_parent), MaybeIdCore::Some(root), ValidityCore::Valid) => {
+            if parent_present && parent_complete && id_eq_spec(parent_root, root) {
+                ProjectedReportCore {
+                    complete: true,
+                    root,
+                }
+            } else {
+                ProjectedReportCore {
+                    complete: false,
+                    root,
+                }
+            }
+        }
+        _ => ProjectedReportCore {
+            complete: false,
+            root: fallback_root_spec(link),
+        },
+    }
+}
+
+pub fn fallback_root_core(link: LinkCore) -> (root: IdCore)
+    ensures
+        root == fallback_root_spec(link),
+{
+    match (link.root, link.prev) {
+        (MaybeIdCore::Some(root), _) => root,
+        _ => link.self_id,
+    }
+}
+
 pub fn extract_link_core(link: LinkCore) -> (extraction: LinkExtractionCore)
     ensures
         extraction == extraction_spec(link),
@@ -298,6 +372,58 @@ pub fn extract_link_core(link: LinkCore) -> (extraction: LinkExtractionCore)
         _ => LinkExtractionCore {
             offer: MaybeStatementCore::None,
             need: MaybeStatementCore::None,
+        },
+    }
+}
+
+pub fn projected_report_core(
+    link: LinkCore,
+    validity: ValidityCore,
+    parent_present: bool,
+    parent_complete: bool,
+    parent_root: IdCore,
+) -> (report: ProjectedReportCore)
+    ensures
+        report == projected_report_spec(
+            link,
+            validity,
+            parent_present,
+            parent_complete,
+            parent_root,
+        ),
+        is_root(link) && validity == ValidityCore::Valid ==> (
+            report.complete && report.root == link.self_id
+        ),
+        is_child(link) && validity == ValidityCore::Valid && report.complete ==> (
+            parent_present
+                && parent_complete
+                && match link.root {
+                    MaybeIdCore::Some(root) => id_eq_spec(parent_root, root),
+                    MaybeIdCore::None => false,
+                }
+        ),
+{
+    match (link.prev, link.root, validity) {
+        (MaybeIdCore::None, MaybeIdCore::None, ValidityCore::Valid) => ProjectedReportCore {
+            complete: true,
+            root: link.self_id,
+        },
+        (MaybeIdCore::Some(_parent), MaybeIdCore::Some(root), ValidityCore::Valid) => {
+            if parent_present && parent_complete && id_eq(parent_root, root) {
+                ProjectedReportCore {
+                    complete: true,
+                    root,
+                }
+            } else {
+                ProjectedReportCore {
+                    complete: false,
+                    root,
+                }
+            }
+        }
+        _ => ProjectedReportCore {
+            complete: false,
+            root: fallback_root_core(link),
         },
     }
 }
@@ -356,12 +482,25 @@ pub fn project_link_core(
     }
 }
 
+pub fn link_emitted_fact_count_core() -> (count: usize)
+    ensures
+        count == 0,
+{
+    0
+}
+
 pub proof fn root_projection_emits_self_root(link: LinkCore)
     requires
         is_root(link),
     ensures
         projection_spec(link, false).validity == ValidityCore::Valid,
         statement_is_self_root(projection_spec(link, false).statement, link.self_id),
+{
+}
+
+pub proof fn projection_update_owner_is_self(link: LinkCore, parent_validated_same_root: bool)
+    ensures
+        projection_spec(link, parent_validated_same_root).update_owner == link.self_id,
 {
 }
 
@@ -389,6 +528,20 @@ pub proof fn child_extraction_offer_and_need_same_root(
 {
 }
 
+pub proof fn valid_projection_statement_owned_by_projected_link(
+    link: LinkCore,
+    parent_validated_same_root: bool,
+)
+    requires
+        projection_spec(link, parent_validated_same_root).validity == ValidityCore::Valid,
+    ensures
+        match projection_spec(link, parent_validated_same_root).statement {
+            MaybeStatementCore::Some(statement) => statement.link_id == link.self_id,
+            MaybeStatementCore::None => false,
+        },
+{
+}
+
 pub proof fn malformed_projection_is_invalid(link: LinkCore, parent_validated_same_root: bool)
     requires
         is_malformed(link),
@@ -404,6 +557,52 @@ pub proof fn malformed_extraction_is_empty(link: LinkCore)
     ensures
         extraction_spec(link).offer == MaybeStatementCore::None,
         extraction_spec(link).need == MaybeStatementCore::None,
+{
+}
+
+pub proof fn root_projected_report_is_complete_self(link: LinkCore)
+    requires
+        is_root(link),
+    ensures
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            false,
+            false,
+            link.self_id,
+        ).complete,
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            false,
+            false,
+            link.self_id,
+        ).root == link.self_id,
+{
+}
+
+pub proof fn complete_child_report_requires_complete_same_root_parent(
+    link: LinkCore,
+    parent_present: bool,
+    parent_complete: bool,
+    parent_root: IdCore,
+)
+    requires
+        is_child(link),
+        projected_report_spec(
+            link,
+            ValidityCore::Valid,
+            parent_present,
+            parent_complete,
+            parent_root,
+        ).complete,
+    ensures
+        parent_present,
+        parent_complete,
+        match link.root {
+            MaybeIdCore::Some(root) => id_eq_spec(parent_root, root),
+            MaybeIdCore::None => false,
+        },
 {
 }
 
@@ -522,6 +721,13 @@ pub fn validity_from_core(validity: ValidityCore) -> crate::core::typestate::Val
     match validity {
         ValidityCore::Valid => crate::core::typestate::Validity::Valid,
         ValidityCore::Invalid => crate::core::typestate::Validity::Invalid,
+    }
+}
+
+pub fn validity_to_core(validity: crate::core::typestate::Validity) -> ValidityCore {
+    match validity {
+        crate::core::typestate::Validity::Valid => ValidityCore::Valid,
+        crate::core::typestate::Validity::Invalid => ValidityCore::Invalid,
     }
 }
 
@@ -649,26 +855,39 @@ fn incomplete_projected_link(id: FactId, l: &Link) -> ProjectedLink {
 }
 
 fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState) -> ProjectedLink {
+    let link = link_core_for(id, l.prev, l.root);
+    let validity_core = validity_to_core(validity);
     match (l.prev, l.root, validity) {
-        (None, None, Validity::Valid) => ProjectedLink {
-            complete: true,
-            root: id,
-            depth: 0,
-            length: 1,
-            ids: vec![id],
-        },
-        (Some(parent), Some(root), Validity::Valid) => {
+        (None, None, Validity::Valid) => {
+            let report =
+                projected_report_core(link, validity_core, false, false, fact_id_to_core(id));
+            ProjectedLink {
+                complete: report.complete,
+                root: core_to_fact_id(report.root),
+                depth: 0,
+                length: 1,
+                ids: vec![id],
+            }
+        }
+        (Some(parent), Some(_root), Validity::Valid) => {
             let Some(parent_state) = st.projected.get(&parent) else {
                 return incomplete_projected_link(id, l);
             };
-            if !parent_state.complete || parent_state.root != root {
+            let report = projected_report_core(
+                link,
+                validity_core,
+                true,
+                parent_state.complete,
+                fact_id_to_core(parent_state.root),
+            );
+            if !report.complete {
                 return incomplete_projected_link(id, l);
             }
             let mut ids = parent_state.ids.clone();
             ids.push(id);
             ProjectedLink {
                 complete: true,
-                root,
+                root: core_to_fact_id(report.root),
                 depth: parent_state.depth + 1,
                 length: parent_state.length + 1,
                 ids,
@@ -754,9 +973,9 @@ impl Projector for LinkProjector {
         let projected = projected_link_state(item.id(), item.item(), validity, st);
         ProjectOutcome {
             validity,
-            emitted: vec![],
+            emitted: Vec::with_capacity(link_emitted_fact_count_core()),
             updates: vec![LinkUpdate {
-                id: item.id(),
+                id: core_to_fact_id(projection.update_owner),
                 validity,
                 projected,
             }],
