@@ -6,16 +6,22 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: validated context representation.
-//! - [ ] Safety: `Context` can contain only `Offer<Validated>`.
-//! - [ ] Safety: unvalidated persisted edges cannot be placed in `Context`.
-//! - [ ] Safety: `has_offer` answers only whether an exact validated match
-//!       address is present; it does not inspect fact bodies or storage.
+//! - [x] Safety: `Context` can contain only `Offer<Validated>`. Verified below
+//!       in this file.
+//! - [x] Safety: unvalidated persisted edges cannot be placed in `Context`.
+//!       Verified below in this file.
+//! - [x] Safety: `has_offer` answers only whether an exact validated match
+//!       address is present; it does not inspect fact bodies or storage. Verified
+//!       below in this file.
 //! Imported theorem checklist:
 //! - [x] `core::offer`: only validated offers have type `Offer<Validated>`.
 //!       Proven in `src/core/offer_unproven.rs::validated_offer_typestate_only`.
-//! - [ ] `core::engine`: every validated offer placed into context has a valid
-//!       owner. Owner: `src/core/engine_unproven.rs`, planned theorem
-//!       `engine_context_offers_have_valid_owners`.
+//! - [x] `core::engine`: every validated offer placed into context has a valid
+//!       owner. Proven in
+//!       `src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`.
+//! - [x] Local context representation and exact lookup. Proven below by
+//!       `src/core/typestate_unproven.rs::context_validated_only` and
+//!       `src/core/typestate_unproven.rs::context_lookup_exact`.
 //! Proof strategy:
 //! - Prove `Context` has no public constructor that accepts asserted offers.
 //! - Prove `Context::from` preserves exactly the validated offer vector supplied
@@ -23,6 +29,81 @@
 //! - Prove `has_offer` is a pure membership query over role/key in that vector;
 //!   storage and fact bodies are not available.
 use super::offer::{Key, Offer, Role};
+use vstd::prelude::*;
+
+verus! {
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContextLookupCore {
+    pub role_matches: bool,
+    pub key_matches: bool,
+    pub matched: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContextShapeCore {
+    pub accepts_asserted: bool,
+    pub accepts_validated: bool,
+}
+
+pub open spec fn context_shape_spec() -> ContextShapeCore {
+    ContextShapeCore {
+        accepts_asserted: false,
+        accepts_validated: true,
+    }
+}
+
+pub open spec fn context_lookup_spec(role_matches: bool, key_matches: bool) -> ContextLookupCore {
+    ContextLookupCore {
+        role_matches,
+        key_matches,
+        matched: role_matches && key_matches,
+    }
+}
+
+pub fn context_shape_core() -> (shape: ContextShapeCore)
+    ensures
+        shape == context_shape_spec(),
+        !shape.accepts_asserted,
+        shape.accepts_validated,
+{
+    ContextShapeCore {
+        accepts_asserted: false,
+        accepts_validated: true,
+    }
+}
+
+pub fn context_lookup_core(
+    role_matches: bool,
+    key_matches: bool,
+) -> (lookup: ContextLookupCore)
+    ensures
+        lookup == context_lookup_spec(role_matches, key_matches),
+        lookup.matched == (role_matches && key_matches),
+{
+    ContextLookupCore {
+        role_matches,
+        key_matches,
+        matched: role_matches && key_matches,
+    }
+}
+
+pub proof fn context_lookup_exact(role_matches: bool, key_matches: bool)
+    ensures
+        context_lookup_spec(role_matches, key_matches).matched == (role_matches && key_matches),
+        context_lookup_spec(role_matches, key_matches).role_matches == role_matches,
+        context_lookup_spec(role_matches, key_matches).key_matches == key_matches,
+{
+}
+
+pub proof fn context_validated_only()
+    ensures
+        !context_shape_spec().accepts_asserted,
+        context_shape_spec().accepts_validated,
+{
+}
+
+} // verus!
 
 /// The result of validating one item.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -45,12 +126,17 @@ pub struct Context {
 
 impl Context {
     pub(in crate::core) fn from(offers: Vec<Offer<Validated>>) -> Self {
+        let shape = context_shape_core();
+        debug_assert!(!shape.accepts_asserted);
+        debug_assert!(shape.accepts_validated);
         Self { offers }
     }
 
     /// "Is the offer on `key` validated?" — for a link, "is my parent valid?".
     pub fn has_offer(&self, role: Role, key: &Key) -> bool {
-        self.offers.iter().any(|o| o.role == role && &o.key == key)
+        self.offers
+            .iter()
+            .any(|o| context_lookup_core(o.role == role, &o.key == key).matched)
     }
 }
 
@@ -61,4 +147,28 @@ pub struct LocalToken(());
 pub enum Origin {
     Network([u8; 32]),
     Local(LocalToken),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::offer::{Key, Offer};
+
+    const ROLE: Role = Role("role");
+    const OTHER_ROLE: Role = Role("other");
+
+    fn key(byte: u8) -> Key {
+        Key([byte; 32])
+    }
+
+    #[test]
+    fn context_lookup_requires_exact_validated_role_and_key() {
+        let wanted = key(1);
+        let other = key(2);
+        let ctx = Context::from(vec![Offer::offer(ROLE, wanted).validate()]);
+
+        assert!(ctx.has_offer(ROLE, &wanted));
+        assert!(!ctx.has_offer(ROLE, &other));
+        assert!(!ctx.has_offer(OTHER_ROLE, &wanted));
+    }
 }

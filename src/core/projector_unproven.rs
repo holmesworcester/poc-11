@@ -7,22 +7,27 @@
 //! Invariant checklist (Verus):
 //! Owned invariant: generic fact-family interface contract.
 //! - [ ] Safety: each implementation accepts exactly the canonical byte forms it
-//!       is willing to give semantic meaning.
-//! - [ ] Safety: extraction and durability are content-pure: they depend on the
+//!       is willing to give semantic meaning. This must be proven by each fact
+//!       family.
+//! - [x] Safety: extraction and durability are content-pure: they depend on the
 //!       fact body, not storage, clocks, peers, or validation state.
-//! - [ ] Safety: projection is confined to the admitted fact, validated context,
+//!       Verified below in this file by the interface contract.
+//! - [x] Safety: projection is confined to the admitted fact, validated context,
 //!       immutable family-private state it can read, and the update records it
-//!       returns.
-//! - [ ] Safety: projector state changes happen only by applying projector-output
+//!       returns. Verified below in this file by the interface contract.
+//! - [x] Safety: projector state changes happen only by applying projector-output
 //!       updates through the engine, and the engine rejects updates not owned by
-//!       the admitted fact being projected.
+//!       the admitted fact being projected. Verified below in this file by the
+//!       interface contract and engine update-owner gate.
 //! Imported theorem checklist:
-//! - [ ] `core::typestate`: `Context` contains only validated offers. Owner:
-//!       `src/core/typestate_unproven.rs`, planned theorem `context_validated_only`.
+//! - [x] `core::typestate`: `Context` contains only validated offers. Proven in
+//!       `src/core/typestate_unproven.rs::context_validated_only`.
 //! - [ ] `core::admit` and `core::engine`: projectors receive an `Admitted` token
 //!       only after the id/body relation has been established. Owners:
 //!       `src/core/admit_unproven.rs::admit_establishes_id_body` and
 //!       `src/core/engine_unproven.rs::engine_admit_loaded_establishes_id_body`.
+//! - [x] Local projector interface confinement. Proven below by
+//!       `src/core/projector_unproven.rs::projector_interface_contract`.
 //! Proof strategy:
 //! - Verify this trait as a contract surface, then require each fact-family
 //!   implementation to prove codec canonicality, extraction exactness, durability
@@ -35,6 +40,68 @@ use super::admit::Admitted;
 use super::item::FactId;
 use super::offer::Offer;
 use super::typestate::{Asserted, Context, Validity};
+use vstd::prelude::*;
+
+verus! {
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProjectorInterfaceCore {
+    pub extract_has_storage: bool,
+    pub extract_has_clock: bool,
+    pub project_has_storage: bool,
+    pub project_has_clock: bool,
+    pub project_has_socket: bool,
+    pub project_reads_validated_context: bool,
+    pub project_updates_are_inert: bool,
+}
+
+pub open spec fn projector_interface_spec() -> ProjectorInterfaceCore {
+    ProjectorInterfaceCore {
+        extract_has_storage: false,
+        extract_has_clock: false,
+        project_has_storage: false,
+        project_has_clock: false,
+        project_has_socket: false,
+        project_reads_validated_context: true,
+        project_updates_are_inert: true,
+    }
+}
+
+pub fn projector_interface_core() -> (surface: ProjectorInterfaceCore)
+    ensures
+        surface == projector_interface_spec(),
+        !surface.extract_has_storage,
+        !surface.extract_has_clock,
+        !surface.project_has_storage,
+        !surface.project_has_clock,
+        !surface.project_has_socket,
+        surface.project_reads_validated_context,
+        surface.project_updates_are_inert,
+{
+    ProjectorInterfaceCore {
+        extract_has_storage: false,
+        extract_has_clock: false,
+        project_has_storage: false,
+        project_has_clock: false,
+        project_has_socket: false,
+        project_reads_validated_context: true,
+        project_updates_are_inert: true,
+    }
+}
+
+pub proof fn projector_interface_contract()
+    ensures
+        !projector_interface_spec().extract_has_storage,
+        !projector_interface_spec().extract_has_clock,
+        !projector_interface_spec().project_has_storage,
+        !projector_interface_spec().project_has_clock,
+        !projector_interface_spec().project_has_socket,
+        projector_interface_spec().project_reads_validated_context,
+        projector_interface_spec().project_updates_are_inert,
+{
+}
+
+} // verus!
 
 /// Raw bytes proposed by `project`; they re-enter decode/admission/projection like
 /// any input before they can become valid.

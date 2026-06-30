@@ -22,8 +22,8 @@ the `_unproven` file until the whole file can be renamed.
 - `src/core/runtime_unproven.rs` is the current daemon/IO loop: sockets, sleeps,
   peer sends, and stdout readiness. It stays separate from `turn` so the
   deterministic queue/effect step can be proven without proving OS progress.
-- `src/facts/link/project_unproven.rs` keeps link codec, extraction, and
-  projection together because versioned byte interpretation is part of fact
+- `src/facts/link/project.rs` contains the now-proven link codec, extraction,
+  and projection together because versioned byte interpretation is part of fact
   meaning. It also owns deterministic typed construction from explicit command
   parameters.
 - `src/facts/link/api_unproven.rs` contains storage-backed report helpers.
@@ -43,11 +43,10 @@ targets, not staging files:
 - `src/core/turn.rs`: deterministic `State + Input -> State + Effects`
   transition for admission, query results, projection, and wakeups, replacing
   `turn_unproven.rs` once the transition invariant is proven.
-- `src/facts/link/project.rs`: appears only after all invariants currently owned
-  by `src/facts/link/project_unproven.rs` are verified: link codec, canonical
-  encode/decode, deterministic typed construction from explicit parameters,
-  extraction, projection validity, emitted facts, projector-owned state, and
-  persistence decision.
+- `src/facts/link/project.rs`: completed current proof target for link codec,
+  canonical encode/decode, deterministic typed construction from explicit
+  parameters, extraction, projection validity, emitted facts, projector-owned
+  state, and current same-root parent-chain composition.
 - `src/helpers/*_unproven.rs`: narrow trusted adapters for crypto assumptions,
   SQLite, TCP sockets, filesystem, clocks, and similar external APIs.
 
@@ -75,9 +74,9 @@ Core proofs are about all possible fact families routed through the engine:
   and malformed or unknown facts do not become valid.
 
 Current link proofs live beside the running implementation in
-`src/facts/link/project_unproven.rs`. Once the whole checklist in that file is
-proven, the file can be renamed to `src/facts/link/project.rs`. Only the link
-family defines what roots, parents, and ancestry mean:
+`src/facts/link/project.rs`; that file has completed its `_unproven` to
+unsuffixed migration. Only the link family defines what roots, parents, and
+ancestry mean:
 
 - Link bytes decode canonically into the link semantic shape.
 - `link_id(link) == fact_id(encode(link))`.
@@ -136,7 +135,7 @@ as if it were their own.
 | --- | --- |
 | `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
 | `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
-| `facts::link::project_unproven` now, `facts::link::project` after completion | Link-family implementation of the projector contract, projector-owned read-model state, and current same-root parent-chain validity theorem. |
+| `facts::link::project` | Link-family implementation of the projector contract, projector-owned read-model state, and current same-root parent-chain validity theorem. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |

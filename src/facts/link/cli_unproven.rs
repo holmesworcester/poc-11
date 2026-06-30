@@ -1,6 +1,5 @@
 //! Link CLI formatting helpers. Parsing/formatting and command admission remain
-//! unproven; semantic link construction stays in `project_unproven` until the
-//! full link invariant checklist is proven.
+//! unproven; semantic link construction lives in the proven `project` module.
 //!
 //! Fact-family contract (do not weaken):
 //! - Scope: app adapter only: call deterministic link construction, call core
@@ -22,9 +21,9 @@
 //! - [ ] Safety: CLI code cannot construct `Validity`, `Context`, or
 //!       `Offer<Validated>`.
 //! Imported theorem checklist:
-//! - [ ] `facts::link::project_unproven`: `link_from_params` owns link
-//!       construction semantics. Owner: `src/facts/link/project_unproven.rs`,
-//!       planned theorem `link_from_params_constructs_only_link_fields`.
+//! - [x] `facts::link::project`: `link_from_params` owns link construction
+//!       semantics. Proven in
+//!       `src/facts/link/project.rs::link_from_params_constructs_only_link_fields`.
 //! - [ ] `core::admit`: admission creates only asserted state. Owner:
 //!       `src/core/admit_unproven.rs`, planned theorem `admit_asserted_only`.
 //! - [ ] `facts::link::api` and `core::play`: reports/replay are observations of
@@ -46,7 +45,7 @@ use crate::core::play::replay;
 use crate::helpers::hex_unproven::to_hex;
 
 use super::api_unproven::chain_report;
-use super::project_unproven::{link_from_params, LinkProjector};
+use super::project::{link_from_params, LinkProjector};
 
 pub fn link_lines(
     idx: &dyn Index,

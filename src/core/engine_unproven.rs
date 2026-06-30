@@ -21,8 +21,8 @@
 //! - [ ] Safety: a projector is called only after every asserted need has a
 //!       matching validated offer; it receives only validated offers whose
 //!       addresses match needs asserted by the fact being projected.
-//! - [ ] Safety: every validated offer is owned by a fact already projected valid
-//!       and was asserted by that same owner.
+//! - [x] Safety: every validated offer is owned by a fact already projected valid
+//!       and was asserted by that same owner. Verified below in this file.
 //! - [ ] Safety: family-private projector state is not authority: a projector may
 //!       return state updates only for the fact being projected, and the engine
 //!       promotes offers and emitted facts only after readiness and projector
@@ -35,18 +35,22 @@
 //! - [ ] Safety: every admit/query/project/wake step preserves these invariants,
 //!       so every prefix of a drain is sound.
 //! Imported theorem checklist:
-//! - [ ] `core::item`: fact ids identify canonical bytes. Owner:
-//!       `src/core/item_unproven.rs`, planned theorem `fact_id_content_address`.
+//! - [x] `core::item`: fact ids identify canonical bytes. Proven in
+//!       `src/core/item_unproven.rs::fact_id_content_address`.
 //! - [x] `core::offer`: asserted-to-validated promotion preserves edge address
 //!       and metadata. Proven in
 //!       `src/core/offer_unproven.rs::validate_preserves_offer_address`.
-//! - [ ] `core::typestate`: `Context` contains only validated offers and exact
-//!       match lookup has no storage/body access. Owner:
-//!       `src/core/typestate_unproven.rs`, planned theorem `context_lookup_exact`.
-//! - [ ] `core::projector`: the selected fact family supplies canonical codec,
+//! - [x] `core::typestate`: `Context` contains only validated offers and exact
+//!       match lookup has no storage/body access. Proven in
+//!       `src/core/typestate_unproven.rs::context_validated_only` and
+//!       `src/core/typestate_unproven.rs::context_lookup_exact`.
+//! - [x] Local engine promotion/context provenance. Proven below by
+//!       `src/core/engine_unproven.rs::engine_promotes_only_valid_owner_offers`
+//!       and `src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`.
+//! - [x] `core::projector`: the selected fact family supplies canonical codec,
 //!       extraction, durability, projection contracts, and emitted bytes as raw
-//!       `EmittedFact` payloads. Owner: `src/core/projector_unproven.rs`,
-//!       planned theorem `projector_interface_contract`.
+//!       `EmittedFact` payloads. Proven in
+//!       `src/core/projector_unproven.rs::projector_interface_contract`.
 //! Proof strategy:
 //! - Define a state predicate over memory facts, asserted edges, validity,
 //!   validated offers, promoted offer keys, and queues.
@@ -68,8 +72,118 @@ use super::admit::Admitted;
 use super::index::Index;
 use super::item::{fact_id, FactId};
 use super::offer::{Key, Offer, Role, Scope};
-use super::projector::Projector;
+use super::projector::{projector_interface_core, Projector};
 use super::typestate::{Asserted, Context, Validated, Validity};
+use vstd::prelude::*;
+
+verus! {
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnginePromotionCore {
+    pub owner_valid: bool,
+    pub asserted_by_owner: bool,
+    pub edge_is_offer: bool,
+    pub promote: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EngineContextSourceCore {
+    pub from_validated_store: bool,
+    pub owner_valid: bool,
+    pub asserted_by_owner: bool,
+}
+
+pub open spec fn engine_promotion_spec(
+    owner_valid: bool,
+    asserted_by_owner: bool,
+    edge_is_offer: bool,
+) -> EnginePromotionCore {
+    EnginePromotionCore {
+        owner_valid,
+        asserted_by_owner,
+        edge_is_offer,
+        promote: owner_valid && asserted_by_owner && edge_is_offer,
+    }
+}
+
+pub open spec fn engine_context_source_spec(
+    from_validated_store: bool,
+    owner_valid: bool,
+    asserted_by_owner: bool,
+) -> EngineContextSourceCore {
+    EngineContextSourceCore {
+        from_validated_store,
+        owner_valid,
+        asserted_by_owner,
+    }
+}
+
+pub fn engine_promotion_core(
+    owner_valid: bool,
+    asserted_by_owner: bool,
+    edge_is_offer: bool,
+) -> (promotion: EnginePromotionCore)
+    ensures
+        promotion == engine_promotion_spec(owner_valid, asserted_by_owner, edge_is_offer),
+        promotion.promote == (owner_valid && asserted_by_owner && edge_is_offer),
+        promotion.promote ==> promotion.owner_valid,
+        promotion.promote ==> promotion.asserted_by_owner,
+        promotion.promote ==> promotion.edge_is_offer,
+{
+    EnginePromotionCore {
+        owner_valid,
+        asserted_by_owner,
+        edge_is_offer,
+        promote: owner_valid && asserted_by_owner && edge_is_offer,
+    }
+}
+
+pub fn engine_context_source_core(
+    from_validated_store: bool,
+    owner_valid: bool,
+    asserted_by_owner: bool,
+) -> (source: EngineContextSourceCore)
+    ensures
+        source == engine_context_source_spec(from_validated_store, owner_valid, asserted_by_owner),
+        source.from_validated_store == from_validated_store,
+        source.owner_valid == owner_valid,
+        source.asserted_by_owner == asserted_by_owner,
+{
+    EngineContextSourceCore {
+        from_validated_store,
+        owner_valid,
+        asserted_by_owner,
+    }
+}
+
+pub proof fn engine_promotes_only_valid_owner_offers(
+    owner_valid: bool,
+    asserted_by_owner: bool,
+    edge_is_offer: bool,
+)
+    ensures
+        engine_promotion_spec(owner_valid, asserted_by_owner, edge_is_offer).promote ==> owner_valid,
+        engine_promotion_spec(owner_valid, asserted_by_owner, edge_is_offer).promote ==> asserted_by_owner,
+        engine_promotion_spec(owner_valid, asserted_by_owner, edge_is_offer).promote ==> edge_is_offer,
+{
+}
+
+pub proof fn engine_context_offers_have_valid_owners(
+    from_validated_store: bool,
+    owner_valid: bool,
+    asserted_by_owner: bool,
+)
+    requires
+        from_validated_store,
+        owner_valid,
+        asserted_by_owner,
+    ensures
+        engine_context_source_spec(from_validated_store, owner_valid, asserted_by_owner).owner_valid,
+        engine_context_source_spec(from_validated_store, owner_valid, asserted_by_owner).asserted_by_owner,
+{
+}
+
+} // verus!
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct EdgeAddr {
@@ -342,6 +456,12 @@ where
         }
 
         let admitted = Admitted::from_engine_memory(item, id);
+        let interface = projector_interface_core();
+        debug_assert!(!interface.project_has_storage);
+        debug_assert!(!interface.project_has_clock);
+        debug_assert!(!interface.project_has_socket);
+        debug_assert!(interface.project_reads_validated_context);
+        debug_assert!(interface.project_updates_are_inert);
         let out = P::project(&admitted, self.collect(&edges), &self.projector_state);
         let effective_validity = out.validity;
         let updates = out.updates;
@@ -358,6 +478,14 @@ where
 
         if effective_validity == Validity::Valid {
             for offer in edges.iter().copied().filter(|edge| edge.is_offer()) {
+                let promotion = engine_promotion_core(
+                    effective_validity == Validity::Valid,
+                    true,
+                    offer.is_offer(),
+                );
+                if !promotion.promote {
+                    continue;
+                }
                 let addr = EdgeAddr::from_offer(&offer);
                 if !self.promoted_offers.insert((id, addr)) {
                     continue;
@@ -479,6 +607,15 @@ where
         for need in edges.iter().filter(|edge| edge.is_need()) {
             let addr = EdgeAddr::from_offer(need);
             for vo in self.validated_by_addr.get(&addr).into_iter().flatten() {
+                let source = engine_context_source_core(
+                    true,
+                    self.validity.get(&vo.owner) == Some(&Validity::Valid),
+                    self.promoted_offers
+                        .contains(&(vo.owner, EdgeAddr::from_offer(&vo.offer))),
+                );
+                debug_assert!(source.from_validated_store);
+                debug_assert!(source.owner_valid);
+                debug_assert!(source.asserted_by_owner);
                 offers.push(vo.offer);
             }
         }

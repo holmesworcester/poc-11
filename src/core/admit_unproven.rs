@@ -15,8 +15,8 @@
 //! - [ ] Safety: fact bytes are requested to be written to durable storage only
 //!       when the fact-family durability predicate says this item is durable.
 //! Imported theorem checklist:
-//! - [ ] `core::item`: fact ids are content addresses of canonical bytes. Owner:
-//!       `src/core/item_unproven.rs`, planned theorem `fact_id_content_address`.
+//! - [x] `core::item`: fact ids are content addresses of canonical bytes. Proven
+//!       in `src/core/item_unproven.rs::fact_id_content_address`.
 //! - [ ] `core::projector`: encoding, extraction, and durability are content-pure
 //!       for the selected fact family. Owner: `src/core/projector_unproven.rs`,
 //!       planned theorem `projector_interface_contract`.

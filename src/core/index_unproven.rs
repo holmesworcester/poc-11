@@ -13,8 +13,8 @@
 //! - [ ] Safety: window selection is only a replay seed choice; validity cannot
 //!       depend on recency, ordering, or inclusion in the window.
 //! Imported theorem checklist:
-//! - [ ] `core::item`: callers can recheck loaded bytes against fact ids. Owner:
-//!       `src/core/item_unproven.rs`, planned theorem `fact_id_content_address`.
+//! - [x] `core::item`: callers can recheck loaded bytes against fact ids. Proven
+//!       in `src/core/item_unproven.rs::fact_id_content_address`.
 //! - [x] `core::offer`: asserted edge addresses and directions have fixed
 //!       meaning. Proven in
 //!       `src/core/offer_unproven.rs::asserted_edge_address_shape`.

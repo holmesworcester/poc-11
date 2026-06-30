@@ -1,7 +1,8 @@
 use linktoy::core::engine::EngineState;
 use linktoy::core::item::fact_id;
+use linktoy::core::projector::Projector;
 use linktoy::core::typestate::Validity;
-use linktoy::facts::link::project_unproven::{
+use linktoy::facts::link::project::{
     core_to_fact_id, extract_link_core, fact_id_to_core, link_core_for,
     link_emitted_fact_count_core, maybe_fact_id_to_core, project_link_core, projected_report_core,
     LinkCore, MaybeStatementCore, ValidityCore,
@@ -18,6 +19,36 @@ fn id(label: &[u8]) -> [u8; 32] {
 fn fact_id_core_conversion_round_trips_runtime_ids() {
     let source = id(b"round-trip-id");
     assert_eq!(core_to_fact_id(fact_id_to_core(source)), source);
+}
+
+#[test]
+fn canonical_link_codec_round_trips_accepted_bytes_and_ids() {
+    let root_id = id(b"root-id");
+    let samples = [
+        Link {
+            content: b"root".to_vec(),
+            prev: None,
+            root: None,
+        },
+        Link {
+            content: b"child".to_vec(),
+            prev: Some(id(b"parent-id")),
+            root: Some(root_id),
+        },
+        Link {
+            content: b"malformed".to_vec(),
+            prev: None,
+            root: Some(root_id),
+        },
+    ];
+
+    for sample in samples {
+        let bytes = LinkProjector::encode(&sample);
+        let decoded = LinkProjector::decode(&bytes).expect("encoded link should decode");
+        assert_eq!(decoded, sample);
+        assert_eq!(LinkProjector::encode(&decoded), bytes);
+        assert_eq!(link_id(&decoded), fact_id(&bytes));
+    }
 }
 
 #[test]
