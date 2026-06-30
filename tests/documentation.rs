@@ -20,6 +20,36 @@ fn uncommented_source(text: &str) -> String {
         .join("\n")
 }
 
+fn doc_section(text: &str, heading: &str) -> String {
+    let mut out = Vec::new();
+    let mut in_section = false;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix("//!") else {
+            if in_section {
+                break;
+            }
+            continue;
+        };
+        let body = rest.trim_start();
+        if body == heading {
+            in_section = true;
+            continue;
+        }
+        if in_section
+            && body.ends_with(':')
+            && !body.starts_with("- ")
+            && body.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+        {
+            break;
+        }
+        if in_section {
+            out.push(body.to_string());
+        }
+    }
+    out.join("\n")
+}
+
 #[test]
 fn in_memory_projection_note_records_extract_project_boundary() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -518,6 +548,36 @@ fn link_project_verified_kernel_is_running_code() {
         manifest.contains("[package.metadata.verus]") && manifest.contains("verify = true"),
         "Cargo manifest must keep cargo-verus verification enabled"
     );
+}
+
+#[test]
+fn link_project_keeps_local_theorems_out_of_imported_checklist() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let project = source_text(&root.join("src/facts/link/project.rs"));
+
+    let imported = doc_section(&project, "Imported theorem checklist:");
+    for forbidden in [
+        "Local link same-root extraction/projection kernel",
+        "Local link/core composition kernel",
+        "Local link output/read-model kernel",
+    ] {
+        assert!(
+            !imported.contains(forbidden),
+            "local theorem {forbidden:?} must not be listed as an imported theorem"
+        );
+    }
+
+    let local = doc_section(&project, "Local theorem checklist:");
+    for required in [
+        "Local link same-root extraction/projection kernel",
+        "Local link/core composition kernel",
+        "Local link output/read-model kernel",
+    ] {
+        assert!(
+            local.contains(required),
+            "local theorem checklist is missing {required:?}"
+        );
+    }
 }
 
 #[test]

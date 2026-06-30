@@ -75,6 +75,7 @@
 //! - [x] `core::projector`: the generic projector interface enforces
 //!       confinement. Proven in
 //!       `src/core/projector_unproven.rs::projector_interface_contract`.
+//! Local theorem checklist:
 //! - [x] Local link same-root extraction/projection kernel. Proven below by
 //!       `extract_link_core`, `project_link_core`,
 //!       `canonical_link_identity`,
