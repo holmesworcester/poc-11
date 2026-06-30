@@ -62,9 +62,9 @@
 //! Imported theorem checklist:
 //! - [ ] `core::item`: fact ids are content addresses for canonical bytes. Owner:
 //!       `src/core/item_unproven.rs`, planned theorem `fact_id_content_address`.
-//! - [ ] `core::offer`: asserted edge constructors and match addresses have fixed
-//!       meaning. Owner: `src/core/offer_unproven.rs`, planned theorem
-//!       `asserted_edge_address_shape`.
+//! - [x] `core::offer`: asserted edge constructors and match addresses have fixed
+//!       meaning. Proven in
+//!       `src/core/offer_unproven.rs::asserted_edge_address_shape`.
 //! - [ ] `core::typestate`: `Context::has_offer` is exact validated-offer lookup.
 //!       Owner: `src/core/typestate_unproven.rs`, planned theorem
 //!       `context_lookup_exact`.

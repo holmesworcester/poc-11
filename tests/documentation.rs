@@ -236,11 +236,29 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "projected fact",
         "Imported theorem checklist:",
         "`core::item`: fact ids identify canonical bytes",
+        "`core::offer`: asserted-to-validated promotion preserves edge address",
+        "`src/core/offer_unproven.rs::validate_preserves_offer_address`",
         "Proof strategy:",
     ] {
         assert!(
             engine.contains(required),
             "core engine checklist is missing {required:?}"
+        );
+    }
+
+    let offer = normalize_whitespace(&source_text(&root.join("src/core/offer_unproven.rs")));
+    for required in [
+        "Owned invariant: edge representation and promotion shape",
+        "Safety: matching depends only on `(role, scope, key)`",
+        "Verified below in this file",
+        "Safety: promotion preserves the asserted edge's address and metadata",
+        "src/core/offer_unproven.rs::asserted_edge_address_shape",
+        "src/core/offer_unproven.rs::validate_preserves_offer_address",
+        "src/core/offer_unproven.rs::validated_offer_typestate_only",
+    ] {
+        assert!(
+            offer.contains(required),
+            "core offer checklist is missing {required:?}"
         );
     }
 
@@ -291,6 +309,8 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "valid same-root parent chain to",
         "no theorem here claims anchor uniqueness",
         "Imported theorem checklist:",
+        "`core::offer`: asserted edge constructors and match addresses have fixed",
+        "`src/core/offer_unproven.rs::asserted_edge_address_shape`",
         "Proof strategy:",
         "Prove the statement-to-owner lemma",
         "Prove same-root parent-chain transitivity by induction",
@@ -316,6 +336,38 @@ fn proof_target_files_have_verus_invariant_checklists() {
         assert!(
             api.contains(required),
             "link API checklist is missing {required:?}"
+        );
+    }
+}
+
+#[test]
+fn offer_verified_kernel_is_running_code() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let offer = source_text(&root.join("src/core/offer_unproven.rs"));
+
+    for required in [
+        "verus!",
+        "pub fn asserted_edge_shape_core",
+        "pub fn asserted_edge_core",
+        "pub fn validate_shape_core",
+        "pub fn validate_edge_core",
+        "asserted_edge_address_shape",
+        "validate_preserves_offer_address",
+        "validated_offer_typestate_only",
+    ] {
+        assert!(
+            offer.contains(required),
+            "offer file is missing verified-kernel detail {required:?}"
+        );
+    }
+
+    for required in [
+        "asserted_edge_core(edge_kind_to_core(kind))",
+        "validate_edge_core(TypedEdgeCore",
+    ] {
+        assert!(
+            offer.contains(required),
+            "runtime offer code does not delegate to verified-kernel detail {required:?}"
         );
     }
 }

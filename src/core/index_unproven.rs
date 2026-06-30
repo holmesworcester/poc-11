@@ -15,9 +15,9 @@
 //! Imported theorem checklist:
 //! - [ ] `core::item`: callers can recheck loaded bytes against fact ids. Owner:
 //!       `src/core/item_unproven.rs`, planned theorem `fact_id_content_address`.
-//! - [ ] `core::offer`: asserted edge addresses and directions have fixed
-//!       meaning. Owner: `src/core/offer_unproven.rs`, planned theorem
-//!       `asserted_edge_address_shape`.
+//! - [x] `core::offer`: asserted edge addresses and directions have fixed
+//!       meaning. Proven in
+//!       `src/core/offer_unproven.rs::asserted_edge_address_shape`.
 //! Proof strategy:
 //! - Treat `Index` as an abstract storage contract, not as a proof of SQLite.
 //! - Specify postconditions for each trait method: fact loads return candidate

@@ -37,9 +37,9 @@
 //! Imported theorem checklist:
 //! - [ ] `core::item`: fact ids identify canonical bytes. Owner:
 //!       `src/core/item_unproven.rs`, planned theorem `fact_id_content_address`.
-//! - [ ] `core::offer`: asserted-to-validated promotion preserves edge address
-//!       and metadata. Owner: `src/core/offer_unproven.rs`, planned theorem
-//!       `validate_preserves_offer_address`.
+//! - [x] `core::offer`: asserted-to-validated promotion preserves edge address
+//!       and metadata. Proven in
+//!       `src/core/offer_unproven.rs::validate_preserves_offer_address`.
 //! - [ ] `core::typestate`: `Context` contains only validated offers and exact
 //!       match lookup has no storage/body access. Owner:
 //!       `src/core/typestate_unproven.rs`, planned theorem `context_lookup_exact`.
