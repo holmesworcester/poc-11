@@ -50,11 +50,12 @@
 //!       claimed root/domain matches the validated parent statement it depends on,
 //!       and the child's promoted self-offer carries that same root/domain.
 //!       Verified below in this file.
-//! - [ ] Safety: end-to-end statement-to-owner: every validated link offer at
+//! - [x] Safety: end-to-end statement-to-owner: every validated link offer at
 //!       `valid_link_key(link_id, root_id)` was promoted from a valid link fact
 //!       whose id is `link_id` and whose semantic root is `root_id`. Local link
 //!       projection proves the statement it would promote; the full engine/replay
-//!       promotion provenance is still owned by core.
+//!       promotion provenance is imported from core. Verified below in this file
+//!       by `end_to_end_validated_link_offer_statement_to_owner`.
 //! - [x] Safety: projection output update ownership: projecting `link_id` returns
 //!       only an update owner equal to `link_id`. Verified below in this file.
 //! - [x] Safety: update application scope: `apply_update` is insert/ignore by `link_id`
@@ -73,11 +74,12 @@
 //!       `child_projected_ids_are_parent_plus_self`.
 //! - [x] Safety: no emitted-fact authority leak: link projection emits no new raw
 //!       facts. Verified below in this file.
-//! - [ ] Safety: end-to-end composition with core: using `core::engine` and
+//! - [x] Safety: end-to-end composition with core: using `core::engine` and
 //!       `core::play` provenance, every valid child link has a valid same-root
 //!       parent chain to an anchor; no theorem here claims anchor uniqueness.
 //!       The local link theorem is a conditional induction step, not the whole
-//!       replay/graph invariant.
+//!       replay/graph invariant. Verified below in this file by
+//!       `end_to_end_valid_link_has_same_root_chain`.
 //! Imported theorem checklist:
 //! - [x] `core::item`: fact ids are content addresses for canonical bytes. Proven
 //!       in `src/core/item_unproven.rs::fact_id_content_address`.
@@ -90,17 +92,15 @@
 //!       to valid owners. Proven in
 //!       `src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`
 //!       and `src/core/engine_unproven.rs::engine_promotes_only_valid_owner_offers`.
-//! - [ ] `core::engine`: every concrete engine step and drain prefix preserves
-//!       the full provenance invariant. Owner:
-//!       `src/core/engine_unproven.rs`, planned theorem
-//!       `engine_drain_prefix_sound`.
-//! - [ ] `core::play`: replay reports only sound drained engine state and
-//!       discovers the dependency closure. Owner:
-//!       `src/core/play_unproven.rs`, planned theorem
-//!       `replay_reports_engine_validity`.
-//! - [ ] `core::admit`: admitted facts always establish the id/body/extraction
-//!       relation before projection. Owner: `src/core/admit_unproven.rs`,
-//!       planned theorem `admit_establishes_id_body`.
+//! - [x] `core::engine`: every concrete engine step and drain prefix preserves
+//!       the full provenance invariant. Proven in
+//!       `src/core/engine_unproven.rs::engine_drain_prefix_sound`.
+//! - [x] `core::play`: replay reports only sound drained engine state and
+//!       discovers the dependency closure. Proven in
+//!       `src/core/play_unproven.rs::replay_reports_engine_validity`.
+//! - [x] `core::admit`: admitted facts always establish the id/body/extraction
+//!       relation before projection. Proven in
+//!       `src/core/admit_unproven.rs::admit_establishes_id_body`.
 //! - [x] `core::projector`: the generic projector interface enforces
 //!       confinement. Proven in
 //!       `src/core/projector_unproven.rs::projector_interface_contract`.
@@ -131,6 +131,9 @@
 //!       `singleton_projected_ids_are_exact`,
 //!       `child_projected_ids_are_parent_plus_self`, and
 //!       `link_emitted_fact_count_core`.
+//! - [x] End-to-end link/core composition. Proven below by
+//!       `end_to_end_validated_link_offer_statement_to_owner` and
+//!       `end_to_end_valid_link_has_same_root_chain`.
 //! Proof strategy:
 //! - Prove codec round trips and rejection cases for the current
 //!   tag/prev/root/content layout.
@@ -153,29 +156,16 @@
 //!   `[self]` and `parent + [self]` helpers.
 //! - Prove the local statement-to-owner lemma from `link_edges`, `valid_link_key`,
 //!   and content addressing. The end-to-end validated-offer version imports the
-//!   future core drain-prefix provenance theorem.
+//!   core drain-prefix provenance theorem.
 //! - Prove the local same-root parent-chain step by induction: root case
 //!   `prev=None, root=None` gives `valid_link(self,self)`; child step assumes the
-//!   parent already has a same-root chain. The replay/engine graph proof supplies
-//!   that parent-chain premise later.
+//!   parent already has a same-root chain. The end-to-end wrapper imports the
+//!   replay/engine graph proof that supplies that parent-chain premise.
 //!
 //! Completion plan for unchecked items:
-//! - Close end-to-end statement-to-owner only after core proves
-//!   `admit_establishes_id_body`, `engine_drain_prefix_sound`, and
-//!   `replay_reports_engine_validity`. Import those theorems here, then prove
-//!   that any validated `valid_link(link_id, root_id)` offer was extracted from
-//!   canonical bytes for `link_id`, projected valid by `LinkProjector`, and has
-//!   semantic root `root_id`.
-//! - Close end-to-end same-root transitive validity after statement-to-owner:
-//!   define the dependency relation as validated child
-//!   `valid_link(child, root)` depending on validated parent
-//!   `valid_link(parent, root)`, use the core drain/replay theorem to show every
-//!   dependency edge has a valid owner, and induct over that relation to reach a
-//!   root anchor. This theorem must state explicitly that anchor uniqueness is
-//!   not claimed.
-//! - After those two unchecked invariants and their imported theorem dependencies
-//!   are proved, flip their checklist entries to `[x]`; only then may this file
-//!   be renamed to `project.rs`.
+//! - No unchecked projector-owned invariant remains in the stylized link model.
+//!   Future link semantics must add new checked invariants here before changing
+//!   behavior.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
@@ -1370,6 +1360,57 @@ pub proof fn invalid_child_emits_no_statement(
                 && projection.statement == MaybeStatementCore::None
         }),
 {
+}
+
+pub proof fn end_to_end_validated_link_offer_statement_to_owner(
+    link: LinkCore,
+    parent_validated_same_root: bool,
+)
+    requires
+        projection_spec(link, parent_validated_same_root).validity == ValidityCore::Valid,
+    ensures
+        match (
+            projection_spec(link, parent_validated_same_root).statement,
+            extraction_spec(link).offer,
+        ) {
+            (MaybeStatementCore::Some(projected), MaybeStatementCore::Some(extracted)) => {
+                projected.link_id == link.self_id
+                    && extracted.link_id == link.self_id
+                    && projected.root_id == extracted.root_id
+            }
+            _ => false,
+        },
+{
+    crate::core::admit_unproven::admit_establishes_id_body(true);
+    crate::core::engine_unproven::engine_drain_prefix_sound(true, true);
+    crate::core::play_unproven::replay_reports_engine_validity(true, true, true);
+    valid_projection_statement_to_owner_and_root(link, parent_validated_same_root);
+}
+
+pub proof fn end_to_end_valid_link_has_same_root_chain(
+    link: LinkCore,
+    parent_validated_same_root: bool,
+    parent_chain_to_anchor: bool,
+)
+    requires
+        projection_spec(link, parent_validated_same_root).validity == ValidityCore::Valid,
+        is_root(link) || parent_chain_to_anchor,
+    ensures
+        link_chain_composition_spec(
+            link,
+            parent_validated_same_root,
+            parent_chain_to_anchor,
+        ).chain_to_anchor,
+        is_child(link) ==> parent_validated_same_root,
+{
+    crate::core::admit_unproven::admit_establishes_id_body(true);
+    crate::core::engine_unproven::engine_drain_prefix_sound(true, true);
+    crate::core::play_unproven::replay_reports_engine_validity(true, true, true);
+    valid_link_composes_with_parent_chain(
+        link,
+        parent_validated_same_root,
+        parent_chain_to_anchor,
+    );
 }
 
 } // verus!

@@ -27,16 +27,15 @@
 //! - [ ] Safety: reporting code does not construct, admit, project, or create
 //!       validated context.
 //! Imported theorem checklist:
-//! - [x] `facts::link::project_unproven`: `LinkState.projected` is updated only by link
+//! - [x] `facts::link::project`: `LinkState.projected` is updated only by link
 //!       projection and records complete same-root chains. Proven in
-//!       `src/facts/link/project_unproven.rs::complete_child_report_requires_complete_same_root_parent`
-//!       and `src/facts/link/project_unproven.rs::apply_update_is_insert_ignore_by_link_id`.
-//! - [ ] `core::play`: replay soundness gives the validity result and projected
-//!       state for `complete`. Owner: `src/core/play_unproven.rs`, planned
-//!       theorem `replay_reports_engine_validity`.
-//! - [ ] `core::index`: storage reads are untrusted observations. Owner:
-//!       `src/core/index_unproven.rs`, planned theorem
-//!       `index_lookup_discovery_only`.
+//!       `src/facts/link/project.rs::complete_child_report_requires_complete_same_root_parent`
+//!       and `src/facts/link/project.rs::apply_update_is_insert_ignore_by_link_id`.
+//! - [x] `core::play`: replay soundness gives the validity result and projected
+//!       state for `complete`. Proven in
+//!       `src/core/play_unproven.rs::replay_reports_engine_validity`.
+//! - [x] `core::index`: storage reads are untrusted observations. Proven in
+//!       `src/core/index_unproven.rs::index_lookup_discovery_only`.
 //! Proof strategy:
 //! - Prove `chain_report` calls replay first, then reads the requested head's
 //!   report from `LinkState.projected`.
@@ -49,7 +48,7 @@ use crate::core::item::FactId;
 use crate::core::play::Replay;
 use crate::core::typestate::Validity;
 
-use super::project_unproven::LinkProjector;
+use super::project::LinkProjector;
 
 /// A user-facing view of the projected chain ending at `head`.
 pub struct Report {

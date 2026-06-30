@@ -7,7 +7,7 @@ understand what the logic proves, what the proof assumes, and which remaining
 claims are still owned elsewhere.
 
 Use this guide for fact-family projectors such as
-`src/facts/link/project_unproven.rs`, and for future `src/facts/*/project.rs`
+`src/facts/link/project.rs`, and for future `src/facts/*/project.rs`
 files once their owned invariants are fully proven.
 
 ## Core Rule

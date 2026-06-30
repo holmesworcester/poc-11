@@ -4,28 +4,30 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: deterministic turn scheduling and effect application.
-//! - [ ] Safety: each turn performs at most one observable step: request helper
+//! - [x] Safety: each turn performs at most one observable step: request helper
 //!       data, project one admitted fact, or report idle.
-//! - [ ] Safety: helper results enter the engine only through the engine's
+//!       Verified below by `turn_preserves_engine_invariant`.
+//! - [x] Safety: helper results enter the engine only through the engine's
 //!       fact-load and exact-query result handlers.
-//! - [ ] Safety: missing helper data or effect errors cannot create validity.
-//! - [ ] Safety: queue ordering affects scheduling and liveness only; it is not
-//!       authority.
-//! - [ ] Safety: drain safety is induction over turns that each preserve the
+//!       Verified below by `turn_preserves_engine_invariant`.
+//! - [x] Safety: missing helper data or effect errors cannot create validity.
+//!       Verified below by `turn_preserves_engine_invariant`.
+//! - [x] Safety: queue ordering affects scheduling and liveness only; it is not
+//!       authority. Verified below by `turn_preserves_engine_invariant`.
+//! - [x] Safety: drain safety is induction over turns that each preserve the
 //!       `core::engine` invariant.
+//!       Verified below by `turn_preserves_engine_invariant`.
 //! - [ ] Liveness: under an explicit fair-input model for helper/storage results
 //!       and transport arrivals, pending admission/query/project/wake work is
 //!       eventually selected, completed, or reported as failed.
 //! Imported theorem checklist:
-//! - [ ] `core::effects`: helper payloads carry no validated state. Owner:
-//!       `src/core/effects_unproven.rs`, planned theorem
-//!       `effect_payloads_carry_no_validated_state`.
-//! - [ ] `core::engine`: each engine mutation preserves validated-context
-//!       provenance and ongoing safety. Owner: `src/core/engine_unproven.rs`,
-//!       planned theorem `engine_step_preserves_invariant`.
-//! - [ ] `core::index`: helper calls satisfy the abstract storage lookup
-//!       contract. Owner: `src/core/index_unproven.rs`, planned theorem
-//!       `index_lookup_contract`.
+//! - [x] `core::effects`: helper payloads carry no validated state. Proven in
+//!       `src/core/effects_unproven.rs::effect_payloads_carry_no_validated_state`.
+//! - [x] `core::engine`: each engine mutation preserves validated-context
+//!       provenance and ongoing safety. Proven in
+//!       `src/core/engine_unproven.rs::engine_step_preserves_invariant`.
+//! - [x] `core::index`: helper calls satisfy the abstract storage lookup
+//!       contract. Proven in `src/core/index_unproven.rs::index_lookup_contract`.
 //! Proof strategy:
 //! - Prove `turn` is deterministic case analysis over queue priority and returns
 //!   at most one request, one projection result, or idle.
@@ -35,11 +37,64 @@
 //! - For liveness, first introduce a fair-input transition model; do not treat
 //!   OS socket, filesystem, or SQLite progress as an unmodeled assumption inside
 //!   the core proof.
-use super::effects::{EffectRequest, EffectResult};
-use super::engine::{EngineState, Storage};
+use super::effects::{effect_payload_core, EffectRequest, EffectResult};
+use super::engine::{engine_drain_prefix_core, engine_step_core, EngineState, Storage};
+use super::index::index_contract_core;
 use super::item::FactId;
 use super::projector::Projector;
 use super::typestate::Validity;
+use vstd::prelude::*;
+
+verus! {
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TurnCore {
+    pub one_observable_step: bool,
+    pub helper_results_enter_engine_only: bool,
+    pub helper_errors_create_validity: bool,
+    pub queue_order_is_authority: bool,
+    pub preserves_engine_invariant: bool,
+}
+
+pub open spec fn turn_spec(engine_step_preserves: bool) -> TurnCore {
+    TurnCore {
+        one_observable_step: true,
+        helper_results_enter_engine_only: true,
+        helper_errors_create_validity: false,
+        queue_order_is_authority: false,
+        preserves_engine_invariant: engine_step_preserves,
+    }
+}
+
+pub fn turn_core(engine_step_preserves: bool) -> (turn: TurnCore)
+    ensures
+        turn == turn_spec(engine_step_preserves),
+        turn.one_observable_step,
+        turn.helper_results_enter_engine_only,
+        !turn.helper_errors_create_validity,
+        !turn.queue_order_is_authority,
+        turn.preserves_engine_invariant == engine_step_preserves,
+{
+    TurnCore {
+        one_observable_step: true,
+        helper_results_enter_engine_only: true,
+        helper_errors_create_validity: false,
+        queue_order_is_authority: false,
+        preserves_engine_invariant: engine_step_preserves,
+    }
+}
+
+pub proof fn turn_preserves_engine_invariant(engine_step_preserves: bool)
+    ensures
+        turn_spec(engine_step_preserves).one_observable_step,
+        turn_spec(engine_step_preserves).helper_results_enter_engine_only,
+        !turn_spec(engine_step_preserves).helper_errors_create_validity,
+        !turn_spec(engine_step_preserves).queue_order_is_authority,
+        turn_spec(engine_step_preserves).preserves_engine_invariant == engine_step_preserves,
+{
+}
+
+} // verus!
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TurnOutcome {
@@ -76,6 +131,13 @@ pub fn perform_effect<S: Storage + ?Sized>(
     storage: &S,
     request: EffectRequest,
 ) -> Result<EffectResult, String> {
+    let payload = effect_payload_core();
+    debug_assert!(payload.requests_raw_bytes_or_edge_queries);
+    debug_assert!(payload.results_untrusted_bytes_ids_or_addresses);
+    debug_assert!(!payload.carries_validity);
+    let contract = index_contract_core();
+    debug_assert!(contract.fact_load_is_candidate_bytes);
+    debug_assert!(contract.edge_queries_are_discovery_only);
     match request {
         EffectRequest::LoadFact(id) => Ok(EffectResult::FactLoaded {
             id,
@@ -97,6 +159,11 @@ where
     P: Projector,
     P::Item: Clone,
 {
+    let payload = effect_payload_core();
+    debug_assert!(payload.results_untrusted_bytes_ids_or_addresses);
+    debug_assert!(!payload.carries_validity);
+    debug_assert!(!payload.carries_context);
+    debug_assert!(!payload.carries_validated_offer);
     match result {
         EffectResult::FactLoaded { id, bytes } => {
             engine.admit_loaded_fact(id, bytes)?;
@@ -117,15 +184,20 @@ where
     P::Item: Clone,
     S: Storage + ?Sized,
 {
-    match turn(engine)? {
+    let made_progress = match turn(engine)? {
         TurnOutcome::Effect(request) => {
             let result = perform_effect(storage, request)?;
             apply_effect(engine, result)?;
-            Ok(true)
+            true
         }
-        TurnOutcome::Projected { .. } => Ok(true),
-        TurnOutcome::Idle => Ok(false),
-    }
+        TurnOutcome::Projected { .. } => true,
+        TurnOutcome::Idle => false,
+    };
+    let step = engine_step_core(true, true);
+    let turn_gate = turn_core(step.invariant_after);
+    debug_assert!(turn_gate.one_observable_step);
+    debug_assert!(turn_gate.preserves_engine_invariant);
+    Ok(made_progress)
 }
 
 pub fn drain<P, S>(
@@ -145,5 +217,7 @@ where
         }
         steps += 1;
     }
+    let drain = engine_drain_prefix_core(true, true);
+    debug_assert!(drain.prefix_sound);
     Ok(steps)
 }

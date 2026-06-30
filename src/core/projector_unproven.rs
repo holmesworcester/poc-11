@@ -22,10 +22,11 @@
 //! Imported theorem checklist:
 //! - [x] `core::typestate`: `Context` contains only validated offers. Proven in
 //!       `src/core/typestate_unproven.rs::context_validated_only`.
-//! - [ ] `core::admit` and `core::engine`: projectors receive an `Admitted` token
-//!       only after the id/body relation has been established. Owners:
-//!       `src/core/admit_unproven.rs::admit_establishes_id_body` and
-//!       `src/core/engine_unproven.rs::engine_admit_loaded_establishes_id_body`.
+//! - [x] `core::admit` and `core::engine`: projectors receive an `Admitted` token
+//!       only after the id/body relation has been established. Proven in
+//!       `src/core/admit_unproven.rs::admit_establishes_id_body`,
+//!       `src/core/engine_unproven.rs::engine_admit_local_establishes_id_body`,
+//!       and `src/core/engine_unproven.rs::engine_admit_loaded_establishes_id_body`.
 //! - [x] Local projector interface confinement. Proven below by
 //!       `src/core/projector_unproven.rs::projector_interface_contract`.
 //! Proof strategy:

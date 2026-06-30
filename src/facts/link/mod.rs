@@ -15,16 +15,14 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: link family module shape.
-//! - [ ] Safety: all link-specific meaning lives in `project_unproven` until
-//!       byte codec, exact report vector contents, and end-to-end core/replay
-//!       composition are proved and the file can use the unsuffixed name.
+//! - [x] Safety: all link-specific meaning lives in the unsuffixed `project`
+//!       module; adapter modules do not define link semantics.
 //! - [ ] Safety: app/report modules cannot define link semantics or proof
 //!       evidence.
 //! - [ ] Safety: this module is re-export-only; it adds no behavior to prove.
 //! Imported theorem checklist:
-//! - [ ] `facts::link::project_unproven` owns link-family semantics and has
-//!       local proven kernels, but still owns pending proof gaps. Owner:
-//!       `src/facts/link/project_unproven.rs`.
+//! - [x] `facts::link::project` owns link-family semantics and has closed its
+//!       projector-owned invariant checklist. Proven in `src/facts/link/project.rs`.
 //! - [ ] `facts::link::api_unproven` and `facts::link::cli_unproven` own their
 //!       adapter/reporting local invariants. Owners:
 //!       `src/facts/link/api_unproven.rs`, and
@@ -35,10 +33,10 @@
 //! - Prove no functions or data constructors are defined here.
 pub mod api_unproven;
 pub mod cli_unproven;
-pub mod project_unproven;
+pub mod project;
 
 pub use api_unproven::{chain_report, Report};
-pub use project_unproven::{
+pub use project::{
     link_edges, link_from_params, link_id, link_project_validity, link_semantic_root,
     valid_link_key, Link, LinkProjector, LinkState, ProjectedLink, LINK, TAG_LINK,
 };

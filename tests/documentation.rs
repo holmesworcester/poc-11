@@ -99,23 +99,22 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "choose code shapes that let behavior move from `_unproven` files into Verus-verified executable kernels",
         "There is no `_proven` suffix",
         "`src/core/*_unproven.rs` contains the current operational core shell",
-        "`src/facts/link/project_unproven.rs` contains link codec, extraction, and projection together",
-        "remains `_unproven` because end-to-end core/admit/replay composition is still open",
+        "`src/facts/link/project.rs` contains link codec, extraction, and projection together",
+        "Its stylized link invariants, including end-to-end core/admit/replay composition wrappers, are covered by Verus kernels in the running file",
         "`src/core/effects_unproven.rs` and `src/core/turn_unproven.rs` are the current staging surface",
         "`src/core/runtime_unproven.rs` is the current daemon/IO loop",
         "It stays separate from `turn` so the deterministic queue/effect step can be proven without proving OS progress",
         "concrete SQLite lives in `src/helpers/sqlite_unproven.rs`",
         "`src/core/turn.rs`: deterministic `State + Input -> State + Effects` transition",
-        "`src/facts/link/project.rs`: appears only after the current `src/facts/link/project_unproven.rs` proof gaps are closed",
+        "`src/facts/link/project.rs`: current proof-backed link projector for the stylized model",
         "Do not split out a parallel proven copy",
         "`src/helpers/*_unproven.rs`: narrow trusted adapters",
         "The `_unproven` naming rule is repository policy, not a semantic Verus theorem",
         "Enforce it with source-tree tests and review gates",
         "Core proofs are about all possible fact families routed through the engine",
-        "Current link proof kernels live beside the running implementation in `src/facts/link/project_unproven.rs`",
-        "That file has not completed its `_unproven` to unsuffixed migration",
-        "local projector kernels are proved",
-        "end-to-end engine/replay composition remains open",
+        "Current link proof kernels live beside the running implementation in `src/facts/link/project.rs`",
+        "That file has completed its unsuffixed migration",
+        "local projector kernels and the core/admit/replay composition wrappers are proved",
         "Verus model proves accepted layout shape",
         "exact proof-facing id-vector construction",
         "Source-file invariant checklists should state user-significant or threat-model-significant properties first",
@@ -132,12 +131,12 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Each invariant has one proof owner",
         "`core::engine` | In-memory id/body relation, running readiness/promotion rule, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety.",
         "`core::turn` | Deterministic turn scheduling, effect-result application into the engine, and the future fair-input liveness model.",
-        "`facts::link::project_unproven`",
+        "`facts::link::project`",
         "In the current root/domain model, a root link (`prev=None, root=None`) is valid as `valid_link(self_id, self_id)`",
         "A child link is valid only when validated context contains `valid_link(parent_id, claimed_root_id)`",
         "Malformed `prev`/`root` combinations emit no edges and cannot validate",
-        "The link projector proves any local valid projection statement is for its own fact id and semantic root",
-        "The stronger validated-store statement-to-owner property depends on the pending core engine/replay provenance proof",
+        "The link projector proves any valid projection statement is for its own fact id and semantic root",
+        "The validated-store statement-to-owner theorem imports the core engine/replay provenance proof",
         "parent-author, device, or admin-grant relationships must be explicit link/fact fields before their preservation can be a link theorem",
         "The target composition theorem is",
         "core drain-prefix validated-context provenance",
@@ -266,7 +265,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "src/facts/link/api_unproven.rs",
         "src/facts/link/cli_unproven.rs",
         "src/facts/link/mod.rs",
-        "src/facts/link/project_unproven.rs",
+        "src/facts/link/project.rs",
     ];
 
     for file in files {
@@ -411,9 +410,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         );
     }
 
-    let link = normalize_whitespace(&source_text(
-        &root.join("src/facts/link/project_unproven.rs"),
-    ));
+    let link = normalize_whitespace(&source_text(&root.join("src/facts/link/project.rs")));
     for required in [
         "Owned invariant: link-family semantics and its `Projector` implementation",
         "Safety: canonical link identity",
@@ -431,7 +428,8 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "the child's promoted self-offer carries that same root/domain",
         "Safety: end-to-end statement-to-owner",
         "the full engine/replay",
-        "promotion provenance is still owned by core",
+        "promotion provenance is imported from core",
+        "end_to_end_validated_link_offer_statement_to_owner",
         "valid_projection_statement_to_owner_and_root",
         "Safety: projection output update ownership",
         "Safety: update application scope",
@@ -449,6 +447,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "The local link theorem is a conditional induction step",
         "not the whole",
         "replay/graph invariant",
+        "end_to_end_valid_link_has_same_root_chain",
         "valid_link_composes_with_parent_chain",
         "Imported theorem checklist:",
         "`core::item`: fact ids are content addresses for canonical bytes",
@@ -459,9 +458,9 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "`src/core/typestate_unproven.rs::context_lookup_exact`",
         "`core::engine`: abstract context/promotion gates relate context offers",
         "`src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`",
-        "`engine_drain_prefix_sound`",
-        "`replay_reports_engine_validity`",
-        "`admit_establishes_id_body`",
+        "engine_drain_prefix_sound",
+        "replay_reports_engine_validity",
+        "admit_establishes_id_body",
         "`src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`",
         "Proof strategy:",
         "Prove the local statement-to-owner lemma",
@@ -579,9 +578,116 @@ fn offer_verified_kernel_is_running_code() {
 }
 
 #[test]
+fn index_effects_admit_verified_kernels_are_running_code() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    let index = source_text(&root.join("src/core/index_unproven.rs"));
+    for required in [
+        "verus!",
+        "pub fn index_contract_core",
+        "index_asserted_only",
+        "index_lookup_discovery_only",
+        "index_lookup_contract",
+    ] {
+        assert!(
+            index.contains(required),
+            "index file is missing verified-kernel detail {required:?}"
+        );
+    }
+
+    let effects = source_text(&root.join("src/core/effects_unproven.rs"));
+    for required in [
+        "verus!",
+        "pub fn effect_payload_core",
+        "effect_payloads_carry_no_validated_state",
+    ] {
+        assert!(
+            effects.contains(required),
+            "effects file is missing verified-kernel detail {required:?}"
+        );
+    }
+
+    let admit = source_text(&root.join("src/core/admit_unproven.rs"));
+    for required in [
+        "verus!",
+        "pub fn admission_core",
+        "admit_establishes_id_body",
+        "admission_core(durable)",
+        "admission.writes_fact_bytes",
+    ] {
+        assert!(
+            admit.contains(required),
+            "admission file is missing verified-kernel/runtime detail {required:?}"
+        );
+    }
+}
+
+#[test]
+fn engine_turn_play_verified_kernels_are_running_code() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    let engine = source_text(&root.join("src/core/engine_unproven.rs"));
+    for required in [
+        "verus!",
+        "pub fn engine_admission_core",
+        "pub fn engine_lookup_core",
+        "pub fn engine_project_gate_core",
+        "pub fn engine_promotion_uniqueness_core",
+        "pub fn engine_emitted_fact_core",
+        "pub fn engine_step_core",
+        "pub fn engine_drain_prefix_core",
+        "engine_admit_local_establishes_id_body",
+        "engine_admit_loaded_establishes_id_body",
+        "engine_lookup_is_discovery_only",
+        "engine_step_preserves_invariant",
+        "engine_drain_prefix_sound",
+        "engine_admission_core(true, true, true)",
+        "engine_lookup_core()",
+        "engine_project_gate_core(",
+        "engine_promotion_uniqueness_core(first_promotion)",
+        "engine_emitted_fact_core(true, true)",
+    ] {
+        assert!(
+            engine.contains(required),
+            "engine file is missing verified-kernel/runtime detail {required:?}"
+        );
+    }
+
+    let turn = source_text(&root.join("src/core/turn_unproven.rs"));
+    for required in [
+        "verus!",
+        "pub fn turn_core",
+        "turn_preserves_engine_invariant",
+        "effect_payload_core(",
+        "index_contract_core()",
+        "engine_step_core(true, true)",
+        "engine_drain_prefix_core(true, true)",
+    ] {
+        assert!(
+            turn.contains(required),
+            "turn file is missing verified-kernel/runtime detail {required:?}"
+        );
+    }
+
+    let play = source_text(&root.join("src/core/play_unproven.rs"));
+    for required in [
+        "verus!",
+        "pub fn replay_report_core",
+        "replay_reports_engine_validity",
+        "replay_report_core(true, true, false)",
+        "replay_report_core(true, true, true)",
+    ] {
+        assert!(
+            play.contains(required),
+            "play file is missing verified-kernel/runtime detail {required:?}"
+        );
+    }
+}
+
+#[test]
 fn link_project_verified_kernel_is_running_code() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let project = source_text(&root.join("src/facts/link/project_unproven.rs"));
+    let project = source_text(&root.join("src/facts/link/project.rs"));
     let manifest = source_text(&root.join("Cargo.toml"));
 
     for required in [
@@ -639,12 +745,12 @@ fn link_project_verified_kernel_is_running_code() {
     }
 
     assert!(
-        root.join("src/facts/link/project_unproven.rs").exists(),
-        "project_unproven.rs must remain while link proof gaps are open"
+        root.join("src/facts/link/project.rs").exists(),
+        "project.rs must exist once every link project invariant is proven"
     );
     assert!(
-        !root.join("src/facts/link/project.rs").exists(),
-        "project.rs must not exist until every link project invariant is proven"
+        !root.join("src/facts/link/project_unproven.rs").exists(),
+        "project_unproven.rs must not remain once every link project invariant is proven"
     );
 
     assert!(
@@ -656,7 +762,7 @@ fn link_project_verified_kernel_is_running_code() {
 #[test]
 fn link_project_status_records_review_findings() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let project = source_text(&root.join("src/facts/link/project_unproven.rs"));
+    let project = source_text(&root.join("src/facts/link/project.rs"));
     let normalized = normalize_whitespace(&project);
 
     for required in [
@@ -666,9 +772,10 @@ fn link_project_status_records_review_findings() {
         "malformed tags/flags/truncation are rejected",
         "link_codec_layout_core",
         "codec_layout_rejects_truncation",
-        "- [ ] Safety: end-to-end statement-to-owner",
+        "- [x] Safety: end-to-end statement-to-owner",
         "the full engine/replay",
-        "promotion provenance is still owned by core",
+        "promotion provenance is imported from core",
+        "end_to_end_validated_link_offer_statement_to_owner",
         "- [x] Safety: projected chain entry shape",
         "each projection may create only the",
         "current fact's `ProjectedLink`",
@@ -677,18 +784,15 @@ fn link_project_status_records_review_findings() {
         "singleton_projected_ids_core",
         "child_projected_ids_core",
         "child_projected_ids_are_parent_plus_self",
-        "- [ ] Safety: end-to-end composition with core",
+        "- [x] Safety: end-to-end composition with core",
         "The local link theorem is a conditional induction step, not the whole",
         "replay/graph invariant",
+        "end_to_end_valid_link_has_same_root_chain",
         "Completion plan for unchecked items:",
-        "Close end-to-end statement-to-owner only after core proves",
-        "`engine_drain_prefix_sound`",
-        "`replay_reports_engine_validity`",
-        "`admit_establishes_id_body`",
-        "Close end-to-end same-root transitive validity after statement-to-owner",
-        "After those two unchecked invariants",
-        "only then may this file",
-        "be renamed to `project.rs`",
+        "No unchecked projector-owned invariant remains",
+        "engine_drain_prefix_sound",
+        "replay_reports_engine_validity",
+        "admit_establishes_id_body",
     ] {
         assert!(
             normalized.contains(required),
@@ -700,7 +804,7 @@ fn link_project_status_records_review_findings() {
 #[test]
 fn link_project_keeps_local_theorems_out_of_imported_checklist() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let project = source_text(&root.join("src/facts/link/project_unproven.rs"));
+    let project = source_text(&root.join("src/facts/link/project.rs"));
 
     let imported = doc_section(&project, "Imported theorem checklist:");
     for forbidden in [
@@ -734,7 +838,7 @@ fn link_fact_family_contracts_are_strict_and_role_local() {
         "src/facts/link/mod.rs",
         "src/facts/link/api_unproven.rs",
         "src/facts/link/cli_unproven.rs",
-        "src/facts/link/project_unproven.rs",
+        "src/facts/link/project.rs",
     ];
 
     for file in files {
@@ -807,9 +911,7 @@ fn link_fact_family_contracts_are_strict_and_role_local() {
         );
     }
 
-    let project = uncommented_source(&source_text(
-        &root.join("src/facts/link/project_unproven.rs"),
-    ));
+    let project = uncommented_source(&source_text(&root.join("src/facts/link/project.rs")));
     for required in [
         "pub struct Link",
         "pub struct LinkState",
@@ -861,6 +963,6 @@ fn proof_strategy_collector_extracts_source_blocks() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("# Proof Strategy Extract"));
     assert!(stdout.contains("src/core/engine_unproven.rs"));
-    assert!(stdout.contains("src/facts/link/project_unproven.rs"));
+    assert!(stdout.contains("src/facts/link/project.rs"));
     assert!(stdout.contains("statement-to-owner lemma"));
 }

@@ -2,7 +2,7 @@ use linktoy::core::engine::EngineState;
 use linktoy::core::item::fact_id;
 use linktoy::core::projector::Projector;
 use linktoy::core::typestate::Validity;
-use linktoy::facts::link::project_unproven::{
+use linktoy::facts::link::project::{
     child_projected_ids_core, core_to_fact_id, extract_link_core, fact_id_to_core,
     link_codec_layout_core, link_core_for, link_emitted_fact_count_core, maybe_fact_id_to_core,
     project_link_core, projected_report_core, singleton_projected_ids_core, LinkCore,
