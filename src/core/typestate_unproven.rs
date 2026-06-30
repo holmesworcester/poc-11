@@ -16,8 +16,8 @@
 //! Imported theorem checklist:
 //! - [x] `core::offer`: only validated offers have type `Offer<Validated>`.
 //!       Proven in `src/core/offer_unproven.rs::validated_offer_typestate_only`.
-//! - [x] `core::engine`: in the proof-facing transition model, every validated
-//!       offer placed into context has a valid owner. Proven in
+//! - [x] `core::engine`: in the abstract transition helper model, every
+//!       validated offer placed into context has a valid owner. Proven in
 //!       `src/core/engine_unproven.rs::engine_context_offers_have_valid_owners`.
 //! - [x] Local context representation and exact lookup. Proven below by
 //!       `src/core/typestate_unproven.rs::context_validated_only` and

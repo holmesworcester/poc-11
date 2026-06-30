@@ -103,7 +103,7 @@ pub fn replay_lines(idx: &dyn Index, window: usize) -> Result<Vec<String>, Strin
     let seed_set: HashSet<FactId> = seeds.iter().copied().collect();
 
     let memo = replay::<LinkProjector>(idx, &seeds)?;
-    let mut projected: Vec<FactId> = memo.keys().copied().collect();
+    let mut projected: Vec<FactId> = memo.keys().collect();
     projected.sort();
     let pulled = projected
         .iter()

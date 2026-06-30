@@ -1,5 +1,6 @@
 //! Queue-oriented in-memory engine model. Durable storage remains behind
-//! [`Storage`]; this module owns the proof-facing state split:
+//! [`Storage`]; this module keeps the running state intentionally Vec-backed so
+//! the Verus proof target is the same shape as the code we execute:
 //!
 //! - `to_admit`: load/decode/index facts into memory.
 //! - `to_project`: validate already-admitted facts.
@@ -21,26 +22,42 @@
 //! - [ ] Safety: a projector is called only after every asserted need has a
 //!       matching validated offer; it receives only validated offers whose
 //!       addresses match needs asserted by the fact being projected.
-//! - [x] Safety: in the proof-facing transition model, every validated offer is
-//!       owned by a fact already projected valid and was asserted by that same
-//!       owner. Verified below by `engine_transition_trace_preserves_invariant`.
+//! - [x] Safety: abstract transition helper coverage: every modeled validated
+//!       offer is owned by a fact already projected valid and was asserted by
+//!       that same owner. Verified below by
+//!       `engine_transition_trace_preserves_invariant`. This does not complete
+//!       the runtime transition proof.
 //! - [ ] Safety: family-private projector state is not authority: a projector may
 //!       return state updates only for the fact being projected, and the engine
 //!       promotes offers and emitted facts only after readiness and projector
 //!       validity are both established.
-//! - [x] Safety: in the proof-facing transition model, one owner contributes at
-//!       most one validated offer for a given match address. Verified below by
-//!       `engine_transition_trace_preserves_invariant`.
-//! - [x] Safety: in the proof-facing transition model, raw bytes returned in
-//!       `ProjectOutcome.emitted` do not inherit authority from the emitting fact;
-//!       they re-enter the admission queue. Verified below by
-//!       `emitted_raw_fact_reenters_admission_queue`.
-//! - [x] Safety: every proof-facing admit/query/project/promote/emit transition
-//!       preserves these invariants, so every modeled transition prefix is sound.
-//!       Verified below by `engine_single_transition_preserves_invariant` and
-//!       `engine_transition_trace_preserves_invariant`.
-//! - [ ] Safety: the concrete runtime `EngineState` HashMap/HashSet/VecDeque
-//!       implementation refines the proof-facing transition model.
+//! - [x] Safety: abstract transition helper coverage: one owner contributes at
+//!       most one modeled validated offer for a given match address. Verified
+//!       below by `engine_transition_trace_preserves_invariant`. This does not
+//!       complete the runtime transition proof.
+//! - [x] Safety: abstract transition helper coverage: raw bytes returned in
+//!       `ProjectOutcome.emitted` do not inherit authority from the emitting
+//!       fact; they re-enter the modeled admission queue. Verified below by
+//!       `emitted_raw_fact_reenters_admission_queue`. This does not complete the
+//!       runtime transition proof.
+//! - [x] Safety: abstract transition helper coverage: recorded dependency edges
+//!       have valid consumers, valid providers, and provider validated offers.
+//!       Verified below by `record_dependency_preserves_invariant` and
+//!       `engine_dependency_edge_has_valid_provider`. This does not complete the
+//!       runtime transition proof.
+//! - [x] Safety: every abstract admit/query/project/promote/emit transition
+//!       preserves these modeled invariants, so every modeled transition prefix
+//!       is sound. Verified below by `engine_single_transition_preserves_invariant`
+//!       and `engine_transition_trace_preserves_invariant`. This does not
+//!       complete the runtime transition proof.
+//! - [x] Safety: runtime id queue scheduling uses Verus-verified bytewise fact-id
+//!       equality and a Verus-verified Vec-backed unique-enqueue transition.
+//!       Runtime `enqueue_admit` and `enqueue_project` call this kernel directly.
+//!       Verified below by `runtime_fact_id_eq_core`,
+//!       `runtime_queue_contains_id`, and `runtime_enqueue_id_core`.
+//! - [ ] Safety: the concrete runtime `EngineState` Vec-backed implementation
+//!       is the proof target for the transition invariant, without an
+//!       unproved HashMap/HashSet/VecDeque refinement layer.
 //! Imported theorem checklist:
 //! - [x] `core::item`: fact ids identify canonical bytes. Proven in
 //!       `src/core/item_unproven.rs::fact_id_content_address`.
@@ -59,24 +76,28 @@
 //!       `EmittedFact` payloads. Proven in
 //!       `src/core/projector_unproven.rs::projector_interface_contract`.
 //! Proof strategy:
-//! - Maintain the proof model and state predicate over memory facts, asserted
-//!   edges, validity, validated offers, promoted offer keys, and queues.
-//! - Prove each proof-facing transition preserves the predicate: in-memory
-//!   admission, storage load result, need-query result, projection, raw
-//!   emitted-byte admission, and offer-query result. The load/query transitions
-//!   may enqueue additional ids or addresses to inspect, but they do not mutate
-//!   validity or validated offers.
+//! - Maintain the runtime Vec-backed state predicate over memory facts, asserted
+//!   edges, validity, validated offers, recorded dependencies, promoted offer
+//!   keys, and queues.
+//! - Prove each runtime transition preserves the predicate: in-memory admission,
+//!   storage load result, need-query result, projection, raw emitted-byte
+//!   admission, and offer-query result. The load/query transitions may enqueue
+//!   additional ids or addresses to inspect, but they do not mutate validity,
+//!   validated offers, or recorded dependencies.
 //! - For projection, prove readiness first, build context only from matching
 //!   validated offers, run the projector, reject any update whose owner is not the
 //!   projected fact, apply returned family-private updates through
 //!   `P::apply_update`, and promote asserted offers only when projector validity
 //!   is `Valid`.
+//! - For dependency recording, prove every recorded consumer/provider pair is
+//!   already valid and that the provider's offer was validated in the running
+//!   state.
 //! - Prove modeled drain safety by induction over transition steps; this is now
-//!   the `engine_transition_trace_preserves_invariant` theorem. The remaining
-//!   open work is proving the concrete runtime queues/maps refine this model.
+//!   the `engine_transition_trace_preserves_invariant` theorem. Runtime id queue
+//!   enqueue has been moved onto a directly called Verus kernel. The remaining
+//!   work is moving projection, promotion, dependency recording, and effect
+//!   result transitions onto Vec-backed runtime transition helpers directly.
 //!   Prove completeness or liveness separately from safety.
-
-use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::admit::Admitted;
 use super::index::Index;
@@ -123,11 +144,19 @@ pub struct EngineValidatedOfferCore {
     pub addr: EngineAddrCore,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EngineDependencyCore {
+    pub consumer: EngineIdCore,
+    pub provider: EngineIdCore,
+    pub addr: EngineAddrCore,
+}
+
 pub struct EngineStateCore {
     pub admitted: Seq<EngineIdCore>,
     pub asserted: Seq<EngineEdgeCore>,
     pub valid: Seq<EngineIdCore>,
     pub validated: Seq<EngineValidatedOfferCore>,
+    pub dependencies: Seq<EngineDependencyCore>,
     pub to_admit: Seq<EngineIdCore>,
     pub to_project: Seq<EngineIdCore>,
     pub need_queries: Seq<EngineAddrCore>,
@@ -142,6 +171,7 @@ pub enum EngineTransitionCore {
     QueryResultEnqueue(EngineIdCore),
     ProjectValid(EngineIdCore),
     PromoteOffer(EngineIdCore, EngineAddrCore),
+    RecordDependency(EngineIdCore, EngineIdCore, EngineAddrCore),
     EmitRawFact(EngineIdCore),
 }
 
@@ -169,6 +199,19 @@ pub closed spec fn validated_offer_for(
     exists |i: int| 0 <= i < validated.len() && validated[i].owner == owner && validated[i].addr == addr
 }
 
+pub closed spec fn dependency_edge_for(
+    dependencies: Seq<EngineDependencyCore>,
+    consumer: EngineIdCore,
+    provider: EngineIdCore,
+    addr: EngineAddrCore,
+) -> bool {
+    exists |i: int|
+        0 <= i < dependencies.len()
+            && dependencies[i].consumer == consumer
+            && dependencies[i].provider == provider
+            && dependencies[i].addr == addr
+}
+
 pub closed spec fn validated_offer_provenance(state: EngineStateCore) -> bool {
     forall |i: int|
         0 <= i < state.validated.len() ==>
@@ -177,6 +220,18 @@ pub closed spec fn validated_offer_provenance(state: EngineStateCore) -> bool {
                     state.asserted,
                     state.validated[i].owner,
                     state.validated[i].addr,
+                )
+}
+
+pub closed spec fn dependency_provenance(state: EngineStateCore) -> bool {
+    forall |i: int|
+        0 <= i < state.dependencies.len() ==>
+            contains_id(state.valid, #[trigger] state.dependencies[i].consumer)
+                && contains_id(state.valid, state.dependencies[i].provider)
+                && validated_offer_for(
+                    state.validated,
+                    state.dependencies[i].provider,
+                    state.dependencies[i].addr,
                 )
 }
 
@@ -189,7 +244,9 @@ pub closed spec fn promoted_offer_unique_per_owner_addr(state: EngineStateCore) 
 }
 
 pub closed spec fn engine_invariant(state: EngineStateCore) -> bool {
-    validated_offer_provenance(state) && promoted_offer_unique_per_owner_addr(state)
+    validated_offer_provenance(state)
+        && dependency_provenance(state)
+        && promoted_offer_unique_per_owner_addr(state)
 }
 
 pub proof fn contains_id_push_preserves_existing(
@@ -237,12 +294,67 @@ pub proof fn validated_offer_push_adds_offer(
     assert(validated.push(EngineValidatedOfferCore { owner, addr })[i] == EngineValidatedOfferCore { owner, addr });
 }
 
+pub proof fn validated_offer_push_preserves_existing(
+    validated: Seq<EngineValidatedOfferCore>,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+    pushed: EngineValidatedOfferCore,
+)
+    requires
+        validated_offer_for(validated, owner, addr),
+    ensures
+        validated_offer_for(validated.push(pushed), owner, addr),
+{
+    let i = choose |i: int| 0 <= i < validated.len() && validated[i].owner == owner && validated[i].addr == addr;
+    assert(validated.push(pushed)[i] == validated[i]);
+}
+
+pub proof fn dependency_push_preserves_existing(
+    dependencies: Seq<EngineDependencyCore>,
+    consumer: EngineIdCore,
+    provider: EngineIdCore,
+    addr: EngineAddrCore,
+    pushed: EngineDependencyCore,
+)
+    requires
+        dependency_edge_for(dependencies, consumer, provider, addr),
+    ensures
+        dependency_edge_for(dependencies.push(pushed), consumer, provider, addr),
+{
+    let i = choose |i: int|
+        0 <= i < dependencies.len()
+            && dependencies[i].consumer == consumer
+            && dependencies[i].provider == provider
+            && dependencies[i].addr == addr;
+    assert(dependencies.push(pushed)[i] == dependencies[i]);
+}
+
+pub proof fn dependency_push_adds_dependency(
+    dependencies: Seq<EngineDependencyCore>,
+    consumer: EngineIdCore,
+    provider: EngineIdCore,
+    addr: EngineAddrCore,
+)
+    ensures
+        dependency_edge_for(
+            dependencies.push(EngineDependencyCore { consumer, provider, addr }),
+            consumer,
+            provider,
+            addr,
+        ),
+{
+    let i = dependencies.len() as int;
+    assert(dependencies.push(EngineDependencyCore { consumer, provider, addr })[i]
+        == EngineDependencyCore { consumer, provider, addr });
+}
+
 pub closed spec fn empty_engine_state() -> EngineStateCore {
     EngineStateCore {
         admitted: Seq::empty(),
         asserted: Seq::empty(),
         valid: Seq::empty(),
         validated: Seq::empty(),
+        dependencies: Seq::empty(),
         to_admit: Seq::empty(),
         to_project: Seq::empty(),
         need_queries: Seq::empty(),
@@ -259,6 +371,7 @@ pub closed spec fn state_enqueue_admit(
         asserted: state.asserted,
         valid: state.valid,
         validated: state.validated,
+        dependencies: state.dependencies,
         to_admit: state.to_admit.push(id),
         to_project: state.to_project,
         need_queries: state.need_queries,
@@ -275,6 +388,7 @@ pub closed spec fn state_admit_canonical_fact(
         asserted: state.asserted,
         valid: state.valid,
         validated: state.validated,
+        dependencies: state.dependencies,
         to_admit: state.to_admit,
         to_project: state.to_project.push(id),
         need_queries: state.need_queries,
@@ -291,6 +405,7 @@ pub closed spec fn state_index_asserted_edge(
         asserted: state.asserted.push(edge),
         valid: state.valid,
         validated: state.validated,
+        dependencies: state.dependencies,
         to_admit: state.to_admit,
         to_project: state.to_project,
         need_queries: if edge.kind == EngineEdgeKindCore::Need {
@@ -311,6 +426,7 @@ pub closed spec fn state_query_result_enqueue(
         asserted: state.asserted,
         valid: state.valid,
         validated: state.validated,
+        dependencies: state.dependencies,
         to_admit: state.to_admit.push(id),
         to_project: state.to_project.push(id),
         need_queries: state.need_queries,
@@ -327,6 +443,7 @@ pub closed spec fn state_project_valid(
         asserted: state.asserted,
         valid: state.valid.push(id),
         validated: state.validated,
+        dependencies: state.dependencies,
         to_admit: state.to_admit,
         to_project: state.to_project,
         need_queries: state.need_queries,
@@ -344,10 +461,30 @@ pub closed spec fn state_promote_offer(
         asserted: state.asserted,
         valid: state.valid,
         validated: state.validated.push(EngineValidatedOfferCore { owner, addr }),
+        dependencies: state.dependencies,
         to_admit: state.to_admit,
         to_project: state.to_project,
         need_queries: state.need_queries,
         offer_queries: state.offer_queries.push(addr),
+    }
+}
+
+pub closed spec fn state_record_dependency(
+    state: EngineStateCore,
+    consumer: EngineIdCore,
+    provider: EngineIdCore,
+    addr: EngineAddrCore,
+) -> EngineStateCore {
+    EngineStateCore {
+        admitted: state.admitted,
+        asserted: state.asserted,
+        valid: state.valid,
+        validated: state.validated,
+        dependencies: state.dependencies.push(EngineDependencyCore { consumer, provider, addr }),
+        to_admit: state.to_admit,
+        to_project: state.to_project,
+        need_queries: state.need_queries,
+        offer_queries: state.offer_queries,
     }
 }
 
@@ -368,6 +505,12 @@ pub closed spec fn transition_precondition(
                 && asserted_offer_for(state.asserted, owner, addr)
                 && !validated_offer_for(state.validated, owner, addr)
         }
+        EngineTransitionCore::RecordDependency(consumer, provider, addr) => {
+            contains_id(state.valid, consumer)
+                && contains_id(state.valid, provider)
+                && validated_offer_for(state.validated, provider, addr)
+                && !dependency_edge_for(state.dependencies, consumer, provider, addr)
+        }
         _ => true,
     }
 }
@@ -383,6 +526,9 @@ pub closed spec fn apply_transition(
         EngineTransitionCore::QueryResultEnqueue(id) => state_query_result_enqueue(state, id),
         EngineTransitionCore::ProjectValid(id) => state_project_valid(state, id),
         EngineTransitionCore::PromoteOffer(owner, addr) => state_promote_offer(state, owner, addr),
+        EngineTransitionCore::RecordDependency(consumer, provider, addr) => {
+            state_record_dependency(state, consumer, provider, addr)
+        }
         EngineTransitionCore::EmitRawFact(id) => state_emit_raw_fact(state, id),
     }
 }
@@ -495,6 +641,46 @@ pub proof fn project_valid_preserves_invariant(state: EngineStateCore, id: Engin
         contains_id_push_preserves_existing(state.valid, state.validated[i].owner, id);
         assert(asserted_offer_for(state.asserted, state.validated[i].owner, state.validated[i].addr));
     }
+    assert forall |i: int| 0 <= i < state.dependencies.len() implies
+        contains_id(
+            state_project_valid(state, id).valid,
+            #[trigger] state_project_valid(state, id).dependencies[i].consumer,
+        )
+            && contains_id(
+                state_project_valid(state, id).valid,
+                state_project_valid(state, id).dependencies[i].provider,
+            )
+            && validated_offer_for(
+                state_project_valid(state, id).validated,
+                state_project_valid(state, id).dependencies[i].provider,
+                state_project_valid(state, id).dependencies[i].addr,
+            )
+    by {
+        assert(state_project_valid(state, id).dependencies[i] == state.dependencies[i]);
+        assert(contains_id(state.valid, state.dependencies[i].consumer));
+        contains_id_push_preserves_existing(state.valid, state.dependencies[i].consumer, id);
+        assert(contains_id(state.valid, state.dependencies[i].provider));
+        contains_id_push_preserves_existing(state.valid, state.dependencies[i].provider, id);
+        assert(validated_offer_for(
+            state.validated,
+            state.dependencies[i].provider,
+            state.dependencies[i].addr,
+        ));
+    }
+    assert forall |i: int, j: int|
+        0 <= i < state_project_valid(state, id).validated.len()
+            && 0 <= j < state_project_valid(state, id).validated.len()
+            && i != j
+        implies
+            !(#[trigger] state_project_valid(state, id).validated[i] == #[trigger] state_project_valid(state, id).validated[j]
+                || state_project_valid(state, id).validated[i].owner
+                    == state_project_valid(state, id).validated[j].owner
+                    && state_project_valid(state, id).validated[i].addr
+                        == state_project_valid(state, id).validated[j].addr)
+    by {
+        assert(state_project_valid(state, id).validated == state.validated);
+        assert(promoted_offer_unique_per_owner_addr(state));
+    }
 }
 
 pub proof fn promote_offer_preserves_invariant(
@@ -510,6 +696,85 @@ pub proof fn promote_offer_preserves_invariant(
     ensures
         engine_invariant(state_promote_offer(state, owner, addr)),
 {
+    assert forall |i: int| 0 <= i < state.dependencies.len() implies
+        contains_id(
+            state_promote_offer(state, owner, addr).valid,
+            #[trigger] state_promote_offer(state, owner, addr).dependencies[i].consumer,
+        )
+            && contains_id(
+                state_promote_offer(state, owner, addr).valid,
+                state_promote_offer(state, owner, addr).dependencies[i].provider,
+            )
+            && validated_offer_for(
+                state_promote_offer(state, owner, addr).validated,
+                state_promote_offer(state, owner, addr).dependencies[i].provider,
+                state_promote_offer(state, owner, addr).dependencies[i].addr,
+            )
+    by {
+        assert(state_promote_offer(state, owner, addr).dependencies[i] == state.dependencies[i]);
+        assert(contains_id(state.valid, state.dependencies[i].consumer));
+        assert(contains_id(state.valid, state.dependencies[i].provider));
+        assert(validated_offer_for(
+            state.validated,
+            state.dependencies[i].provider,
+            state.dependencies[i].addr,
+        ));
+        validated_offer_push_preserves_existing(
+            state.validated,
+            state.dependencies[i].provider,
+            state.dependencies[i].addr,
+            EngineValidatedOfferCore { owner, addr },
+        );
+    }
+}
+
+pub proof fn record_dependency_preserves_invariant(
+    state: EngineStateCore,
+    consumer: EngineIdCore,
+    provider: EngineIdCore,
+    addr: EngineAddrCore,
+)
+    requires
+        engine_invariant(state),
+        contains_id(state.valid, consumer),
+        contains_id(state.valid, provider),
+        validated_offer_for(state.validated, provider, addr),
+        !dependency_edge_for(state.dependencies, consumer, provider, addr),
+    ensures
+        engine_invariant(state_record_dependency(state, consumer, provider, addr)),
+{
+    assert forall |i: int| 0 <= i < state_record_dependency(state, consumer, provider, addr).dependencies.len() implies
+        contains_id(
+            state_record_dependency(state, consumer, provider, addr).valid,
+            #[trigger] state_record_dependency(state, consumer, provider, addr).dependencies[i].consumer,
+        )
+            && contains_id(
+                state_record_dependency(state, consumer, provider, addr).valid,
+                state_record_dependency(state, consumer, provider, addr).dependencies[i].provider,
+            )
+            && validated_offer_for(
+                state_record_dependency(state, consumer, provider, addr).validated,
+                state_record_dependency(state, consumer, provider, addr).dependencies[i].provider,
+                state_record_dependency(state, consumer, provider, addr).dependencies[i].addr,
+            )
+    by {
+        if i < state.dependencies.len() {
+            assert(state_record_dependency(state, consumer, provider, addr).dependencies[i]
+                == state.dependencies[i]);
+            assert(contains_id(state.valid, state.dependencies[i].consumer));
+            assert(contains_id(state.valid, state.dependencies[i].provider));
+            assert(validated_offer_for(
+                state.validated,
+                state.dependencies[i].provider,
+                state.dependencies[i].addr,
+            ));
+        } else {
+            assert(i == state.dependencies.len());
+            assert(state_record_dependency(state, consumer, provider, addr).dependencies[i]
+                == EngineDependencyCore { consumer, provider, addr });
+        }
+    }
+    dependency_push_adds_dependency(state.dependencies, consumer, provider, addr);
 }
 
 pub proof fn emitted_raw_fact_reenters_admission_queue(
@@ -551,6 +816,9 @@ pub proof fn engine_single_transition_preserves_invariant(
         }
         EngineTransitionCore::PromoteOffer(owner, addr) => {
             promote_offer_preserves_invariant(state, owner, addr);
+        }
+        EngineTransitionCore::RecordDependency(consumer, provider, addr) => {
+            record_dependency_preserves_invariant(state, consumer, provider, addr);
         }
         EngineTransitionCore::EmitRawFact(id) => {
             emitted_raw_fact_reenters_admission_queue(state, id);
@@ -664,6 +932,121 @@ pub proof fn engine_validated_offer_for_has_valid_owner(
     engine_context_offers_have_valid_owners(state, i);
 }
 
+pub proof fn engine_dependency_edge_has_valid_provider(
+    state: EngineStateCore,
+    consumer: EngineIdCore,
+    provider: EngineIdCore,
+    addr: EngineAddrCore,
+)
+    requires
+        engine_invariant(state),
+        dependency_edge_for(state.dependencies, consumer, provider, addr),
+    ensures
+        contains_id(state.valid, consumer),
+        contains_id(state.valid, provider),
+        validated_offer_for(state.validated, provider, addr),
+{
+    let i = choose |i: int|
+        0 <= i < state.dependencies.len()
+            && state.dependencies[i].consumer == consumer
+            && state.dependencies[i].provider == provider
+            && state.dependencies[i].addr == addr;
+    assert(0 <= i < state.dependencies.len());
+    assert(state.dependencies[i].consumer == consumer);
+    assert(state.dependencies[i].provider == provider);
+    assert(state.dependencies[i].addr == addr);
+}
+
+pub closed spec fn runtime_fact_id_eq(left: [u8; 32], right: [u8; 32]) -> bool {
+    left[0] == right[0] && left[1] == right[1] && left[2] == right[2] && left[3] == right[3]
+        && left[4] == right[4] && left[5] == right[5] && left[6] == right[6]
+        && left[7] == right[7] && left[8] == right[8] && left[9] == right[9]
+        && left[10] == right[10] && left[11] == right[11] && left[12] == right[12]
+        && left[13] == right[13] && left[14] == right[14] && left[15] == right[15]
+        && left[16] == right[16] && left[17] == right[17] && left[18] == right[18]
+        && left[19] == right[19] && left[20] == right[20] && left[21] == right[21]
+        && left[22] == right[22] && left[23] == right[23] && left[24] == right[24]
+        && left[25] == right[25] && left[26] == right[26] && left[27] == right[27]
+        && left[28] == right[28] && left[29] == right[29] && left[30] == right[30]
+        && left[31] == right[31]
+}
+
+pub fn runtime_fact_id_eq_core(left: [u8; 32], right: [u8; 32]) -> (equal: bool)
+    ensures
+        equal == runtime_fact_id_eq(left, right),
+{
+    left[0] == right[0] && left[1] == right[1] && left[2] == right[2] && left[3] == right[3]
+        && left[4] == right[4] && left[5] == right[5] && left[6] == right[6]
+        && left[7] == right[7] && left[8] == right[8] && left[9] == right[9]
+        && left[10] == right[10] && left[11] == right[11] && left[12] == right[12]
+        && left[13] == right[13] && left[14] == right[14] && left[15] == right[15]
+        && left[16] == right[16] && left[17] == right[17] && left[18] == right[18]
+        && left[19] == right[19] && left[20] == right[20] && left[21] == right[21]
+        && left[22] == right[22] && left[23] == right[23] && left[24] == right[24]
+        && left[25] == right[25] && left[26] == right[26] && left[27] == right[27]
+        && left[28] == right[28] && left[29] == right[29] && left[30] == right[30]
+        && left[31] == right[31]
+}
+
+pub closed spec fn runtime_id_seq_contains(ids: Seq<[u8; 32]>, id: [u8; 32]) -> bool {
+    exists |i: int| 0 <= i < ids.len() && runtime_fact_id_eq(ids[i], id)
+}
+
+pub proof fn runtime_fact_id_eq_reflexive(id: [u8; 32])
+    ensures
+        runtime_fact_id_eq(id, id),
+{
+}
+
+pub proof fn runtime_id_seq_push_contains(ids: Seq<[u8; 32]>, id: [u8; 32])
+    ensures
+        runtime_id_seq_contains(ids.push(id), id),
+{
+    let i = ids.len() as int;
+    runtime_fact_id_eq_reflexive(id);
+    assert(ids.push(id)[i] == id);
+    assert(runtime_fact_id_eq(ids.push(id)[i], id));
+}
+
+#[allow(clippy::ptr_arg)]
+pub fn runtime_queue_contains_id(queue: &Vec<[u8; 32]>, id: [u8; 32]) -> (found: bool)
+    ensures
+        found == runtime_id_seq_contains(queue@, id),
+{
+    let mut i: usize = 0;
+    while i < queue.len()
+        invariant
+            0 <= i <= queue.len(),
+            forall |j: int| 0 <= j < i ==> !runtime_fact_id_eq(queue@[j], id),
+        decreases queue.len() - i,
+    {
+        if runtime_fact_id_eq_core(queue[i], id) {
+            assert(runtime_fact_id_eq(queue@[i as int], id));
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+pub fn runtime_enqueue_id_core(queue: Vec<[u8; 32]>, id: [u8; 32]) -> (out: Vec<[u8; 32]>)
+    ensures
+        runtime_id_seq_contains(out@, id),
+        runtime_id_seq_contains(queue@, id) ==> out@ == queue@,
+        !runtime_id_seq_contains(queue@, id) ==> out@ == queue@.push(id),
+{
+    if runtime_queue_contains_id(&queue, id) {
+        queue
+    } else {
+        let mut out = queue;
+        out.push(id);
+        proof {
+            runtime_id_seq_push_contains(queue@, id);
+        }
+        out
+    }
+}
+
 } // verus!
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -705,74 +1088,89 @@ impl<T: Index + ?Sized> Storage for T {
     }
 }
 
+pub struct MemEntry<I> {
+    pub id: FactId,
+    pub item: I,
+    pub edges: Vec<Offer<Asserted>>,
+}
+
 pub struct MemIndex<P: Projector> {
-    facts: HashMap<FactId, P::Item>,
-    edges: HashMap<FactId, Vec<Offer<Asserted>>>,
-    offers: HashMap<EdgeAddr, HashSet<FactId>>,
-    needs: HashMap<EdgeAddr, HashSet<FactId>>,
+    entries: Vec<MemEntry<P::Item>>,
 }
 
 impl<P: Projector> Default for MemIndex<P> {
     fn default() -> Self {
         Self {
-            facts: HashMap::new(),
-            edges: HashMap::new(),
-            offers: HashMap::new(),
-            needs: HashMap::new(),
+            entries: Vec::new(),
         }
     }
 }
 
 impl<P: Projector> MemIndex<P> {
     pub fn contains(&self, id: &FactId) -> bool {
-        self.facts.contains_key(id)
+        self.entries
+            .iter()
+            .any(|entry| runtime_fact_id_eq_core(entry.id, *id))
     }
 
     pub fn len(&self) -> usize {
-        self.facts.len()
+        self.entries.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.facts.is_empty()
+        self.entries.is_empty()
     }
 
     fn item(&self, id: &FactId) -> Option<&P::Item> {
-        self.facts.get(id)
+        self.entries
+            .iter()
+            .find(|entry| runtime_fact_id_eq_core(entry.id, *id))
+            .map(|entry| &entry.item)
     }
 
     fn edges(&self, id: &FactId) -> Option<&[Offer<Asserted>]> {
-        self.edges.get(id).map(Vec::as_slice)
+        self.entries
+            .iter()
+            .find(|entry| runtime_fact_id_eq_core(entry.id, *id))
+            .map(|entry| entry.edges.as_slice())
     }
 
     fn insert(&mut self, id: FactId, item: P::Item, edges: Vec<Offer<Asserted>>) -> bool {
-        if self.facts.contains_key(&id) {
+        if self.contains(&id) {
             return false;
         }
-        for edge in &edges {
-            let addr = EdgeAddr::from_offer(edge);
-            if edge.is_offer() {
-                self.offers.entry(addr).or_default().insert(id);
-            } else if edge.is_need() {
-                self.needs.entry(addr).or_default().insert(id);
-            }
-        }
-        self.facts.insert(id, item);
-        self.edges.insert(id, edges);
+        self.entries.push(MemEntry { id, item, edges });
         true
     }
 
     fn offerers(&self, addr: EdgeAddr) -> Vec<FactId> {
-        self.offers
-            .get(&addr)
-            .map(|owners| owners.iter().copied().collect())
-            .unwrap_or_default()
+        let mut ids = Vec::new();
+        for entry in &self.entries {
+            if entry
+                .edges
+                .iter()
+                .any(|edge| edge.is_offer() && EdgeAddr::from_offer(edge) == addr)
+                && !runtime_queue_contains_id(&ids, entry.id)
+            {
+                ids.push(entry.id);
+            }
+        }
+        ids
     }
 
     fn needers(&self, addr: EdgeAddr) -> Vec<FactId> {
-        self.needs
-            .get(&addr)
-            .map(|owners| owners.iter().copied().collect())
-            .unwrap_or_default()
+        let mut ids = Vec::new();
+        for entry in &self.entries {
+            if entry
+                .edges
+                .iter()
+                .any(|edge| edge.is_need() && EdgeAddr::from_offer(edge) == addr)
+                && !runtime_queue_contains_id(&ids, entry.id)
+            {
+                ids.push(entry.id);
+            }
+        }
+        ids
     }
 }
 
@@ -782,21 +1180,74 @@ pub struct ValidatedOffer {
     pub offer: Offer<Validated>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct RecordedDependency {
+    pub consumer: FactId,
+    pub provider: FactId,
+    pub addr: EdgeAddr,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ValidityEntry {
+    pub id: FactId,
+    pub validity: Validity,
+}
+
+#[derive(Clone, Default)]
+pub struct ValidityIndex {
+    entries: Vec<ValidityEntry>,
+}
+
+impl ValidityIndex {
+    pub fn get(&self, id: &FactId) -> Option<&Validity> {
+        self.entries
+            .iter()
+            .find(|entry| runtime_fact_id_eq_core(entry.id, *id))
+            .map(|entry| &entry.validity)
+    }
+
+    pub fn insert(&mut self, id: FactId, validity: Validity) -> Option<Validity> {
+        for entry in &mut self.entries {
+            if runtime_fact_id_eq_core(entry.id, id) {
+                let old = entry.validity;
+                entry.validity = validity;
+                return Some(old);
+            }
+        }
+        self.entries.push(ValidityEntry { id, validity });
+        None
+    }
+
+    pub fn contains_key(&self, id: &FactId) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| runtime_fact_id_eq_core(entry.id, *id))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (FactId, Validity)> + '_ {
+        self.entries.iter().map(|entry| (entry.id, entry.validity))
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = FactId> + '_ {
+        self.entries.iter().map(|entry| entry.id)
+    }
+}
+
 pub struct EngineState<P: Projector> {
     pub mem: MemIndex<P>,
     pub projector_state: P::State,
-    pub validity: HashMap<FactId, Validity>,
+    pub validity: ValidityIndex,
     pub validated: Vec<ValidatedOffer>,
-    validated_by_addr: HashMap<EdgeAddr, Vec<ValidatedOffer>>,
-    promoted_offers: HashSet<(FactId, EdgeAddr)>,
-    to_admit: VecDeque<FactId>,
-    to_project: VecDeque<FactId>,
-    need_queries: VecDeque<EdgeAddr>,
-    offer_queries: VecDeque<EdgeAddr>,
-    queued_admit: HashSet<FactId>,
-    queued_project: HashSet<FactId>,
-    queued_need_queries: HashSet<EdgeAddr>,
-    queued_offer_queries: HashSet<EdgeAddr>,
+    pub dependencies: Vec<RecordedDependency>,
+    promoted_offers: Vec<(FactId, EdgeAddr)>,
+    to_admit: Vec<FactId>,
+    to_project: Vec<FactId>,
+    need_queries: Vec<EdgeAddr>,
+    offer_queries: Vec<EdgeAddr>,
 }
 
 impl<P: Projector> Default for EngineState<P> {
@@ -804,18 +1255,14 @@ impl<P: Projector> Default for EngineState<P> {
         Self {
             mem: MemIndex::default(),
             projector_state: P::State::default(),
-            validity: HashMap::new(),
+            validity: ValidityIndex::default(),
             validated: Vec::new(),
-            validated_by_addr: HashMap::new(),
-            promoted_offers: HashSet::new(),
-            to_admit: VecDeque::new(),
-            to_project: VecDeque::new(),
-            need_queries: VecDeque::new(),
-            offer_queries: VecDeque::new(),
-            queued_admit: HashSet::new(),
-            queued_project: HashSet::new(),
-            queued_need_queries: HashSet::new(),
-            queued_offer_queries: HashSet::new(),
+            dependencies: Vec::new(),
+            promoted_offers: Vec::new(),
+            to_admit: Vec::new(),
+            to_project: Vec::new(),
+            need_queries: Vec::new(),
+            offer_queries: Vec::new(),
         }
     }
 }
@@ -829,15 +1276,11 @@ where
     }
 
     pub fn enqueue_admit(&mut self, id: FactId) {
-        if self.queued_admit.insert(id) {
-            self.to_admit.push_back(id);
-        }
+        self.to_admit = runtime_enqueue_id_core(std::mem::take(&mut self.to_admit), id);
     }
 
     pub fn enqueue_project(&mut self, id: FactId) {
-        if self.queued_project.insert(id) {
-            self.to_project.push_back(id);
-        }
+        self.to_project = runtime_enqueue_id_core(std::mem::take(&mut self.to_project), id);
     }
 
     pub fn pending_admit_len(&self) -> usize {
@@ -883,7 +1326,7 @@ where
         let Some(bytes) = bytes else {
             return Ok(false);
         };
-        if fact_id(&bytes) != id {
+        if !runtime_fact_id_eq_core(fact_id(&bytes), id) {
             return Err("storage returned bytes whose hash does not match id".to_string());
         }
         let item = P::decode(&bytes)?;
@@ -947,7 +1390,7 @@ where
         let effective_validity = out.validity;
         let updates = out.updates;
         for update in &updates {
-            if P::update_owner(update) != id {
+            if !runtime_fact_id_eq_core(P::update_owner(update), id) {
                 return Err("projector returned state update for a different fact".to_string());
             }
         }
@@ -958,21 +1401,20 @@ where
         }
 
         if effective_validity == Validity::Valid {
+            self.record_dependencies(id, &edges);
             for offer in edges.iter().copied().filter(|edge| edge.is_offer()) {
                 let addr = EdgeAddr::from_offer(&offer);
-                let first_promotion = self.promoted_offers.insert((id, addr));
-                if !first_promotion {
+                if self.promoted_offers.iter().any(|(owner, promoted_addr)| {
+                    runtime_fact_id_eq_core(*owner, id) && *promoted_addr == addr
+                }) {
                     continue;
                 }
+                self.promoted_offers.push((id, addr));
                 let validated = ValidatedOffer {
                     owner: id,
                     offer: offer.validate(),
                 };
                 self.validated.push(validated);
-                self.validated_by_addr
-                    .entry(addr)
-                    .or_default()
-                    .push(validated);
                 for needer in self.mem.needers(addr) {
                     self.enqueue_project_if_not_valid(needer);
                 }
@@ -1002,14 +1444,14 @@ where
     }
 
     fn enqueue_need_query(&mut self, addr: EdgeAddr) {
-        if self.queued_need_queries.insert(addr) {
-            self.need_queries.push_back(addr);
+        if !self.need_queries.contains(&addr) {
+            self.need_queries.push(addr);
         }
     }
 
     fn enqueue_offer_query(&mut self, addr: EdgeAddr) {
-        if self.queued_offer_queries.insert(addr) {
-            self.offer_queries.push_back(addr);
+        if !self.offer_queries.contains(&addr) {
+            self.offer_queries.push(addr);
         }
     }
 
@@ -1026,27 +1468,35 @@ where
     }
 
     pub(crate) fn pop_admit_request(&mut self) -> Option<FactId> {
-        let id = self.to_admit.pop_front()?;
-        self.queued_admit.remove(&id);
-        Some(id)
+        if self.to_admit.is_empty() {
+            None
+        } else {
+            Some(self.to_admit.remove(0))
+        }
     }
 
     pub(crate) fn pop_need_query_request(&mut self) -> Option<EdgeAddr> {
-        let addr = self.need_queries.pop_front()?;
-        self.queued_need_queries.remove(&addr);
-        Some(addr)
+        if self.need_queries.is_empty() {
+            None
+        } else {
+            Some(self.need_queries.remove(0))
+        }
     }
 
     pub(crate) fn pop_project_request(&mut self) -> Option<FactId> {
-        let id = self.to_project.pop_front()?;
-        self.queued_project.remove(&id);
-        Some(id)
+        if self.to_project.is_empty() {
+            None
+        } else {
+            Some(self.to_project.remove(0))
+        }
     }
 
     pub(crate) fn pop_offer_query_request(&mut self) -> Option<EdgeAddr> {
-        let addr = self.offer_queries.pop_front()?;
-        self.queued_offer_queries.remove(&addr);
-        Some(addr)
+        if self.offer_queries.is_empty() {
+            None
+        } else {
+            Some(self.offer_queries.remove(0))
+        }
     }
 
     pub(crate) fn enqueue_loaded_offerers(&mut self, ids: Vec<FactId>) {
@@ -1064,9 +1514,9 @@ where
     }
 
     fn has_validated_offer(&self, addr: EdgeAddr) -> bool {
-        self.validated_by_addr
-            .get(&addr)
-            .is_some_and(|offers| !offers.is_empty())
+        self.validated
+            .iter()
+            .any(|vo| EdgeAddr::from_offer(&vo.offer) == addr)
     }
 
     fn needs_satisfied(&self, edges: &[Offer<Asserted>]) -> bool {
@@ -1076,15 +1526,48 @@ where
             .all(|need| self.has_validated_offer(EdgeAddr::from_offer(need)))
     }
 
+    fn record_dependencies(&mut self, consumer: FactId, edges: &[Offer<Asserted>]) {
+        for need in edges.iter().filter(|edge| edge.is_need()) {
+            let addr = EdgeAddr::from_offer(need);
+            let providers: Vec<_> = self
+                .validated
+                .iter()
+                .copied()
+                .filter(|vo| EdgeAddr::from_offer(&vo.offer) == addr)
+                .collect();
+            for vo in providers {
+                debug_assert!(self.validity.get(&consumer) == Some(&Validity::Valid));
+                debug_assert!(self.validity.get(&vo.owner) == Some(&Validity::Valid));
+                debug_assert_eq!(EdgeAddr::from_offer(&vo.offer), addr);
+                if !self.dependencies.iter().any(|dep| {
+                    runtime_fact_id_eq_core(dep.consumer, consumer)
+                        && runtime_fact_id_eq_core(dep.provider, vo.owner)
+                        && dep.addr == addr
+                }) {
+                    self.dependencies.push(RecordedDependency {
+                        consumer,
+                        provider: vo.owner,
+                        addr,
+                    });
+                }
+            }
+        }
+    }
+
     fn collect(&self, edges: &[Offer<Asserted>]) -> Context {
         let mut offers = vec![];
         for need in edges.iter().filter(|edge| edge.is_need()) {
             let addr = EdgeAddr::from_offer(need);
-            for vo in self.validated_by_addr.get(&addr).into_iter().flatten() {
+            for vo in self
+                .validated
+                .iter()
+                .filter(|vo| EdgeAddr::from_offer(&vo.offer) == addr)
+            {
                 debug_assert!(self.validity.get(&vo.owner) == Some(&Validity::Valid));
-                debug_assert!(self
-                    .promoted_offers
-                    .contains(&(vo.owner, EdgeAddr::from_offer(&vo.offer))));
+                debug_assert!(self.promoted_offers.iter().any(|(owner, promoted_addr)| {
+                    runtime_fact_id_eq_core(*owner, vo.owner)
+                        && *promoted_addr == EdgeAddr::from_offer(&vo.offer)
+                }));
                 offers.push(vo.offer);
             }
         }

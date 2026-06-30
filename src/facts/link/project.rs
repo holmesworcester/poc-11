@@ -20,8 +20,8 @@
 //!   5. PROJECT. A valid projection promotes only its own statement and emits no
 //!      raw facts.
 //!   6. STATE. Projection updates only this link id's read-model entry.
-//!   7. COMPOSE. The local child step composes with core/replay provenance for
-//!      supplied proof-facing same-root chains.
+//!   7. COMPOSE. The local child step composes with core/replay provenance into
+//!      a recursively derivable same-root chain.
 //!
 //! Fact-family contract (do not weaken):
 //! - Scope: the only home for link semantics.
@@ -101,6 +101,17 @@
 //!       Verified below by `root_link_chain_to_anchor`,
 //!       `child_extends_link_chain`, and
 //!       `replay_preserves_supplied_link_chain_to_anchor`.
+//! - [x] Safety: proof-facing transitive link validity over recorded core
+//!       dependencies: for any supplied same-root link chain whose child-parent
+//!       dependencies are recorded by core, every link id in the chain is valid
+//!       and each child depends on a validated same-root parent offer. Verified
+//!       below by `core_recorded_link_chain_has_only_valid_links`.
+//! - [x] Safety: proof-facing derivable transitive link validity: for any
+//!       decoded-link world, if a link recursively derives through its declared
+//!       `prev/root` fields and core-recorded dependency edges to a root, then
+//!       that derivation's head and every recursively reached ancestor are valid
+//!       and every child step is backed by a validated same-root parent offer.
+//!       Verified below by `derivable_link_has_transitive_validity`.
 //! Imported theorem checklist:
 //! - [x] `core::item`: fact ids are content addresses for canonical bytes. Proven
 //!       in `src/core/item_unproven.rs::fact_id_content_address`.
@@ -116,6 +127,9 @@
 //! - [x] `core::engine`: the proof-facing engine model exposes statement
 //!       provenance for a validated offer. Proven in
 //!       `src/core/engine_unproven.rs::engine_validated_offer_for_has_valid_owner`.
+//! - [x] `core::engine`: the proof-facing engine model exposes dependency
+//!       provenance for recorded consumer/provider edges. Proven in
+//!       `src/core/engine_unproven.rs::engine_dependency_edge_has_valid_provider`.
 //! - [x] `core::play`: proof-facing replay traces preserve engine validity.
 //!       Proven in `src/core/play_unproven.rs::replay_reports_engine_validity`.
 //! Local theorem checklist:
@@ -148,6 +162,11 @@
 //! - [x] Link/core supplied-chain preservation over the proof-facing replay
 //!       model. Proven below by
 //!       `replay_preserves_supplied_link_chain_to_anchor`.
+//! - [x] Link/core transitive validity over recorded dependencies. Proven below
+//!       by `core_recorded_link_chain_has_only_valid_links`.
+//! - [x] Link-owned derivable-chain transitive validity over decoded links and
+//!       core-recorded dependencies. Proven below by
+//!       `derivable_link_has_transitive_validity`.
 //! Proof strategy:
 //! - Prove the executable canonical byte builder preserves prev/root/content
 //!   segments and prove rejection cases for tag/flag/truncation.
@@ -174,14 +193,22 @@
 //!   `prev=None, root=None` gives `valid_link(self,self)`; child step extends an
 //!   existing sequence only when the child names the previous head and preserves
 //!   the same root/domain id.
-//!
-//! Reader map:
-//! - Vocabulary defines the runtime and proof-facing nouns.
-//! - Spec models define intended meaning.
-//! - Executable kernels prove running proof-facing implementations.
-//! - Lemmas expose reusable theorem facts.
-//! - Runtime implementation routes real Rust behavior through the kernels.
-//! - Wiring and boundary code connects link semantics to the generic projector.
+//! - Prove the link/core recorded-dependency theorem by combining the link chain
+//!   predicate, the link statement-to-owner theorem, and core's recorded
+//!   dependency-provider theorem.
+//! - Prove the stronger link-owned derivability theorem by induction on a bounded
+//!   parent walk through decoded link facts: root derivations end at
+//!   `prev=None, root=None`; child derivations must name a decoded parent,
+//!   preserve root/domain id, carry a core-recorded dependency to the parent's
+//!   statement, and recursively derive the parent.
+
+// Reader map:
+// - Vocabulary defines the runtime and proof-facing nouns.
+// - Spec models define intended meaning.
+// - Executable kernels prove running proof-facing implementations.
+// - Lemmas expose reusable theorem facts.
+// - Runtime implementation routes real Rust behavior through the kernels.
+// - Wiring and boundary code connects link semantics to the generic projector.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
@@ -870,17 +897,21 @@ pub closed spec fn complete_child_report_extends_parent(
 // Composition Model.
 //
 // Local projection proves one link step at a time. Composition explains how
-// those local steps fit into a supplied same-root chain.
+// those local steps fit into a supplied same-root chain and, when the core
+// dependency graph is available, how that chain is backed by recorded
+// consumer/provider edges.
 //
 // The chain model is intentionally concrete: the first element is a root
 // anchor, each child names the previous head as `prev`, and each child
 // preserves the same root/domain id. Core engine and replay proofs are imported
-// only for validated statement provenance and replay preservation.
+// for validated statement provenance, dependency provenance, and replay
+// preservation.
 //
 // This section covers the COMPOSE invariant while avoiding overclaiming. It
-// does not prove anchor uniqueness or discover chains from engine state. It
-// proves that a supplied same-root chain remains meaningful when paired with
-// core provenance.
+// does not prove anchor uniqueness or discover links from durable storage. It
+// offers two proof-facing shapes: a supplied sequence for explicit chain
+// arguments, and a decoded-world/fuel model for recursively following `prev`
+// pointers through recorded dependencies.
 
 pub closed spec fn link_chain_to_anchor(chain: Seq<LinkCore>, root: IdCore) -> bool
     decreases chain.len(),
@@ -914,6 +945,136 @@ pub closed spec fn chain_contains_validated_link_statements(
                 engine_id_for_link_id(#[trigger] chain[i].self_id),
                 link_statement_addr_core(chain[i].self_id, root),
             )
+}
+
+pub closed spec fn chain_dependencies_recorded_in_core(
+    state: crate::core::engine::EngineStateCore,
+    chain: Seq<LinkCore>,
+    root: IdCore,
+) -> bool {
+    forall |i: int|
+        1 <= i < chain.len() ==>
+            crate::core::engine::dependency_edge_for(
+                state.dependencies,
+                engine_id_for_link_id(#[trigger] chain[i].self_id),
+                engine_id_for_link_id(chain[i - 1].self_id),
+                link_statement_addr_core(chain[i - 1].self_id, root),
+            )
+}
+
+pub closed spec fn decoded_world_contains_link(
+    world: Seq<LinkCore>,
+    id: IdCore,
+    link: LinkCore,
+) -> bool {
+    exists |i: int| 0 <= i < world.len() && world[i].self_id == id && world[i] == link
+}
+
+pub closed spec fn link_derivable_from_recorded_dependencies(
+    state: crate::core::engine::EngineStateCore,
+    world: Seq<LinkCore>,
+    link: LinkCore,
+    root: IdCore,
+    fuel: nat,
+) -> bool
+    decreases fuel,
+{
+    if fuel == 0 {
+        false
+    } else {
+        decoded_world_contains_link(world, link.self_id, link)
+            && match (link.prev, link.root) {
+                (MaybeIdCore::None, MaybeIdCore::None) => {
+                    link.self_id == root
+                        && projection_spec(link, false).validity == ValidityCore::Valid
+                        && crate::core::engine::validated_offer_for(
+                            state.validated,
+                            engine_id_for_link_id(link.self_id),
+                            link_statement_addr_core(link.self_id, root),
+                        )
+                }
+                (MaybeIdCore::Some(parent_id), MaybeIdCore::Some(claimed_root)) => {
+                    claimed_root == root
+                        && projection_spec(link, true).validity == ValidityCore::Valid
+                        && crate::core::engine::validated_offer_for(
+                            state.validated,
+                            engine_id_for_link_id(link.self_id),
+                            link_statement_addr_core(link.self_id, root),
+                        )
+                        && exists |parent: LinkCore|
+                            decoded_world_contains_link(world, parent_id, parent)
+                                && crate::core::engine::dependency_edge_for(
+                                    state.dependencies,
+                                    engine_id_for_link_id(link.self_id),
+                                    engine_id_for_link_id(parent_id),
+                                    link_statement_addr_core(parent_id, root),
+                                )
+                                && link_derivable_from_recorded_dependencies(
+                                    state,
+                                    world,
+                                    parent,
+                                    root,
+                                    (fuel - 1) as nat,
+                                )
+                }
+                _ => false,
+            }
+    }
+}
+
+pub closed spec fn link_transitive_validity_closure(
+    state: crate::core::engine::EngineStateCore,
+    world: Seq<LinkCore>,
+    link: LinkCore,
+    root: IdCore,
+    fuel: nat,
+) -> bool
+    decreases fuel,
+{
+    if fuel == 0 {
+        false
+    } else {
+        link_derivable_from_recorded_dependencies(state, world, link, root, fuel)
+            && crate::core::engine::contains_id(
+                state.valid,
+                engine_id_for_link_id(link.self_id),
+            )
+            && crate::core::engine::validated_offer_for(
+                state.validated,
+                engine_id_for_link_id(link.self_id),
+                link_statement_addr_core(link.self_id, root),
+            )
+            && match (link.prev, link.root) {
+                (MaybeIdCore::None, MaybeIdCore::None) => link.self_id == root,
+                (MaybeIdCore::Some(parent_id), MaybeIdCore::Some(_)) => {
+                    exists |parent: LinkCore|
+                        decoded_world_contains_link(world, parent_id, parent)
+                            && crate::core::engine::dependency_edge_for(
+                                state.dependencies,
+                                engine_id_for_link_id(link.self_id),
+                                engine_id_for_link_id(parent_id),
+                                link_statement_addr_core(parent_id, root),
+                            )
+                            && crate::core::engine::contains_id(
+                                state.valid,
+                                engine_id_for_link_id(parent_id),
+                            )
+                            && crate::core::engine::validated_offer_for(
+                                state.validated,
+                                engine_id_for_link_id(parent_id),
+                                link_statement_addr_core(parent_id, root),
+                            )
+                            && link_transitive_validity_closure(
+                                state,
+                                world,
+                                parent,
+                                root,
+                                (fuel - 1) as nat,
+                            )
+                }
+                _ => false,
+            }
+    }
 }
 
 // Projected Report Model.
@@ -1688,7 +1849,10 @@ pub proof fn child_projected_ids_are_parent_plus_self(parent_ids: Seq<IdCore>, s
 // Composition Lemmas.
 //
 // Root chains start at anchors; child links extend same-root chains; replay
-// preserves supplied validated same-root chains.
+// preserves supplied validated same-root chains. The recorded-dependency
+// lemmas then import core provenance to turn those local shapes into
+// transitive validity facts: every recorded parent provider is valid, and a
+// bounded decoded-world walk preserves that fact recursively.
 
 pub proof fn root_link_chain_to_anchor(link: LinkCore)
     requires
@@ -1747,6 +1911,155 @@ pub proof fn replay_preserves_supplied_link_chain_to_anchor(
         ),
 {
     crate::core::play::replay_reports_engine_validity(state, transitions);
+}
+
+pub proof fn core_recorded_link_chain_has_only_valid_links(
+    state: crate::core::engine::EngineStateCore,
+    chain: Seq<LinkCore>,
+    root: IdCore,
+)
+    requires
+        crate::core::engine::engine_invariant(state),
+        link_chain_to_anchor(chain, root),
+        chain_contains_validated_link_statements(state, chain, root),
+        chain_dependencies_recorded_in_core(state, chain, root),
+    ensures
+        forall |i: int| 0 <= i < chain.len() ==>
+            crate::core::engine::contains_id(
+                state.valid,
+                engine_id_for_link_id(#[trigger] chain[i].self_id),
+            ),
+        forall |i: int| 1 <= i < chain.len() ==>
+            crate::core::engine::contains_id(
+                state.valid,
+                engine_id_for_link_id(#[trigger] chain[i - 1].self_id),
+            )
+                && crate::core::engine::validated_offer_for(
+                    state.validated,
+                    engine_id_for_link_id(chain[i - 1].self_id),
+                    link_statement_addr_core(chain[i - 1].self_id, root),
+                ),
+{
+    assert forall |i: int| 0 <= i < chain.len() implies
+        crate::core::engine::contains_id(
+            state.valid,
+            engine_id_for_link_id(#[trigger] chain[i].self_id),
+        )
+    by {
+        assert(crate::core::engine::validated_offer_for(
+            state.validated,
+            engine_id_for_link_id(chain[i].self_id),
+            link_statement_addr_core(chain[i].self_id, root),
+        ));
+        validated_link_offer_statement_to_owner_from_engine(state, chain[i].self_id, root);
+    }
+    assert forall |i: int| 1 <= i < chain.len() implies
+        crate::core::engine::contains_id(
+            state.valid,
+            engine_id_for_link_id(#[trigger] chain[i - 1].self_id),
+        )
+            && crate::core::engine::validated_offer_for(
+                state.validated,
+                engine_id_for_link_id(chain[i - 1].self_id),
+                link_statement_addr_core(chain[i - 1].self_id, root),
+            )
+    by {
+        assert(crate::core::engine::dependency_edge_for(
+            state.dependencies,
+            engine_id_for_link_id(chain[i].self_id),
+            engine_id_for_link_id(chain[i - 1].self_id),
+            link_statement_addr_core(chain[i - 1].self_id, root),
+        ));
+        crate::core::engine::engine_dependency_edge_has_valid_provider(
+            state,
+            engine_id_for_link_id(chain[i].self_id),
+            engine_id_for_link_id(chain[i - 1].self_id),
+            link_statement_addr_core(chain[i - 1].self_id, root),
+        );
+    }
+}
+
+pub proof fn derivable_link_has_transitive_validity(
+    state: crate::core::engine::EngineStateCore,
+    world: Seq<LinkCore>,
+    link: LinkCore,
+    root: IdCore,
+    fuel: nat,
+)
+    requires
+        crate::core::engine::engine_invariant(state),
+        link_derivable_from_recorded_dependencies(state, world, link, root, fuel),
+    ensures
+        link_transitive_validity_closure(state, world, link, root, fuel),
+    decreases fuel,
+{
+    assert(fuel > 0);
+    assert(crate::core::engine::validated_offer_for(
+        state.validated,
+        engine_id_for_link_id(link.self_id),
+        link_statement_addr_core(link.self_id, root),
+    ));
+    validated_link_offer_statement_to_owner_from_engine(state, link.self_id, root);
+
+    match (link.prev, link.root) {
+        (MaybeIdCore::None, MaybeIdCore::None) => {
+            assert(link.self_id == root);
+        }
+        (MaybeIdCore::Some(parent_id), MaybeIdCore::Some(_claimed_root)) => {
+            let parent = choose |parent: LinkCore|
+                decoded_world_contains_link(world, parent_id, parent)
+                    && crate::core::engine::dependency_edge_for(
+                        state.dependencies,
+                        engine_id_for_link_id(link.self_id),
+                        engine_id_for_link_id(parent_id),
+                        link_statement_addr_core(parent_id, root),
+                    )
+                    && link_derivable_from_recorded_dependencies(
+                        state,
+                        world,
+                        parent,
+                        root,
+                        (fuel - 1) as nat,
+                    );
+
+            crate::core::engine::engine_dependency_edge_has_valid_provider(
+                state,
+                engine_id_for_link_id(link.self_id),
+                engine_id_for_link_id(parent_id),
+                link_statement_addr_core(parent_id, root),
+            );
+            derivable_link_has_transitive_validity(state, world, parent, root, (fuel - 1) as nat);
+
+            assert(exists |ancestor: LinkCore|
+                decoded_world_contains_link(world, parent_id, ancestor)
+                    && crate::core::engine::dependency_edge_for(
+                        state.dependencies,
+                        engine_id_for_link_id(link.self_id),
+                        engine_id_for_link_id(parent_id),
+                        link_statement_addr_core(parent_id, root),
+                    )
+                    && crate::core::engine::contains_id(
+                        state.valid,
+                        engine_id_for_link_id(parent_id),
+                    )
+                    && crate::core::engine::validated_offer_for(
+                        state.validated,
+                        engine_id_for_link_id(parent_id),
+                        link_statement_addr_core(parent_id, root),
+                    )
+                    && link_transitive_validity_closure(
+                        state,
+                        world,
+                        ancestor,
+                        root,
+                        (fuel - 1) as nat,
+                    )
+            );
+        }
+        _ => {
+            assert(false);
+        }
+    }
 }
 
 // Extraction Lemmas.

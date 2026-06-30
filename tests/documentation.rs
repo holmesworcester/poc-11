@@ -195,6 +195,15 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Malformed `prev`/`root` combinations emit no edges and cannot validate",
         "The link projector proves any valid projection statement is for its own fact id and semantic root",
         "imports the core engine theorem that every proof-facing validated offer has a valid owner",
+        "derivable-chain transitive validity over decoded link facts",
+        "The stronger link-owned theorem models a decoded-link world",
+        "link derivable through its own `prev/root` fields",
+        "The engine runtime has been simplified to Vec-backed state",
+        "running transitions directly",
+        "before any HashMap/view optimization",
+        "Runtime id queue scheduling now calls a Verus-verified Vec-backed enqueue kernel",
+        "projection, promotion, dependency recording, and effect-result transitions still need the same treatment",
+        "direct runtime proof showing concrete replay state supplies that decoded-link world",
         "The target composition theorem is",
         "core drain-prefix validated-context provenance",
         "core replay dependency-closure soundness",
@@ -205,7 +214,7 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Fair-input liveness model",
         "A file loses `_unproven` only after its invariant-bearing behavior is covered by Verus-verified executable code",
         "statement-to-owner lemma",
-        "ancestry chain to its claimed anchor by induction over `prev`",
+        "The current link proof proves the induction over decoded links and `prev/root` dependencies",
     ] {
         assert!(
             normalized.contains(required),
@@ -359,6 +368,10 @@ fn link_project_file_follows_proof_projector_narrative_sections() {
         "The codec model fixes the byte-level identity of a link",
         "Composition Model.",
         "Local projection proves one link step at a time",
+        "and, when the core",
+        "dependency graph is available",
+        "consumer/provider edges",
+        "decoded-world/fuel model for recursively following `prev`",
         "Projected Report Model.",
         "Projected reports are read-model state, not validity evidence",
         "=== Executable Kernels ===",
@@ -372,6 +385,9 @@ fn link_project_file_follows_proof_projector_narrative_sections() {
         "=== Lemmas ===",
         "Projection Lemmas.",
         "Composition Lemmas.",
+        "recorded-dependency",
+        "lemmas then import core provenance",
+        "transitive validity facts",
         "Projected Report Lemmas.",
         "=== Runtime Implementation ===",
         "Runtime Construction.",
@@ -541,10 +557,13 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "Safety: a projector is called only after every asserted need has a",
         "matching validated offer",
         "it receives only validated offers",
-        "Safety: in the proof-facing transition model, every validated offer is",
-        "Safety: every proof-facing admit/query/project/promote/emit transition",
-        "Safety: in the proof-facing transition model, raw bytes returned in",
-        "Safety: the concrete runtime `EngineState` HashMap/HashSet/VecDeque",
+        "Safety: abstract transition helper coverage: every modeled validated",
+        "Safety: every abstract admit/query/project/promote/emit transition",
+        "Safety: abstract transition helper coverage: raw bytes returned in",
+        "Safety: the concrete runtime `EngineState` Vec-backed implementation",
+        "Safety: runtime id queue scheduling uses Verus-verified bytewise fact-id",
+        "runtime_enqueue_id_core",
+        "unproved HashMap/HashSet/VecDeque refinement layer",
         "reject any update whose owner is not the",
         "projected fact",
         "Imported theorem checklist:",
@@ -641,6 +660,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "root_link_chain_to_anchor",
         "child_extends_link_chain",
         "replay_preserves_supplied_link_chain_to_anchor",
+        "derivable_link_has_transitive_validity",
     ] {
         assert!(
             rust_symbol_exists(&project, required_symbol),
@@ -820,23 +840,46 @@ fn engine_turn_play_proof_status_is_honest() {
     let engine = source_text(&root.join("src/core/engine_unproven.rs"));
     for required in [
         "pub struct EngineStateCore",
+        "pub struct EngineDependencyCore",
         "pub closed spec fn engine_invariant",
+        "pub closed spec fn dependency_provenance",
+        "pub closed spec fn dependency_edge_for",
         "pub closed spec fn state_promote_offer",
         "pub enum EngineTransitionCore",
+        "RecordDependency",
         "pub proof fn engine_single_transition_preserves_invariant",
         "pub proof fn engine_transition_trace_preserves_invariant",
         "pub proof fn engine_transition_preserves_validated_context_provenance",
         "pub proof fn engine_promotes_only_valid_owner_offers",
         "pub proof fn engine_context_offers_have_valid_owners",
-        "fact_id(&bytes) != id",
+        "pub proof fn record_dependency_preserves_invariant",
+        "pub proof fn engine_dependency_edge_has_valid_provider",
+        "pub fn runtime_fact_id_eq_core",
+        "pub fn runtime_queue_contains_id",
+        "pub fn runtime_enqueue_id_core",
+        "pub dependencies: Vec<RecordedDependency>",
+        "self.record_dependencies(id, &edges)",
+        "!runtime_fact_id_eq_core(fact_id(&bytes), id)",
         "P::encode(&item) != bytes",
-        "if P::update_owner(update) != id",
-        "self.promoted_offers.insert((id, addr))",
+        "if !runtime_fact_id_eq_core(P::update_owner(update), id)",
+        "self.promoted_offers.push((id, addr))",
         "P::decode(&emitted.bytes)",
     ] {
         assert!(
             engine.contains(required),
             "engine file is missing verified-kernel/runtime detail {required:?}"
+        );
+    }
+
+    let play = source_text(&root.join("src/core/play_unproven.rs"));
+    for forbidden in [
+        "use std::collections::HashMap",
+        "Result<HashMap<FactId, Validity>, String>",
+        "fn validity_map",
+    ] {
+        assert!(
+            !play.contains(forbidden),
+            "core play should expose the Vec-backed validity index, not {forbidden:?}"
         );
     }
     for forbidden in [
@@ -930,9 +973,11 @@ fn link_project_verified_kernel_is_running_code() {
         "valid_projection_statement_equals_extracted_offer",
         "valid_child_requires_validated_same_root_parent",
         "link_chain_to_anchor",
+        "chain_dependencies_recorded_in_core",
         "root_link_chain_to_anchor",
         "child_extends_link_chain",
         "replay_preserves_supplied_link_chain_to_anchor",
+        "core_recorded_link_chain_has_only_valid_links",
         "validated_link_offer_statement_to_owner_from_engine",
         "projection_update_owner_is_self",
         "valid_projection_statement_owned_by_projected_link",
@@ -1044,6 +1089,11 @@ fn link_project_proof_audit_is_structural_not_prose_status() {
         "root_link_chain_to_anchor",
         "child_extends_link_chain",
         "replay_preserves_supplied_link_chain_to_anchor",
+        "chain_dependencies_recorded_in_core",
+        "core_recorded_link_chain_has_only_valid_links",
+        "link_derivable_from_recorded_dependencies",
+        "link_transitive_validity_closure",
+        "derivable_link_has_transitive_validity",
     ] {
         assert!(
             rust_symbol_exists(&project, required_symbol),
@@ -1077,6 +1127,7 @@ fn link_project_keeps_local_theorems_out_of_imported_checklist() {
         "Local link same-root extraction/projection kernel",
         "Local link sequence composition step",
         "Local link output/read-model kernel",
+        "Link-owned derivable-chain transitive validity over decoded links",
     ] {
         assert!(
             !imported.contains(forbidden),
@@ -1118,6 +1169,10 @@ fn link_project_imported_theorems_point_to_existing_symbols() {
         (
             "src/core/engine_unproven.rs",
             "engine_validated_offer_for_has_valid_owner",
+        ),
+        (
+            "src/core/engine_unproven.rs",
+            "engine_dependency_edge_has_valid_provider",
         ),
         (
             "src/core/play_unproven.rs",
