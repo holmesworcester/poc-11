@@ -27,8 +27,8 @@ the `_unproven` file until the whole file can be renamed.
   meaning. It also owns deterministic typed construction from explicit command
   parameters. Local projection kernels are partially proved, but the file
   remains `_unproven` because actual byte parser/encoder proof, exact
-  `Vec<FactId>` report-content proof, and end-to-end core/replay composition are
-  still open.
+  projected-chain-entry `Vec<FactId>` proof, and end-to-end core/replay
+  composition are still open.
 - `src/facts/link/api_unproven.rs` contains storage-backed report helpers.
 - `src/facts/link/cli_unproven.rs` contains unproven app admission and formatting.
 - `src/helpers/*_unproven.rs` contains narrow trusted boundaries for crypto/hex,
@@ -50,8 +50,8 @@ targets, not staging files:
   `src/facts/link/project_unproven.rs` proof gaps are closed: actual canonical
   encode/decode over runtime bytes, deterministic typed construction from
   explicit parameters, extraction, projection validity, emitted facts,
-  projector-owned state including exact report vector contents, and composition
-  with the core/replay transitive-validity theorem.
+  projector-owned state including exact projected chain-entry vector contents,
+  and composition with the core/replay transitive-validity theorem.
 - `src/helpers/*_unproven.rs`: narrow trusted adapters for crypto assumptions,
   SQLite, TCP sockets, filesystem, clocks, and similar external APIs.
 
@@ -81,9 +81,9 @@ Core proofs are about all possible fact families routed through the engine:
 Current link proof kernels live beside the running implementation in
 `src/facts/link/project_unproven.rs`. That file has not completed its
 `_unproven` to unsuffixed migration: local semantic kernels are proved, while
-the actual byte parser/encoder, exact report vector contents, and end-to-end
-engine/replay composition remain open. Only the link family defines what roots,
-parents, and ancestry mean:
+the actual byte parser/encoder, exact projected chain-entry vector contents, and
+end-to-end engine/replay composition remain open. Only the link family defines
+what roots, parents, and ancestry mean:
 
 - Link bytes should decode canonically into the link semantic shape. The current
   Verus model proves semantic flag/shape relations; the runtime byte parser is
@@ -102,7 +102,7 @@ parents, and ancestry mean:
   property depends on the pending core engine/replay provenance proof.
 - Link read-model state is updated by `LinkProjector::project` for each projected
   fact; reports observe that state after replay rather than walking persisted
-  bytes on demand. The current Verus report kernel covers scalar shape
+  bytes on demand. The current Verus projected-chain-entry kernel covers scalar shape
   (`root`, `depth`, `length`, modeled id count, and head id); exact vector
   contents remain pending.
 - Link projection emits no new facts unless a later model intentionally adds
@@ -148,7 +148,7 @@ as if it were their own.
 | --- | --- |
 | `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
 | `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
-| `facts::link::project_unproven` | Link-family implementation of the projector contract, local projection kernels, projector-owned read-model state, and pending byte-codec/report-vector/end-to-end composition proof. |
+| `facts::link::project_unproven` | Link-family implementation of the projector contract, local projection kernels, projector-owned read-model state, and pending byte-codec/projected-chain-entry-vector/end-to-end composition proof. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |
@@ -249,8 +249,8 @@ fact families.
    statement-to-owner lemma: any validated `valid_link(x,r)` came from a valid
    link fact whose own id is `x` and whose semantic root is `r`. Prove projector
    state confinement: projection of fact `x` may update only link-owned state
-   entries for `x`, and complete report entries are built incrementally from
-   already-projected same-root parent entries.
+   entries for `x`, and complete projected chain entries are built incrementally
+   from already-projected same-root parent entries.
 6. **Core turn proof.** Prove `State + Input -> State + Effects` by induction over
    every turn: admission, need-query result, projection, offer-query result, and
    idle all preserve validated-offer provenance and context safety.

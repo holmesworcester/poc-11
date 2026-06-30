@@ -56,12 +56,13 @@
 //! - [x] Safety: update application scope: `apply_update` is insert/ignore by `link_id`
 //!       for `LinkState.seen` and `LinkState.projected`. Verified below in this
 //!       file.
-//! - [ ] Safety: projected report completeness shape: a complete child report is
-//!       derived only from a complete same-root parent report, preserves
-//!       root/depth/length/head shape, and has ids exactly equal to
-//!       `parent.ids + [self]`. The current Verus kernel covers all scalar fields
-//!       and modeled ids length/head; exact `Vec<FactId>` contents remain
-//!       runtime-tested.
+//! - [ ] Safety: projected chain entry shape: each projection may create only the
+//!       current fact's `ProjectedLink`. A complete child entry is built only by
+//!       appending the current child id to a complete same-root parent entry,
+//!       preserves root/depth/length/head shape, and has ids exactly equal to
+//!       `parent.ids + [self]`. `ProjectedLink` is read-model state, not validity
+//!       evidence. The current Verus kernel covers all scalar fields and modeled
+//!       ids length/head; exact `Vec<FactId>` contents remain runtime-tested.
 //! - [x] Safety: no emitted-fact authority leak: link projection emits no new raw
 //!       facts. Verified below in this file.
 //! - [ ] Safety: end-to-end composition with core: using `core::engine` and
@@ -128,11 +129,12 @@
 //! - Prove `update_owner` returns the update's owner id exactly, and
 //!   `apply_update` is insert/ignore by fact id and cannot update any entry
 //!   except the update's owner id.
-//! - Prove complete projected reports are inductive read-model state for scalar
-//!   report fields: root case records self/root/depth/length/id-count; child case
-//!   increments the already-projected valid same-root parent counters and records
-//!   `self` as the modeled head. Exact vector contents remain a pending Verus
-//!   proof over the runtime `Vec<FactId>` construction.
+//! - Prove complete projected chain entries are inductive read-model state for
+//!   the current fact only: root case records self/root/depth/length/id-count;
+//!   child case appends the current child id to the already-projected complete
+//!   same-root parent entry, increments counters, and records `self` as the
+//!   modeled head. Exact vector contents remain a pending Verus proof over the
+//!   runtime `Vec<FactId>` construction.
 //! - Prove the local statement-to-owner lemma from `link_edges`, `valid_link_key`,
 //!   and content addressing. The end-to-end validated-offer version imports the
 //!   future core drain-prefix provenance theorem.
@@ -149,12 +151,12 @@
 //!   `decode(encode(link)) == link` and `encode(decode(bytes)) == bytes` for
 //!   accepted bytes. After that, connect `link_id(link)` to
 //!   `core::item::fact_id_content_address` over the canonical encoded bytes.
-//! - Close exact report-vector contents by routing runtime `ids` construction
-//!   through proof-facing helpers: one root helper producing `[self]`, one child
-//!   helper producing `parent.ids + [self]`, and one incomplete helper producing
-//!   `[self]`. Prove the helpers' `Vec<FactId>` views have the expected length,
-//!   prefix, and final element, then make `projected_link_state` use only those
-//!   helpers.
+//! - Close exact projected-chain-entry vector contents by routing runtime `ids`
+//!   construction through proof-facing helpers: one root helper producing
+//!   `[self]`, one child helper producing `parent.ids + [self]`, and one
+//!   incomplete helper producing `[self]`. Prove the helpers' `Vec<FactId>` views
+//!   have the expected length, prefix, and final element, then make
+//!   `projected_link_state` use only those helpers.
 //! - Close end-to-end statement-to-owner only after core proves
 //!   `admit_establishes_id_body`, `engine_drain_prefix_sound`, and
 //!   `replay_reports_engine_validity`. Import those theorems here, then prove
@@ -1268,8 +1270,8 @@ pub struct ProjectedLink {
     pub root: FactId,
     pub depth: u64,
     pub length: u64,
-    /// root..head order for complete reports; singleton self for incomplete
-    /// reports.
+    /// root..head order for complete projected entries; singleton self for
+    /// incomplete entries.
     pub ids: Vec<FactId>,
 }
 
