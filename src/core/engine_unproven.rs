@@ -90,14 +90,18 @@ verus! {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EngineIdCore {
-    pub value: u64,
+    pub w0: u64,
+    pub w1: u64,
+    pub w2: u64,
+    pub w3: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EngineAddrCore {
     pub role: u64,
     pub scope: u64,
-    pub key: u64,
+    pub key_subject: EngineIdCore,
+    pub key_domain: EngineIdCore,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -636,6 +640,28 @@ pub proof fn engine_context_offers_have_valid_owners(
         contains_id(state.valid, state.validated[i].owner),
         asserted_offer_for(state.asserted, state.validated[i].owner, state.validated[i].addr),
 {
+}
+
+pub proof fn engine_validated_offer_for_has_valid_owner(
+    state: EngineStateCore,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+)
+    requires
+        engine_invariant(state),
+        validated_offer_for(state.validated, owner, addr),
+    ensures
+        contains_id(state.valid, owner),
+        asserted_offer_for(state.asserted, owner, addr),
+{
+    let i = choose |i: int|
+        0 <= i < state.validated.len()
+            && state.validated[i].owner == owner
+            && state.validated[i].addr == addr;
+    assert(0 <= i < state.validated.len());
+    assert(state.validated[i].owner == owner);
+    assert(state.validated[i].addr == addr);
+    engine_context_offers_have_valid_owners(state, i);
 }
 
 } // verus!

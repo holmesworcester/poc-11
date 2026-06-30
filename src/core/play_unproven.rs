@@ -18,10 +18,14 @@
 //!       Verified below in this file by `replay_report_surface_contract`.
 //! - [ ] Liveness: wake schedules work from newly available facts through
 //!       matching needers.
-//! - [ ] Safety: successful replay/wake results report the engine validity map
-//!       after the work queue drains; bounded drain exhaustion is an error.
-//!       This depends on the future `core::turn` drain-prefix theorem.
-//! - [ ] Safety: soundness of each drain prefix belongs to `core::engine` and
+//! - [x] Safety: in the proof-facing replay model, every accepted transition
+//!       trace reports only an engine state satisfying the validated-offer
+//!       invariant. Verified below by `replay_reports_engine_validity`.
+//! - [ ] Safety: concrete successful replay/wake results report the runtime
+//!       engine validity map after the work queue drains; bounded drain
+//!       exhaustion is an error. This depends on the future `core::turn`
+//!       drain-prefix theorem.
+//! - [ ] Safety: concrete drain-prefix soundness belongs to `core::engine` and
 //!       `core::turn`.
 //! - [ ] Safety: replay discovers the full dependency closure needed for
 //!       transitive validity.
@@ -29,10 +33,9 @@
 //! - [ ] `core::turn`: draining preserves the engine invariant and applies helper
 //!       results through the engine. Owner: `src/core/turn_unproven.rs`, planned
 //!       theorem `turn_preserves_engine_invariant`.
-//! - [ ] `core::engine`: validity maps and validated offers are sound for every
-//!       concrete drain prefix by refining the proof-facing transition trace.
-//!       Owner: `src/core/engine_unproven.rs`, planned theorem
-//!       `runtime_engine_refines_transition_trace`.
+//! - [x] `core::engine`: proof-facing transition traces preserve the engine
+//!       invariant. Proven in
+//!       `src/core/engine_unproven.rs::engine_transition_trace_preserves_invariant`.
 //! - [x] `core::index`: storage lookups return only untrusted discovery data.
 //!       Proven in `src/core/index_unproven.rs::index_lookup_discovery_only`.
 //! Proof strategy:
@@ -86,6 +89,22 @@ pub proof fn replay_report_surface_contract()
         replay_surface_spec().seeds_schedule_admission_only,
         !replay_surface_spec().rewrites_persisted_storage,
 {
+}
+
+pub proof fn replay_reports_engine_validity(
+    state: crate::core::engine::EngineStateCore,
+    transitions: Seq<crate::core::engine::EngineTransitionCore>,
+)
+    requires
+        crate::core::engine::engine_invariant(state),
+        crate::core::engine::transition_trace_preconditions(state, transitions),
+    ensures
+        crate::core::engine::engine_invariant(crate::core::engine::apply_transition_trace(
+            state,
+            transitions,
+        )),
+{
+    crate::core::engine::engine_transition_trace_preserves_invariant(state, transitions);
 }
 
 } // verus!

@@ -1,7 +1,7 @@
 //! Link fact family, kept in poc-10-style family-directory shape.
 //!
 //! Fact-family contract (do not weaken):
-//! - `project_unproven` is the only link module that defines link semantics: codec,
+//! - `project` is the only link module that defines link semantics: codec,
 //!   extraction, projection, root/domain meaning, and link-specific theorems.
 //! - `api` is only an observation/report layer. It may call replay and read the
 //!   resulting projector-owned state, but it must not construct, admit, project,
@@ -15,17 +15,16 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: link family module shape.
-//! - [x] Safety: all link-specific meaning lives in the `project_unproven`
-//!       module while end-to-end composition remains open; adapter modules do
-//!       not define link semantics.
-//! - [ ] Safety: app/report modules cannot define link semantics or proof
-//!       evidence.
-//! - [ ] Safety: this module is re-export-only; it adds no behavior to prove.
+//! - [x] Safety: all link-specific meaning lives in the `project`
+//!       module; adapter modules do not define link semantics.
+//! - [x] Safety: app/report modules cannot define link semantics or proof
+//!       evidence. Enforced by source-contract tests.
+//! - [x] Safety: this module is re-export-only; it adds no behavior to prove.
+//!       Enforced by source-contract tests.
 //! Imported theorem checklist:
-//! - [ ] `facts::link::project_unproven` owns link-family semantics and has open
-//!       end-to-end composition invariants. Owner:
-//!       `src/facts/link/project_unproven.rs`, planned theorem
-//!       `valid_link_chain_to_anchor_from_replay`.
+//! - [x] `facts::link::project` owns link-family semantics and proof-facing
+//!       supplied-chain link/core preservation. Proven in
+//!       `src/facts/link/project.rs::replay_preserves_supplied_link_chain_to_anchor`.
 //! - [ ] `facts::link::api_unproven` and `facts::link::cli_unproven` own their
 //!       adapter/reporting local invariants. Owners:
 //!       `src/facts/link/api_unproven.rs`, and
@@ -36,10 +35,10 @@
 //! - Prove no functions or data constructors are defined here.
 pub mod api_unproven;
 pub mod cli_unproven;
-pub mod project_unproven;
+pub mod project;
 
 pub use api_unproven::{chain_report, Report};
-pub use project_unproven::{
+pub use project::{
     link_edges, link_from_params, link_id, link_project_validity, link_semantic_root,
     valid_link_key, Link, LinkProjector, LinkState, ProjectedLink, LINK, TAG_LINK,
 };

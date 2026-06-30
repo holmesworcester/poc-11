@@ -7,7 +7,7 @@ understand what the logic proves, what the proof assumes, and which remaining
 claims are still owned elsewhere.
 
 Use this guide for fact-family projectors such as
-`src/facts/link/project_unproven.rs`, and for future `src/facts/*/project.rs`
+`src/facts/link/project.rs`, and for future `src/facts/*/project.rs`
 files once their owned invariants and imported composition theorems are fully
 proven.
 
@@ -21,8 +21,9 @@ Write projector proof files as a story:
 4. Validated context supplies authority.
 5. Projection promotes only the statement justified by that authority.
 6. Projector state records only owned read-model consequences.
-7. Composition imports core/replay provenance to lift the local step into an
-   end-to-end theorem.
+7. Composition imports core/replay provenance to lift local steps into honest
+   cross-module theorems without deriving facts the imported core model does not
+   expose.
 
 The top-level policy, function ordering, proof sectioning, and tests should all
 follow that same order.
@@ -37,7 +38,8 @@ Each non-trivial proof projector should use this structure:
    names.
 4. The proof strategy section, kept as the local argument for this file.
 5. A local theorem checklist when the file has named local proof kernels.
-6. A completion plan for open proof gaps.
+6. A completion plan for open proof gaps, or no completion plan when every
+   owned and imported proof item is checked.
 7. Runtime types near the top, so readers see the public surface early.
 8. Proof vocabulary after runtime types: proof-facing ids, statements,
    decisions, reports, and spec result structs.
@@ -77,9 +79,10 @@ Completion plan for unchecked items:
 - Close ...
 ```
 
-If the file has no local theorem checklist yet, say why. Do not omit the opening
-proof checklist, imported proof checklist, or proof strategy section from a
-proof-targeted projector.
+If the file has no unchecked items, omit the completion plan. If the file has no
+local theorem checklist yet, say why. Do not omit the opening proof checklist,
+imported proof checklist, or proof strategy section from a proof-targeted
+projector.
 
 Do not group all Verus specs first and all runtime code last. That makes the
 reader assemble the proof manually. Keep each primary behavior close to the spec
@@ -103,8 +106,8 @@ For the current link family, the policy should read like this:
 //!   5. PROJECT. A valid projection promotes only its own statement and emits
 //!      no raw facts.
 //!   6. STATE. Projection updates only this link id's read-model entry.
-//!   7. COMPOSE. The local child step composes with core/replay provenance into
-//!      a same-root chain theorem.
+//!   7. COMPOSE. The local child step composes with core/replay provenance for
+//!      supplied proof-facing same-root chains.
 ```
 
 The checklist below the policy should remain concrete. Each invariant should
@@ -161,7 +164,9 @@ should not drift unless the proof story genuinely changes.
    - codec_flag_spec/core
    - link_codec_identity_spec/core
    - canonical_link_identity
-   - real parser/encoder round-trip proofs when available
+   - link_encode_bytes_core
+   - link_decode_header_core
+   - canonical byte/header acceptance lemmas
 
 6. Extraction
    Primary:
@@ -205,12 +210,13 @@ should not drift unless the proof story genuinely changes.
 
 9. Composition
    Primary:
-   - valid_link_composes_with_parent_chain
+   - replay_preserves_supplied_link_chain_to_anchor
    Handlers and imports:
-   - link_chain_composition_spec/core
-   - local conditional chain step
-   - planned core runtime_engine_refines_transition_trace over concrete queues/maps
-   - planned replay_reports_engine_validity over modeled dependency closure
+   - link_chain_to_anchor
+   - root_link_chain_to_anchor
+   - child_extends_link_chain
+   - imported core engine validated-offer provenance
+   - imported replay_reports_engine_validity over modeled dependency closure
 
 10. Runtime Bridge Helpers
     - fact_id_to_core / core_to_fact_id

@@ -2,11 +2,11 @@ use linktoy::core::engine::EngineState;
 use linktoy::core::item::fact_id;
 use linktoy::core::projector::Projector;
 use linktoy::core::typestate::Validity;
-use linktoy::facts::link::project_unproven::{
+use linktoy::facts::link::project::{
     child_projected_ids_core, core_to_fact_id, extract_link_core, fact_id_to_core,
-    link_codec_layout_core, link_core_for, link_emitted_fact_count_core, maybe_fact_id_to_core,
-    project_link_core, projected_report_core, singleton_projected_ids_core, LinkCore,
-    MaybeStatementCore, ValidityCore,
+    link_codec_layout_core, link_core_for, link_decode_bytes_core, link_decode_header_core,
+    link_emitted_fact_count_core, maybe_fact_id_to_core, project_link_core, projected_report_core,
+    singleton_projected_ids_core, LinkCore, MaybeStatementCore, ValidityCore,
 };
 use linktoy::facts::link::{
     link_edges, link_id, link_project_validity, valid_link_key, Link, LinkProjector, TAG_LINK,
@@ -66,6 +66,60 @@ fn verified_codec_layout_accepts_canonical_headers_and_rejects_malformed_headers
     assert!(!link_codec_layout_core(TAG_LINK, 2, 0, 3).accepted);
     assert!(!link_codec_layout_core(TAG_LINK, 0, 2, 3).accepted);
     assert!(!link_codec_layout_core(TAG_LINK, 1, 1, 66).accepted);
+}
+
+#[test]
+fn verified_decode_header_core_matches_runtime_decode_acceptance() {
+    let root = Link {
+        content: b"root".to_vec(),
+        prev: None,
+        root: None,
+    };
+    let root_bytes = LinkProjector::encode(&root);
+    let root_header = link_decode_header_core(root_bytes.clone());
+    assert!(root_header.accepted);
+    assert_eq!(root_header.content_offset, 3);
+    let root_decoded = link_decode_bytes_core(root_bytes.clone());
+    assert!(root_decoded.layout.accepted);
+    assert!(!root_decoded.prev_present);
+    assert!(!root_decoded.root_present);
+    assert_eq!(root_decoded.content, b"root".to_vec());
+    assert_eq!(
+        LinkProjector::decode(&root_bytes).expect("root should decode"),
+        root
+    );
+
+    let child = Link {
+        content: b"child".to_vec(),
+        prev: Some(id(b"parent-id")),
+        root: Some(id(b"root-id")),
+    };
+    let child_bytes = LinkProjector::encode(&child);
+    let child_header = link_decode_header_core(child_bytes.clone());
+    assert!(child_header.accepted);
+    assert_eq!(child_header.content_offset, 67);
+    let child_decoded = link_decode_bytes_core(child_bytes.clone());
+    assert!(child_decoded.layout.accepted);
+    assert!(child_decoded.prev_present);
+    assert!(child_decoded.root_present);
+    assert_eq!(child_decoded.prev_bytes, child.prev.unwrap().to_vec());
+    assert_eq!(child_decoded.root_bytes, child.root.unwrap().to_vec());
+    assert_eq!(child_decoded.content, b"child".to_vec());
+    assert_eq!(
+        LinkProjector::decode(&child_bytes).expect("child should decode"),
+        child
+    );
+
+    for malformed in [
+        vec![],
+        vec![TAG_LINK],
+        vec![TAG_LINK, 1],
+        vec![TAG_LINK, 0, 2],
+    ] {
+        assert!(!link_decode_header_core(malformed.clone()).accepted);
+        assert!(!link_decode_bytes_core(malformed.clone()).layout.accepted);
+        assert!(LinkProjector::decode(&malformed).is_err());
+    }
 }
 
 #[test]

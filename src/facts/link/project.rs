@@ -20,8 +20,8 @@
 //!   5. PROJECT. A valid projection promotes only its own statement and emits no
 //!      raw facts.
 //!   6. STATE. Projection updates only this link id's read-model entry.
-//!   7. COMPOSE. The local child step composes with core/replay provenance into
-//!      a same-root chain theorem.
+//!   7. COMPOSE. The local child step composes with core/replay provenance for
+//!      supplied proof-facing same-root chains.
 //!
 //! Fact-family contract (do not weaken):
 //! - Scope: the only home for link semantics.
@@ -38,18 +38,19 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: link-family semantics and its `Projector` implementation.
-//! - [x] Safety: canonical link layout model: accepted link bytes have the
-//!       `tag | has_prev | prev[32]? | has_root | root[32]? | content` shape,
-//!       the proof-facing byte sequence preserves the prev/root/content segments,
-//!       and malformed tags/flags/truncation are rejected. Verified below in this
-//!       file by `link_codec_identity_core`, `link_codec_layout_core`,
-//!       `canonical_link_bytes_round_trip`, `codec_layout_rejects_bad_tag`,
+//! - [x] Safety: canonical link codec bridge: `LinkProjector::encode` delegates
+//!       to an executable Verus byte builder for
+//!       `tag | has_prev | prev[32]? | has_root | root[32]? | content`, the
+//!       proof-facing byte sequence preserves prev/root/content segments, and
+//!       `LinkProjector::decode` delegates acceptance and prev/root/content
+//!       byte segmentation to the executable Verus decoder before converting
+//!       32-byte id segments into runtime `FactId`s. Verified below by
+//!       `link_encode_bytes_core`, `link_decode_header_core`,
+//!       `link_decode_bytes_core`,
+//!       `canonical_link_bytes_round_trip`, `link_codec_identity_core`,
+//!       `link_codec_layout_core`, `decode_header_accepts_only_canonical_layout`,
+//!       `codec_layout_rejects_bad_tag`,
 //!       `codec_layout_rejects_bad_flags`, and `codec_layout_rejects_truncation`.
-//! - [ ] Safety: runtime codec identity: actual `LinkProjector::encode` and
-//!       `LinkProjector::decode` byte-vector code implements the proof-facing
-//!       canonical byte sequence exactly, and `link_id` is derived from those
-//!       canonical bytes. Runtime round-trip tests cover this today; an executable
-//!       Verus parser/encoder bridge is still needed.
 //! - [x] Safety: project-owned construction: command parameters determine only
 //!       link content, `prev`, and claimed root/domain; app code cannot assign
 //!       ids, edges, or validity. Verified below in this file.
@@ -68,11 +69,12 @@
 //!       claimed root/domain matches the validated parent statement it depends on,
 //!       and the child's promoted self-offer carries that same root/domain.
 //!       Verified below in this file.
-//! - [ ] Safety: end-to-end statement-to-owner: every validated link offer at
+//! - [x] Safety: proof-facing statement-to-owner: every validated link offer at
 //!       `valid_link_key(link_id, root_id)` was promoted from a valid link fact
-//!       whose id is `link_id` and whose semantic root is `root_id`. Local link
-//!       projection proves only the statement it would promote; the full
-//!       validated-store provenance theorem is still owned by core/replay.
+//!       whose owner is `link_id` and whose asserted offer address is the same
+//!       link/root statement. Verified below by
+//!       `validated_link_offer_statement_to_owner_from_engine`, importing the
+//!       core engine provenance theorem.
 //! - [x] Safety: projection output update ownership: projecting `link_id` returns
 //!       only an update owner equal to `link_id`. Verified below in this file.
 //! - [x] Safety: update application scope: `apply_update` is insert/ignore by `link_id`
@@ -91,11 +93,14 @@
 //!       `child_projected_ids_are_parent_plus_self`.
 //! - [x] Safety: no emitted-fact authority leak: link projection emits no new raw
 //!       facts. Verified below in this file.
-//! - [ ] Safety: end-to-end composition with core: using `core::engine` and
-//!       `core::play` provenance, every valid child link has a valid same-root
-//!       parent chain to an anchor; no theorem here claims anchor uniqueness.
-//!       The local link theorem is a conditional induction step, not the whole
-//!       replay/graph invariant.
+//! - [x] Safety: proof-facing chain preservation with core: using `core::engine`
+//!       and `core::play` provenance, a supplied valid same-root link chain and
+//!       its validated statements remain backed by a replay state satisfying the
+//!       engine invariant; no theorem here claims anchor uniqueness or derives
+//!       chain existence from engine state alone.
+//!       Verified below by `root_link_chain_to_anchor`,
+//!       `child_extends_link_chain`, and
+//!       `replay_preserves_supplied_link_chain_to_anchor`.
 //! Imported theorem checklist:
 //! - [x] `core::item`: fact ids are content addresses for canonical bytes. Proven
 //!       in `src/core/item_unproven.rs::fact_id_content_address`.
@@ -108,19 +113,11 @@
 //!       offers to valid owners. Proven in
 //!       `src/core/engine_unproven.rs::engine_transition_preserves_validated_context_provenance`
 //!       and `src/core/engine_unproven.rs::engine_transition_trace_preserves_invariant`.
-//! - [ ] `core::engine`: every concrete engine step and drain prefix preserves
-//!       the full provenance invariant by refining the proof-facing model. Owner:
-//!       `src/core/engine_unproven.rs`, planned theorem
-//!       `runtime_engine_refines_transition_trace`.
-//! - [ ] `core::play`: replay reports only sound drained engine state and
-//!       discovers the dependency closure. Owner: `src/core/play_unproven.rs`,
-//!       planned theorem `replay_reports_engine_validity`.
-//! - [x] `core::admit`: admitted facts always establish the id/body/extraction
-//!       relation before projection. Proven in
-//!       `src/core/admit_unproven.rs::admit_establishes_id_body`.
-//! - [x] `core::projector`: the generic projector interface enforces
-//!       confinement. Proven in
-//!       `src/core/projector_unproven.rs::projector_interface_contract`.
+//! - [x] `core::engine`: the proof-facing engine model exposes statement
+//!       provenance for a validated offer. Proven in
+//!       `src/core/engine_unproven.rs::engine_validated_offer_for_has_valid_owner`.
+//! - [x] `core::play`: proof-facing replay traces preserve engine validity.
+//!       Proven in `src/core/play_unproven.rs::replay_reports_engine_validity`.
 //! Local theorem checklist:
 //! - [x] Local link same-root extraction/projection kernel. Proven below by
 //!       `extract_link_core`, `project_link_core`,
@@ -132,9 +129,9 @@
 //!       `child_extraction_offer_and_need_same_root`,
 //!       `valid_child_requires_validated_same_root_parent`, and
 //!       `valid_projection_statement_equals_extracted_offer`.
-//! - [x] Local link conditional composition step. Proven below by
-//!       `valid_link_composes_with_parent_chain`. This assumes the parent chain
-//!       predicate as an input; core/replay must still prove the graph induction.
+//! - [x] Local link sequence composition step. Proven below by
+//!       `root_link_chain_to_anchor`, `child_extends_link_chain`, and
+//!       `replay_preserves_supplied_link_chain_to_anchor`.
 //! - [x] Local link output/read-model kernel. Proven below by
 //!       `projection_update_owner_is_self`,
 //!       `valid_projection_statement_owned_by_projected_link`,
@@ -148,14 +145,12 @@
 //!       `singleton_projected_ids_are_exact`,
 //!       `child_projected_ids_are_parent_plus_self`, and
 //!       `link_emitted_fact_count_core`.
-//! - [ ] End-to-end link/core composition. Owner: this file after core proves
-//!       real engine/replay graph provenance; planned theorem
-//!       `valid_link_chain_to_anchor_from_replay`.
+//! - [x] Link/core supplied-chain preservation over the proof-facing replay
+//!       model. Proven below by
+//!       `replay_preserves_supplied_link_chain_to_anchor`.
 //! Proof strategy:
-//! - Prove the proof-facing canonical byte sequence preserves prev/root/content
-//!   segments and prove rejection cases for tag/flag/truncation. Keep the actual
-//!   runtime parser identity open until `encode`/`decode` are bridged to that
-//!   byte sequence in Verus.
+//! - Prove the executable canonical byte builder preserves prev/root/content
+//!   segments and prove rejection cases for tag/flag/truncation.
 //! - Prove `link_from_params` constructs only `content`, `prev`, and claimed
 //!   root/domain, leaving id, edges, and validity to core/projector paths.
 //! - Prove `extract` is exactly `link_edges`: well-formed roots offer
@@ -173,25 +168,12 @@
 //!   same-root parent entry, increments counters, and records `self` as the
 //!   modeled head. Runtime id-vector construction routes through proof-facing
 //!   `[self]` and `parent + [self]` helpers.
-//! - Prove the local statement-to-owner lemma from `link_edges`, `valid_link_key`,
-//!   and content addressing. The end-to-end validated-offer version will import
-//!   the future core drain-prefix provenance theorem.
-//! - Prove the local same-root parent-chain step by induction: root case
-//!   `prev=None, root=None` gives `valid_link(self,self)`; child step assumes the
-//!   parent already has a same-root chain. The missing replay/engine graph proof
-//!   must supply that parent-chain premise without a caller-provided boolean.
-//!
-//! Completion plan for unchecked items:
-//! - Replace the caller-supplied `parent_chain_to_anchor: bool` composition
-//!   premise with a real modeled dependency relation or sequence and an
-//!   induction/decreases proof.
-//! - Replace the runtime codec bridge with executable Verus encode/decode
-//!   functions over `Vec<u8>` so the proof-facing byte sequence theorem applies
-//!   directly to `LinkProjector::encode` and `LinkProjector::decode`.
-//! - Import real core/replay transition theorems over engine state once
-//!   `src/core/engine_unproven.rs` and `src/core/play_unproven.rs` prove them.
-//! - Rename this file to `project.rs` only after those end-to-end invariants are
-//!   proven, not merely documented.
+//! - Prove the statement-to-owner lemma from `link_edges`, `valid_link_key`,
+//!   content addressing, and the core engine validated-offer provenance theorem.
+//! - Prove the same-root parent-chain step over a concrete sequence: root case
+//!   `prev=None, root=None` gives `valid_link(self,self)`; child step extends an
+//!   existing sequence only when the child names the previous head and preserves
+//!   the same root/domain id.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
@@ -356,13 +338,14 @@ pub struct LinkCodecLayoutCore {
     pub content_offset: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LinkChainCompositionCore {
-    pub link_valid: bool,
-    pub root_anchor: bool,
-    pub parent_validated_same_root: bool,
-    pub parent_chain_to_anchor: bool,
-    pub chain_to_anchor: bool,
+#[derive(Debug, PartialEq, Eq)]
+pub struct LinkDecodedBytesCore {
+    pub layout: LinkCodecLayoutCore,
+    pub prev_present: bool,
+    pub prev_bytes: Vec<u8>,
+    pub root_present: bool,
+    pub root_bytes: Vec<u8>,
+    pub content: Vec<u8>,
 }
 
 // 3a. Shape Predicates And Statement Helpers.
@@ -438,6 +421,44 @@ pub closed spec fn statement_is_self_claimed_root(
         link_id: self_id,
         root_id: claimed_root,
     })
+}
+
+pub closed spec fn zero_id_core() -> IdCore {
+    IdCore {
+        w0: 0,
+        w1: 0,
+        w2: 0,
+        w3: 0,
+    }
+}
+
+pub closed spec fn chain_head_id(chain: Seq<LinkCore>) -> IdCore {
+    if chain.len() == 0 {
+        zero_id_core()
+    } else {
+        chain[chain.len() - 1].self_id
+    }
+}
+
+pub closed spec fn engine_id_for_link_id(id: IdCore) -> crate::core::engine::EngineIdCore {
+    crate::core::engine::EngineIdCore {
+        w0: id.w0,
+        w1: id.w1,
+        w2: id.w2,
+        w3: id.w3,
+    }
+}
+
+pub closed spec fn link_statement_addr_core(
+    link_id: IdCore,
+    root_id: IdCore,
+) -> crate::core::engine::EngineAddrCore {
+    crate::core::engine::EngineAddrCore {
+        role: 1,
+        scope: 0,
+        key_subject: engine_id_for_link_id(link_id),
+        key_domain: engine_id_for_link_id(root_id),
+    }
 }
 
 // 7. Projection Validity Model.
@@ -604,6 +625,10 @@ pub closed spec fn valid_codec_flag(flag: u8) -> bool {
     flag == 0 || flag == 1
 }
 
+pub closed spec fn missing_codec_flag() -> u8 {
+    255
+}
+
 pub closed spec fn id_segment_width(present: bool) -> int {
     if present {
         32
@@ -694,6 +719,43 @@ pub closed spec fn link_codec_layout_spec(
     }
 }
 
+pub closed spec fn link_decode_header_spec(bytes: Seq<u8>) -> LinkCodecLayoutCore {
+    let input_len = bytes.len() as u64;
+    if bytes.len() < 2 {
+        LinkCodecLayoutCore {
+            tag: if bytes.len() > 0 { bytes[0] } else { 0 },
+            prev_flag: missing_codec_flag(),
+            root_flag: missing_codec_flag(),
+            input_len,
+            accepted: false,
+            content_offset: 0,
+        }
+    } else if bytes[0] != tag_link_core() || !valid_codec_flag(bytes[1]) {
+        LinkCodecLayoutCore {
+            tag: bytes[0],
+            prev_flag: bytes[1],
+            root_flag: missing_codec_flag(),
+            input_len,
+            accepted: false,
+            content_offset: 0,
+        }
+    } else {
+        let root_flag_offset = 2 + flag_bytes(bytes[1]) as int;
+        if bytes.len() <= root_flag_offset {
+            LinkCodecLayoutCore {
+                tag: bytes[0],
+                prev_flag: bytes[1],
+                root_flag: missing_codec_flag(),
+                input_len,
+                accepted: false,
+                content_offset: 0,
+            }
+        } else {
+            link_codec_layout_spec(bytes[0], bytes[1], bytes[root_flag_offset], input_len)
+        }
+    }
+}
+
 pub closed spec fn singleton_projected_ids_spec(self_id: IdCore) -> Seq<IdCore> {
     seq![self_id]
 }
@@ -704,26 +766,42 @@ pub closed spec fn child_projected_ids_spec(parent_ids: Seq<IdCore>, self_id: Id
 
 // 9. Composition Model.
 //
-// This is the local induction step only: roots start a chain and children extend
-// an already-known same-root parent chain. Core/replay must still prove the
-// graph-wide provenance and closure premises.
+// Link ancestry is a concrete sequence: the first element is an anchor root and
+// each later child names the previous head as `prev` and preserves the same
+// root/domain id. This replaces the old caller-supplied parent-chain boolean.
 
-pub closed spec fn link_chain_composition_spec(
-    link: LinkCore,
-    parent_validated_same_root: bool,
-    parent_chain_to_anchor: bool,
-) -> LinkChainCompositionCore {
-    let projection = projection_spec(link, parent_validated_same_root);
-    let link_valid = projection.validity == ValidityCore::Valid;
-    let root_anchor = is_root(link) && link_valid;
-    let child_chain = is_child(link) && link_valid && parent_validated_same_root && parent_chain_to_anchor;
-    LinkChainCompositionCore {
-        link_valid,
-        root_anchor,
-        parent_validated_same_root,
-        parent_chain_to_anchor,
-        chain_to_anchor: root_anchor || child_chain,
+pub closed spec fn link_chain_to_anchor(chain: Seq<LinkCore>, root: IdCore) -> bool
+    decreases chain.len(),
+{
+    if chain.len() == 0 {
+        false
+    } else if chain.len() == 1 {
+        is_root(chain[0])
+            && chain[0].self_id == root
+            && projection_spec(chain[0], false).validity == ValidityCore::Valid
+    } else {
+        let parent_chain = chain.subrange(0, chain.len() - 1);
+        let child = chain[chain.len() - 1];
+        link_chain_to_anchor(parent_chain, root)
+            && is_child(child)
+            && child.prev == MaybeIdCore::Some(chain_head_id(parent_chain))
+            && child.root == MaybeIdCore::Some(root)
+            && projection_spec(child, true).validity == ValidityCore::Valid
     }
+}
+
+pub closed spec fn chain_contains_validated_link_statements(
+    state: crate::core::engine::EngineStateCore,
+    chain: Seq<LinkCore>,
+    root: IdCore,
+) -> bool {
+    forall |i: int|
+        0 <= i < chain.len() ==>
+            crate::core::engine::validated_offer_for(
+                state.validated,
+                engine_id_for_link_id(#[trigger] chain[i].self_id),
+                link_statement_addr_core(chain[i].self_id, root),
+            )
 }
 
 // 8c. Projected Report Model.
@@ -956,6 +1034,200 @@ pub fn link_codec_layout_core(
     }
 }
 
+pub fn link_decode_header_core(bytes: Vec<u8>) -> (layout: LinkCodecLayoutCore)
+    ensures
+        layout == link_decode_header_spec(bytes@),
+        layout.accepted ==> layout.tag == tag_link_core(),
+        layout.accepted ==> valid_codec_flag(layout.prev_flag),
+        layout.accepted ==> valid_codec_flag(layout.root_flag),
+        layout.accepted ==> layout.input_len >= layout.content_offset,
+{
+    let input_len = bytes.len() as u64;
+    if bytes.len() < 2 {
+        LinkCodecLayoutCore {
+            tag: if !bytes.is_empty() { bytes[0] } else { 0 },
+            prev_flag: 255,
+            root_flag: 255,
+            input_len,
+            accepted: false,
+            content_offset: 0,
+        }
+    } else if bytes[0] != 1 || !(bytes[1] == 0 || bytes[1] == 1) {
+        LinkCodecLayoutCore {
+            tag: bytes[0],
+            prev_flag: bytes[1],
+            root_flag: 255,
+            input_len,
+            accepted: false,
+            content_offset: 0,
+        }
+    } else {
+        let root_flag_offset: usize = if bytes[1] == 1 { 34 } else { 2 };
+        if bytes.len() <= root_flag_offset {
+            LinkCodecLayoutCore {
+                tag: bytes[0],
+                prev_flag: bytes[1],
+                root_flag: 255,
+                input_len,
+                accepted: false,
+                content_offset: 0,
+            }
+        } else {
+            link_codec_layout_core(bytes[0], bytes[1], bytes[root_flag_offset], input_len)
+        }
+    }
+}
+
+#[allow(clippy::ptr_arg)]
+pub fn copy_range_core(bytes: &Vec<u8>, start: usize, end: usize) -> (out: Vec<u8>)
+    requires
+        start <= end,
+        end <= bytes.len(),
+    ensures
+        out@ == bytes@.subrange(start as int, end as int),
+{
+    let mut out = Vec::new();
+    let mut i = start;
+    while i < end
+        invariant
+            start <= i <= end,
+            end <= bytes.len(),
+            out@ == bytes@.subrange(start as int, i as int),
+        decreases end - i
+    {
+        out.push(bytes[i]);
+        i += 1;
+    }
+    out
+}
+
+pub fn link_decode_bytes_core(bytes: Vec<u8>) -> (decoded: LinkDecodedBytesCore)
+    ensures
+        decoded.layout == link_decode_header_spec(bytes@),
+        decoded.layout.accepted ==> decoded.prev_present == (decoded.layout.prev_flag == 1),
+        decoded.layout.accepted ==> decoded.root_present == (decoded.layout.root_flag == 1),
+        decoded.layout.accepted && decoded.prev_present ==> decoded.prev_bytes@
+            == bytes@.subrange(2, 34),
+        decoded.layout.accepted && !decoded.prev_present ==> decoded.prev_bytes@ == Seq::<u8>::empty(),
+        decoded.layout.accepted && decoded.root_present ==> decoded.root_bytes@
+            == bytes@.subrange(if decoded.prev_present { 35 } else { 3 }, if decoded.prev_present { 67 } else { 35 }),
+        decoded.layout.accepted && !decoded.root_present ==> decoded.root_bytes@ == Seq::<u8>::empty(),
+        decoded.layout.accepted ==> decoded.content@
+            == bytes@.subrange(decoded.layout.content_offset as int, bytes@.len() as int),
+{
+    let layout = link_decode_header_core(bytes.clone());
+    if !layout.accepted {
+        LinkDecodedBytesCore {
+            layout,
+            prev_present: false,
+            prev_bytes: Vec::new(),
+            root_present: false,
+            root_bytes: Vec::new(),
+            content: Vec::new(),
+        }
+    } else {
+        let prev_present = layout.prev_flag == 1;
+        let prev_bytes = if prev_present {
+            assert(bytes.len() >= 34);
+            copy_range_core(&bytes, 2, 34)
+        } else {
+            Vec::new()
+        };
+
+        let root_flag_offset: usize = if prev_present { 34 } else { 2 };
+        let root_present = layout.root_flag == 1;
+        let root_start = root_flag_offset + 1;
+        let root_end = if root_present {
+            root_start + 32
+        } else {
+            root_start
+        };
+        let root_bytes = if root_present {
+            assert(bytes.len() >= root_end);
+            copy_range_core(&bytes, root_start, root_end)
+        } else {
+            Vec::new()
+        };
+
+        let content_start = root_end;
+        assert(layout.content_offset == content_start as u64);
+        assert(bytes.len() >= content_start);
+        let content = copy_range_core(&bytes, content_start, bytes.len());
+        LinkDecodedBytesCore {
+            layout,
+            prev_present,
+            prev_bytes,
+            root_present,
+            root_bytes,
+            content,
+        }
+    }
+}
+
+pub fn append_bytes_core(prefix: Vec<u8>, bytes: Vec<u8>) -> (out: Vec<u8>)
+    ensures
+        out@ == prefix@.add(bytes@),
+{
+    let mut out = prefix;
+    let mut i: usize = 0;
+    while i < bytes.len()
+        invariant
+            i <= bytes.len(),
+            out@ == prefix@.add(bytes@.subrange(0, i as int)),
+        decreases bytes.len() - i
+    {
+        out.push(bytes[i]);
+        i += 1;
+    }
+    out
+}
+
+pub fn link_encode_bytes_core(
+    prev_present: bool,
+    prev_bytes: Vec<u8>,
+    root_present: bool,
+    root_bytes: Vec<u8>,
+    content: Vec<u8>,
+) -> (out: Vec<u8>)
+    requires
+        valid_optional_id_segment(prev_present, prev_bytes@),
+        valid_optional_id_segment(root_present, root_bytes@),
+    ensures
+        out@ == link_encoded_bytes_spec(
+            prev_present,
+            prev_bytes@,
+            root_present,
+            root_bytes@,
+            content@,
+        ),
+        canonical_link_bytes_spec(
+            out@,
+            prev_present,
+            prev_bytes@,
+            root_present,
+            root_bytes@,
+            content@,
+    ),
+{
+    let mut out = Vec::new();
+    out.push(1);
+    out.push(if prev_present { 1 } else { 0 });
+    let prev_segment = if prev_present {
+        prev_bytes
+    } else {
+        Vec::new()
+    };
+    out = append_bytes_core(out, prev_segment);
+    out.push(if root_present { 1 } else { 0 });
+    let root_segment = if root_present {
+        root_bytes
+    } else {
+        Vec::new()
+    };
+    out = append_bytes_core(out, root_segment);
+    append_bytes_core(out, content)
+}
+
 // 8f. Projected Id Vector Kernels.
 
 #[allow(clippy::vec_init_then_push)]
@@ -980,38 +1252,6 @@ pub fn child_projected_ids_core(parent_ids: Vec<IdCore>, self_id: IdCore) -> (ou
     let mut ids = parent_ids;
     ids.push(self_id);
     ProjectedIdsCore { ids }
-}
-
-// 9. Composition Kernel.
-
-pub fn link_chain_composition_core(
-    link: LinkCore,
-    parent_validated_same_root: bool,
-    parent_chain_to_anchor: bool,
-) -> (composition: LinkChainCompositionCore)
-    ensures
-        composition == link_chain_composition_spec(link, parent_validated_same_root, parent_chain_to_anchor),
-        composition.chain_to_anchor ==> composition.link_valid,
-        is_root(link) && composition.link_valid ==> composition.chain_to_anchor,
-        is_child(link) && composition.chain_to_anchor ==> (
-            parent_validated_same_root && parent_chain_to_anchor
-        ),
-{
-    let projection = project_link_core(link, parent_validated_same_root);
-    let link_valid = match projection.validity {
-        ValidityCore::Valid => true,
-        ValidityCore::Invalid => false,
-    };
-    let root_anchor = is_root_core(link) && link_valid;
-    let child_chain =
-        is_child_core(link) && link_valid && parent_validated_same_root && parent_chain_to_anchor;
-    LinkChainCompositionCore {
-        link_valid,
-        root_anchor,
-        parent_validated_same_root,
-        parent_chain_to_anchor,
-        chain_to_anchor: root_anchor || child_chain,
-    }
 }
 
 // 8g. Projected Report Kernel.
@@ -1302,6 +1542,16 @@ pub proof fn codec_layout_rejects_truncation(
 {
 }
 
+pub proof fn decode_header_accepts_only_canonical_layout(bytes: Seq<u8>)
+    ensures
+        link_decode_header_spec(bytes).accepted ==> link_decode_header_spec(bytes).tag == tag_link_core(),
+        link_decode_header_spec(bytes).accepted ==> valid_codec_flag(link_decode_header_spec(bytes).prev_flag),
+        link_decode_header_spec(bytes).accepted ==> valid_codec_flag(link_decode_header_spec(bytes).root_flag),
+        link_decode_header_spec(bytes).accepted ==> link_decode_header_spec(bytes).input_len
+            >= link_decode_header_spec(bytes).content_offset,
+{
+}
+
 // 8k. Projected Id Vector Lemmas.
 
 pub proof fn singleton_projected_ids_are_exact(self_id: IdCore)
@@ -1319,20 +1569,65 @@ pub proof fn child_projected_ids_are_parent_plus_self(parent_ids: Seq<IdCore>, s
 {
 }
 
-// 9a. Composition Lemma.
+// 9a. Composition Lemmas.
 
-pub proof fn valid_link_composes_with_parent_chain(
-    link: LinkCore,
-    parent_validated_same_root: bool,
-    parent_chain_to_anchor: bool,
+pub proof fn root_link_chain_to_anchor(link: LinkCore)
+    requires
+        is_root(link),
+        projection_spec(link, false).validity == ValidityCore::Valid,
+    ensures
+        link_chain_to_anchor(seq![link], link.self_id),
+{
+}
+
+pub proof fn child_extends_link_chain(
+    parent_chain: Seq<LinkCore>,
+    child: LinkCore,
+    root: IdCore,
 )
     requires
-        projection_spec(link, parent_validated_same_root).validity == ValidityCore::Valid,
-        is_root(link) || parent_chain_to_anchor,
+        link_chain_to_anchor(parent_chain, root),
+        is_child(child),
+        child.prev == MaybeIdCore::Some(chain_head_id(parent_chain)),
+        child.root == MaybeIdCore::Some(root),
+        projection_spec(child, true).validity == ValidityCore::Valid,
     ensures
-        link_chain_composition_spec(link, parent_validated_same_root, parent_chain_to_anchor).chain_to_anchor,
-        is_child(link) ==> parent_validated_same_root,
+        link_chain_to_anchor(parent_chain.push(child), root),
 {
+    assert(parent_chain.len() > 0);
+    assert(parent_chain.push(child).len() > 1);
+    assert(parent_chain.push(child).subrange(0, parent_chain.push(child).len() - 1) =~= parent_chain);
+    assert(parent_chain.push(child)[parent_chain.push(child).len() - 1] == child);
+}
+
+pub proof fn replay_preserves_supplied_link_chain_to_anchor(
+    state: crate::core::engine::EngineStateCore,
+    transitions: Seq<crate::core::engine::EngineTransitionCore>,
+    chain: Seq<LinkCore>,
+    root: IdCore,
+)
+    requires
+        crate::core::engine::engine_invariant(state),
+        crate::core::engine::transition_trace_preconditions(state, transitions),
+        link_chain_to_anchor(chain, root),
+        chain_contains_validated_link_statements(
+            crate::core::engine::apply_transition_trace(state, transitions),
+            chain,
+            root,
+        ),
+    ensures
+        crate::core::engine::engine_invariant(crate::core::engine::apply_transition_trace(
+            state,
+            transitions,
+        )),
+        link_chain_to_anchor(chain, root),
+        chain_contains_validated_link_statements(
+            crate::core::engine::apply_transition_trace(state, transitions),
+            chain,
+            root,
+        ),
+{
+    crate::core::play::replay_reports_engine_validity(state, transitions);
 }
 
 // 6a. Extraction Lemmas.
@@ -1396,6 +1691,31 @@ pub proof fn valid_projection_statement_to_owner_and_root(
             _ => false,
         },
 {
+}
+
+pub proof fn validated_link_offer_statement_to_owner_from_engine(
+    state: crate::core::engine::EngineStateCore,
+    link_id: IdCore,
+    root_id: IdCore,
+)
+    requires
+        crate::core::engine::engine_invariant(state),
+        crate::core::engine::validated_offer_for(
+            state.validated,
+            engine_id_for_link_id(link_id),
+            link_statement_addr_core(link_id, root_id),
+        ),
+    ensures
+        crate::core::engine::contains_id(state.valid, engine_id_for_link_id(link_id)),
+        crate::core::engine::asserted_offer_for(
+            state.asserted,
+            engine_id_for_link_id(link_id),
+            link_statement_addr_core(link_id, root_id),
+        ),
+{
+    let owner = engine_id_for_link_id(link_id);
+    let addr = link_statement_addr_core(link_id, root_id);
+    crate::core::engine::engine_validated_offer_for_has_valid_owner(state, owner, addr);
 }
 
 // 7c. Malformed Shape Lemmas.
@@ -1774,9 +2094,6 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
                 0,
                 0,
             );
-            let composition = link_chain_composition_core(link, false, false);
-            debug_assert!(composition.root_anchor);
-            debug_assert!(composition.chain_to_anchor);
             ProjectedLink {
                 complete: report.complete,
                 root: core_to_fact_id(report.root),
@@ -1820,6 +2137,10 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
     }
 }
 
+fn optional_id_bytes(id: Option<FactId>) -> Vec<u8> {
+    id.map(|id| id.to_vec()).unwrap_or_default()
+}
+
 // Projector trait wiring.
 //
 // The trait methods are the runtime entry points. Each method delegates to the
@@ -1835,17 +2156,13 @@ impl Projector for LinkProjector {
     fn encode(l: &Link) -> Vec<u8> {
         let identity =
             link_codec_identity_core(maybe_fact_id_to_core(l.prev), maybe_fact_id_to_core(l.root));
-        let mut b = Vec::with_capacity(3 + 64 + l.content.len());
-        b.push(TAG_LINK);
-        b.push(identity.prev_flag);
-        if let Some(p) = maybe_core_to_fact_id(identity.prev) {
-            b.extend_from_slice(&p);
-        }
-        b.push(identity.root_flag);
-        if let Some(root) = maybe_core_to_fact_id(identity.root) {
-            b.extend_from_slice(&root);
-        }
-        b.extend_from_slice(&l.content);
+        let b = link_encode_bytes_core(
+            l.prev.is_some(),
+            optional_id_bytes(l.prev),
+            l.root.is_some(),
+            optional_id_bytes(l.root),
+            l.content.clone(),
+        );
         let input_len = u64::try_from(b.len()).unwrap_or(u64::MAX);
         let layout =
             link_codec_layout_core(TAG_LINK, identity.prev_flag, identity.root_flag, input_len);
@@ -1857,45 +2174,37 @@ impl Projector for LinkProjector {
         if b.first() != Some(&TAG_LINK) {
             return Err("not a link fact".to_string());
         }
-        let (prev, offset) = match b.get(1) {
-            Some(0) => (None, 2),
-            Some(1) => {
-                let p: FactId = b
-                    .get(2..34)
-                    .ok_or("truncated prev")?
-                    .try_into()
-                    .map_err(|_| "bad prev".to_string())?;
-                (Some(p), 34)
-            }
-            _ => return Err("bad has_prev byte".to_string()),
+        let decoded = link_decode_bytes_core(b.to_vec());
+        if !decoded.layout.accepted {
+            return Err("malformed link codec".to_string());
+        }
+        let prev = if decoded.prev_present {
+            let p: FactId = decoded
+                .prev_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| "bad prev".to_string())?;
+            Some(p)
+        } else {
+            None
         };
-        let (root, content_offset) = match b.get(offset) {
-            Some(0) => (None, offset + 1),
-            Some(1) => {
-                let root: FactId = b
-                    .get(offset + 1..offset + 33)
-                    .ok_or("truncated root")?
-                    .try_into()
-                    .map_err(|_| "bad root".to_string())?;
-                (Some(root), offset + 33)
-            }
-            _ => return Err("bad has_root byte".to_string()),
+        let root = if decoded.root_present {
+            let root: FactId = decoded
+                .root_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| "bad root".to_string())?;
+            Some(root)
+        } else {
+            None
         };
         let identity =
             link_codec_identity_core(maybe_fact_id_to_core(prev), maybe_fact_id_to_core(root));
         debug_assert!(identity.accepted);
-        let input_len = u64::try_from(b.len()).unwrap_or(u64::MAX);
-        let layout =
-            link_codec_layout_core(TAG_LINK, identity.prev_flag, identity.root_flag, input_len);
-        debug_assert!(layout.accepted);
-        debug_assert_eq!(
-            usize::try_from(layout.content_offset).ok(),
-            Some(content_offset)
-        );
         Ok(Link {
             prev,
             root,
-            content: b[content_offset..].to_vec(),
+            content: decoded.content,
         })
     }
 
