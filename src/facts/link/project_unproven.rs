@@ -38,15 +38,18 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: link-family semantics and its `Projector` implementation.
-//! - [x] Safety: canonical link identity: accepted link bytes have the canonical
-//!       `tag | has_prev | prev[32]? | has_root | root[32]? | content` layout,
-//!       malformed tags/flags/truncation are rejected, encode/decode preserve
-//!       the semantic `prev`/`root` shape, and `link_id` is derived from canonical
-//!       bytes. Verified below in this file by `link_codec_identity_core`,
-//!       `link_codec_layout_core`, `canonical_link_identity`,
-//!       `codec_layout_rejects_bad_tag`, `codec_layout_rejects_bad_flags`, and
-//!       `codec_layout_rejects_truncation`; runtime round-trip tests connect the
-//!       byte-vector content path to the same helpers.
+//! - [x] Safety: canonical link layout model: accepted link bytes have the
+//!       `tag | has_prev | prev[32]? | has_root | root[32]? | content` shape,
+//!       the proof-facing byte sequence preserves the prev/root/content segments,
+//!       and malformed tags/flags/truncation are rejected. Verified below in this
+//!       file by `link_codec_identity_core`, `link_codec_layout_core`,
+//!       `canonical_link_bytes_round_trip`, `codec_layout_rejects_bad_tag`,
+//!       `codec_layout_rejects_bad_flags`, and `codec_layout_rejects_truncation`.
+//! - [ ] Safety: runtime codec identity: actual `LinkProjector::encode` and
+//!       `LinkProjector::decode` byte-vector code implements the proof-facing
+//!       canonical byte sequence exactly, and `link_id` is derived from those
+//!       canonical bytes. Runtime round-trip tests cover this today; an executable
+//!       Verus parser/encoder bridge is still needed.
 //! - [x] Safety: project-owned construction: command parameters determine only
 //!       link content, `prev`, and claimed root/domain; app code cannot assign
 //!       ids, edges, or validity. Verified below in this file.
@@ -101,12 +104,14 @@
 //!       `src/core/offer_unproven.rs::asserted_edge_address_shape`.
 //! - [x] `core::typestate`: `Context::has_offer` is exact validated-offer lookup.
 //!       Proven in `src/core/typestate_unproven.rs::context_lookup_exact`.
-//! - [ ] `core::engine`: abstract context/promotion gates relate context offers
-//!       to valid owners. Owner: `src/core/engine_unproven.rs`, planned theorem
-//!       `engine_transition_preserves_validated_context_provenance`.
+//! - [x] `core::engine`: proof-facing context/promotion gates relate context
+//!       offers to valid owners. Proven in
+//!       `src/core/engine_unproven.rs::engine_transition_preserves_validated_context_provenance`
+//!       and `src/core/engine_unproven.rs::engine_transition_trace_preserves_invariant`.
 //! - [ ] `core::engine`: every concrete engine step and drain prefix preserves
-//!       the full provenance invariant. Owner: `src/core/engine_unproven.rs`,
-//!       planned theorem `engine_drain_prefix_sound`.
+//!       the full provenance invariant by refining the proof-facing model. Owner:
+//!       `src/core/engine_unproven.rs`, planned theorem
+//!       `runtime_engine_refines_transition_trace`.
 //! - [ ] `core::play`: replay reports only sound drained engine state and
 //!       discovers the dependency closure. Owner: `src/core/play_unproven.rs`,
 //!       planned theorem `replay_reports_engine_validity`.
@@ -147,8 +152,10 @@
 //!       real engine/replay graph provenance; planned theorem
 //!       `valid_link_chain_to_anchor_from_replay`.
 //! Proof strategy:
-//! - Prove codec round trips and rejection cases for the current
-//!   tag/prev/root/content layout.
+//! - Prove the proof-facing canonical byte sequence preserves prev/root/content
+//!   segments and prove rejection cases for tag/flag/truncation. Keep the actual
+//!   runtime parser identity open until `encode`/`decode` are bridged to that
+//!   byte sequence in Verus.
 //! - Prove `link_from_params` constructs only `content`, `prev`, and claimed
 //!   root/domain, leaving id, edges, and validity to core/projector paths.
 //! - Prove `extract` is exactly `link_edges`: well-formed roots offer
@@ -178,6 +185,9 @@
 //! - Replace the caller-supplied `parent_chain_to_anchor: bool` composition
 //!   premise with a real modeled dependency relation or sequence and an
 //!   induction/decreases proof.
+//! - Replace the runtime codec bridge with executable Verus encode/decode
+//!   functions over `Vec<u8>` so the proof-facing byte sequence theorem applies
+//!   directly to `LinkProjector::encode` and `LinkProjector::decode`.
 //! - Import real core/replay transition theorems over engine state once
 //!   `src/core/engine_unproven.rs` and `src/core/play_unproven.rs` prove them.
 //! - Rename this file to `project.rs` only after those end-to-end invariants are
@@ -334,9 +344,6 @@ pub struct LinkCodecIdentityCore {
     pub prev_flag: u8,
     pub root_flag: u8,
     pub accepted: bool,
-    pub decode_encode_round_trip: bool,
-    pub encode_decode_round_trip: bool,
-    pub id_from_canonical_bytes: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -574,9 +581,6 @@ pub closed spec fn link_codec_identity_spec(prev: MaybeIdCore, root: MaybeIdCore
         prev_flag: codec_flag_spec(prev),
         root_flag: codec_flag_spec(root),
         accepted: true,
-        decode_encode_round_trip: true,
-        encode_decode_round_trip: true,
-        id_from_canonical_bytes: true,
     }
 }
 
@@ -598,6 +602,75 @@ pub closed spec fn flag_bytes(flag: u8) -> u64 {
 
 pub closed spec fn valid_codec_flag(flag: u8) -> bool {
     flag == 0 || flag == 1
+}
+
+pub closed spec fn id_segment_width(present: bool) -> int {
+    if present {
+        32
+    } else {
+        0
+    }
+}
+
+pub closed spec fn valid_optional_id_segment(present: bool, bytes: Seq<u8>) -> bool {
+    !present || bytes.len() == 32
+}
+
+pub closed spec fn codec_flag_from_present(present: bool) -> u8 {
+    if present {
+        1
+    } else {
+        0
+    }
+}
+
+pub closed spec fn optional_id_segment(present: bool, bytes: Seq<u8>) -> Seq<u8> {
+    if present {
+        bytes
+    } else {
+        Seq::empty()
+    }
+}
+
+pub closed spec fn link_encoded_bytes_spec(
+    prev_present: bool,
+    prev_bytes: Seq<u8>,
+    root_present: bool,
+    root_bytes: Seq<u8>,
+    content: Seq<u8>,
+) -> Seq<u8> {
+    seq![tag_link_core()]
+        .add(seq![codec_flag_from_present(prev_present)])
+        .add(optional_id_segment(prev_present, prev_bytes))
+        .add(seq![codec_flag_from_present(root_present)])
+        .add(optional_id_segment(root_present, root_bytes))
+        .add(content)
+}
+
+pub closed spec fn link_encoded_content_offset_spec(
+    prev_present: bool,
+    root_present: bool,
+) -> int {
+    3 + id_segment_width(prev_present) + id_segment_width(root_present)
+}
+
+pub closed spec fn canonical_link_bytes_spec(
+    bytes: Seq<u8>,
+    prev_present: bool,
+    prev_bytes: Seq<u8>,
+    root_present: bool,
+    root_bytes: Seq<u8>,
+    content: Seq<u8>,
+) -> bool {
+    valid_optional_id_segment(prev_present, prev_bytes)
+        && valid_optional_id_segment(root_present, root_bytes)
+        && bytes == link_encoded_bytes_spec(
+            prev_present,
+            prev_bytes,
+            root_present,
+            root_bytes,
+            content,
+        )
 }
 
 pub closed spec fn link_codec_layout_spec(
@@ -833,9 +906,6 @@ pub fn link_codec_identity_core(
         identity.prev_flag == codec_flag_spec(prev),
         identity.root_flag == codec_flag_spec(root),
         identity.accepted,
-        identity.decode_encode_round_trip,
-        identity.encode_decode_round_trip,
-        identity.id_from_canonical_bytes,
 {
     LinkCodecIdentityCore {
         prev,
@@ -843,9 +913,6 @@ pub fn link_codec_identity_core(
         prev_flag: codec_flag_core(prev),
         root_flag: codec_flag_core(root),
         accepted: true,
-        decode_encode_round_trip: true,
-        encode_decode_round_trip: true,
-        id_from_canonical_bytes: true,
     }
 }
 
@@ -1165,9 +1232,34 @@ pub proof fn canonical_link_identity(prev: MaybeIdCore, root: MaybeIdCore)
         link_codec_identity_spec(prev, root).prev_flag == codec_flag_spec(prev),
         link_codec_identity_spec(prev, root).root_flag == codec_flag_spec(root),
         link_codec_identity_spec(prev, root).accepted,
-        link_codec_identity_spec(prev, root).decode_encode_round_trip,
-        link_codec_identity_spec(prev, root).encode_decode_round_trip,
-        link_codec_identity_spec(prev, root).id_from_canonical_bytes,
+{
+}
+
+pub proof fn canonical_link_bytes_round_trip(
+    prev_present: bool,
+    prev_bytes: Seq<u8>,
+    root_present: bool,
+    root_bytes: Seq<u8>,
+    content: Seq<u8>,
+)
+    requires
+        valid_optional_id_segment(prev_present, prev_bytes),
+        valid_optional_id_segment(root_present, root_bytes),
+    ensures
+        canonical_link_bytes_spec(
+            link_encoded_bytes_spec(
+                prev_present,
+                prev_bytes,
+                root_present,
+                root_bytes,
+                content,
+            ),
+            prev_present,
+            prev_bytes,
+            root_present,
+            root_bytes,
+            content,
+        ),
 {
 }
 
@@ -1713,10 +1805,6 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
             if !report.complete {
                 return incomplete_projected_link(id, l);
             }
-            let composition = link_chain_composition_core(link, true, parent_state.complete);
-            debug_assert!(composition.parent_validated_same_root);
-            debug_assert!(composition.parent_chain_to_anchor);
-            debug_assert!(composition.chain_to_anchor);
             let ids = projected_ids_child(&parent_state.ids, id);
             debug_assert_eq!(u64::try_from(ids.len()).ok(), Some(report.ids_len));
             debug_assert_eq!(core_to_fact_id(report.head), id);
@@ -1796,9 +1884,6 @@ impl Projector for LinkProjector {
         let identity =
             link_codec_identity_core(maybe_fact_id_to_core(prev), maybe_fact_id_to_core(root));
         debug_assert!(identity.accepted);
-        debug_assert!(identity.decode_encode_round_trip);
-        debug_assert!(identity.encode_decode_round_trip);
-        debug_assert!(identity.id_from_canonical_bytes);
         let input_len = u64::try_from(b.len()).unwrap_or(u64::MAX);
         let layout =
             link_codec_layout_core(TAG_LINK, identity.prev_flag, identity.root_flag, input_len);

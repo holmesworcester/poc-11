@@ -25,9 +25,9 @@
 //!       `src/core/offer_unproven.rs::asserted_edge_address_shape`,
 //!       `src/core/offer_unproven.rs::validate_preserves_offer_address`, and
 //!       `src/core/offer_unproven.rs::validated_offer_typestate_only`.
-//! - [ ] `core::engine`: promotion authority for
-//!       `Offer<Asserted>::validate`. Owner: `src/core/engine_unproven.rs`,
-//!       planned theorem `engine_promotes_only_valid_owner_offers`.
+//! - [x] `core::engine`: proof-facing promotion authority for
+//!       `Offer<Asserted>::validate`. Proven in
+//!       `src/core/engine_unproven.rs::engine_promotes_only_valid_owner_offers`.
 //! Proof strategy:
 //! - Prove `Offer<Asserted>` constructors set only the requested direction and
 //!   match address with fixed default scope/polarity/binding.

@@ -209,7 +209,7 @@ should not drift unless the proof story genuinely changes.
    Handlers and imports:
    - link_chain_composition_spec/core
    - local conditional chain step
-   - planned core engine_drain_prefix_sound over modeled state
+   - planned core runtime_engine_refines_transition_trace over concrete queues/maps
    - planned replay_reports_engine_validity over modeled dependency closure
 
 10. Runtime Bridge Helpers

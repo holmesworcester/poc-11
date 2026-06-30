@@ -13,27 +13,34 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: validated-context provenance and ongoing engine safety.
-//! - [ ] Safety: every in-memory fact is paired with the id derived from its
-//!       canonical bytes before the engine hands it to a projector as an
+//! - [ ] Safety: every runtime in-memory fact is paired with the id derived from
+//!       its canonical bytes before the engine hands it to a projector as an
 //!       `Admitted` token.
 //! - [ ] Safety: storage lookup results are discovery hints only; they cannot
 //!       mark a fact valid or promote an offer.
 //! - [ ] Safety: a projector is called only after every asserted need has a
 //!       matching validated offer; it receives only validated offers whose
 //!       addresses match needs asserted by the fact being projected.
-//! - [ ] Safety: every validated offer in the running engine state is owned by a
-//!       fact already projected valid and was asserted by that same owner.
+//! - [x] Safety: in the proof-facing transition model, every validated offer is
+//!       owned by a fact already projected valid and was asserted by that same
+//!       owner. Verified below by `engine_transition_trace_preserves_invariant`.
 //! - [ ] Safety: family-private projector state is not authority: a projector may
 //!       return state updates only for the fact being projected, and the engine
 //!       promotes offers and emitted facts only after readiness and projector
 //!       validity are both established.
-//! - [ ] Safety: one owner contributes at most one validated offer for a given
-//!       match address.
-//! - [ ] Safety: raw bytes returned in `ProjectOutcome.emitted` do not inherit
-//!       authority from the emitting fact; they must re-enter decode, admission,
-//!       and projection before becoming valid.
-//! - [ ] Safety: every admit/query/project/wake step preserves these invariants,
-//!       so every prefix of a drain is sound.
+//! - [x] Safety: in the proof-facing transition model, one owner contributes at
+//!       most one validated offer for a given match address. Verified below by
+//!       `engine_transition_trace_preserves_invariant`.
+//! - [x] Safety: in the proof-facing transition model, raw bytes returned in
+//!       `ProjectOutcome.emitted` do not inherit authority from the emitting fact;
+//!       they re-enter the admission queue. Verified below by
+//!       `emitted_raw_fact_reenters_admission_queue`.
+//! - [x] Safety: every proof-facing admit/query/project/promote/emit transition
+//!       preserves these invariants, so every modeled transition prefix is sound.
+//!       Verified below by `engine_single_transition_preserves_invariant` and
+//!       `engine_transition_trace_preserves_invariant`.
+//! - [ ] Safety: the concrete runtime `EngineState` HashMap/HashSet/VecDeque
+//!       implementation refines the proof-facing transition model.
 //! Imported theorem checklist:
 //! - [x] `core::item`: fact ids identify canonical bytes. Proven in
 //!       `src/core/item_unproven.rs::fact_id_content_address`.
@@ -44,17 +51,17 @@
 //!       match lookup has no storage/body access. Proven in
 //!       `src/core/typestate_unproven.rs::context_validated_only` and
 //!       `src/core/typestate_unproven.rs::context_lookup_exact`.
-//! - [ ] Local engine promotion/context gate shape. Owner:
-//!       `src/core/engine_unproven.rs`, planned theorem
-//!       `engine_transition_preserves_validated_context_provenance`.
+//! - [x] Local engine promotion/context gate shape. Proven below by
+//!       `src/core/engine_unproven.rs::engine_transition_preserves_validated_context_provenance`
+//!       and `src/core/engine_unproven.rs::engine_transition_trace_preserves_invariant`.
 //! - [x] `core::projector`: the selected fact family supplies canonical codec,
 //!       extraction, durability, projection contracts, and emitted bytes as raw
 //!       `EmittedFact` payloads. Proven in
 //!       `src/core/projector_unproven.rs::projector_interface_contract`.
 //! Proof strategy:
-//! - Introduce a proof model and state predicate over memory facts, asserted
+//! - Maintain the proof model and state predicate over memory facts, asserted
 //!   edges, validity, validated offers, promoted offer keys, and queues.
-//! - Prove each executable transition preserves the predicate: in-memory
+//! - Prove each proof-facing transition preserves the predicate: in-memory
 //!   admission, storage load result, need-query result, projection, raw
 //!   emitted-byte admission, and offer-query result. The load/query transitions
 //!   may enqueue additional ids or addresses to inspect, but they do not mutate
@@ -64,10 +71,10 @@
 //!   projected fact, apply returned family-private updates through
 //!   `P::apply_update`, and promote asserted offers only when projector validity
 //!   is `Valid`.
-//! - Prove drain safety by induction over transition steps; do not mark the
-//!   prefix theorem complete until the induction is over modeled state rather
-//!   than caller-supplied booleans. Prove completeness or liveness separately
-//!   from safety.
+//! - Prove modeled drain safety by induction over transition steps; this is now
+//!   the `engine_transition_trace_preserves_invariant` theorem. The remaining
+//!   open work is proving the concrete runtime queues/maps refine this model.
+//!   Prove completeness or liveness separately from safety.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -77,6 +84,561 @@ use super::item::{fact_id, FactId};
 use super::offer::{Key, Offer, Role, Scope};
 use super::projector::{projector_interface_core, Projector};
 use super::typestate::{Asserted, Context, Validated, Validity};
+use vstd::prelude::*;
+
+verus! {
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EngineIdCore {
+    pub value: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EngineAddrCore {
+    pub role: u64,
+    pub scope: u64,
+    pub key: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EngineEdgeKindCore {
+    Need,
+    Offer,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EngineEdgeCore {
+    pub owner: EngineIdCore,
+    pub addr: EngineAddrCore,
+    pub kind: EngineEdgeKindCore,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EngineValidatedOfferCore {
+    pub owner: EngineIdCore,
+    pub addr: EngineAddrCore,
+}
+
+pub struct EngineStateCore {
+    pub admitted: Seq<EngineIdCore>,
+    pub asserted: Seq<EngineEdgeCore>,
+    pub valid: Seq<EngineIdCore>,
+    pub validated: Seq<EngineValidatedOfferCore>,
+    pub to_admit: Seq<EngineIdCore>,
+    pub to_project: Seq<EngineIdCore>,
+    pub need_queries: Seq<EngineAddrCore>,
+    pub offer_queries: Seq<EngineAddrCore>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EngineTransitionCore {
+    EnqueueAdmit(EngineIdCore),
+    AdmitCanonicalFact(EngineIdCore),
+    IndexAssertedEdge(EngineEdgeCore),
+    QueryResultEnqueue(EngineIdCore),
+    ProjectValid(EngineIdCore),
+    PromoteOffer(EngineIdCore, EngineAddrCore),
+    EmitRawFact(EngineIdCore),
+}
+
+pub closed spec fn contains_id(ids: Seq<EngineIdCore>, id: EngineIdCore) -> bool {
+    exists |i: int| 0 <= i < ids.len() && ids[i] == id
+}
+
+pub closed spec fn asserted_offer_for(
+    asserted: Seq<EngineEdgeCore>,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+) -> bool {
+    exists |i: int|
+        0 <= i < asserted.len()
+            && asserted[i].owner == owner
+            && asserted[i].addr == addr
+            && asserted[i].kind == EngineEdgeKindCore::Offer
+}
+
+pub closed spec fn validated_offer_for(
+    validated: Seq<EngineValidatedOfferCore>,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+) -> bool {
+    exists |i: int| 0 <= i < validated.len() && validated[i].owner == owner && validated[i].addr == addr
+}
+
+pub closed spec fn validated_offer_provenance(state: EngineStateCore) -> bool {
+    forall |i: int|
+        0 <= i < state.validated.len() ==>
+            contains_id(state.valid, #[trigger] state.validated[i].owner)
+                && asserted_offer_for(
+                    state.asserted,
+                    state.validated[i].owner,
+                    state.validated[i].addr,
+                )
+}
+
+pub closed spec fn promoted_offer_unique_per_owner_addr(state: EngineStateCore) -> bool {
+    forall |i: int, j: int|
+        0 <= i < state.validated.len() && 0 <= j < state.validated.len() && i != j ==>
+            !(#[trigger] state.validated[i] == #[trigger] state.validated[j]
+                || state.validated[i].owner == state.validated[j].owner
+                && state.validated[i].addr == state.validated[j].addr)
+}
+
+pub closed spec fn engine_invariant(state: EngineStateCore) -> bool {
+    validated_offer_provenance(state) && promoted_offer_unique_per_owner_addr(state)
+}
+
+pub proof fn contains_id_push_preserves_existing(
+    ids: Seq<EngineIdCore>,
+    id: EngineIdCore,
+    pushed: EngineIdCore,
+)
+    requires
+        contains_id(ids, id),
+    ensures
+        contains_id(ids.push(pushed), id),
+{
+    let i = choose |i: int| 0 <= i < ids.len() && ids[i] == id;
+    assert(ids.push(pushed)[i] == ids[i]);
+}
+
+pub proof fn asserted_offer_push_preserves_existing(
+    asserted: Seq<EngineEdgeCore>,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+    pushed: EngineEdgeCore,
+)
+    requires
+        asserted_offer_for(asserted, owner, addr),
+    ensures
+        asserted_offer_for(asserted.push(pushed), owner, addr),
+{
+    let i = choose |i: int|
+        0 <= i < asserted.len()
+            && asserted[i].owner == owner
+            && asserted[i].addr == addr
+            && asserted[i].kind == EngineEdgeKindCore::Offer;
+    assert(asserted.push(pushed)[i] == asserted[i]);
+}
+
+pub proof fn validated_offer_push_adds_offer(
+    validated: Seq<EngineValidatedOfferCore>,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+)
+    ensures
+        validated_offer_for(validated.push(EngineValidatedOfferCore { owner, addr }), owner, addr),
+{
+    let i = validated.len() as int;
+    assert(validated.push(EngineValidatedOfferCore { owner, addr })[i] == EngineValidatedOfferCore { owner, addr });
+}
+
+pub closed spec fn empty_engine_state() -> EngineStateCore {
+    EngineStateCore {
+        admitted: Seq::empty(),
+        asserted: Seq::empty(),
+        valid: Seq::empty(),
+        validated: Seq::empty(),
+        to_admit: Seq::empty(),
+        to_project: Seq::empty(),
+        need_queries: Seq::empty(),
+        offer_queries: Seq::empty(),
+    }
+}
+
+pub closed spec fn state_enqueue_admit(
+    state: EngineStateCore,
+    id: EngineIdCore,
+) -> EngineStateCore {
+    EngineStateCore {
+        admitted: state.admitted,
+        asserted: state.asserted,
+        valid: state.valid,
+        validated: state.validated,
+        to_admit: state.to_admit.push(id),
+        to_project: state.to_project,
+        need_queries: state.need_queries,
+        offer_queries: state.offer_queries,
+    }
+}
+
+pub closed spec fn state_admit_canonical_fact(
+    state: EngineStateCore,
+    id: EngineIdCore,
+) -> EngineStateCore {
+    EngineStateCore {
+        admitted: state.admitted.push(id),
+        asserted: state.asserted,
+        valid: state.valid,
+        validated: state.validated,
+        to_admit: state.to_admit,
+        to_project: state.to_project.push(id),
+        need_queries: state.need_queries,
+        offer_queries: state.offer_queries,
+    }
+}
+
+pub closed spec fn state_index_asserted_edge(
+    state: EngineStateCore,
+    edge: EngineEdgeCore,
+) -> EngineStateCore {
+    EngineStateCore {
+        admitted: state.admitted,
+        asserted: state.asserted.push(edge),
+        valid: state.valid,
+        validated: state.validated,
+        to_admit: state.to_admit,
+        to_project: state.to_project,
+        need_queries: if edge.kind == EngineEdgeKindCore::Need {
+            state.need_queries.push(edge.addr)
+        } else {
+            state.need_queries
+        },
+        offer_queries: state.offer_queries,
+    }
+}
+
+pub closed spec fn state_query_result_enqueue(
+    state: EngineStateCore,
+    id: EngineIdCore,
+) -> EngineStateCore {
+    EngineStateCore {
+        admitted: state.admitted,
+        asserted: state.asserted,
+        valid: state.valid,
+        validated: state.validated,
+        to_admit: state.to_admit.push(id),
+        to_project: state.to_project.push(id),
+        need_queries: state.need_queries,
+        offer_queries: state.offer_queries,
+    }
+}
+
+pub closed spec fn state_project_valid(
+    state: EngineStateCore,
+    id: EngineIdCore,
+) -> EngineStateCore {
+    EngineStateCore {
+        admitted: state.admitted,
+        asserted: state.asserted,
+        valid: state.valid.push(id),
+        validated: state.validated,
+        to_admit: state.to_admit,
+        to_project: state.to_project,
+        need_queries: state.need_queries,
+        offer_queries: state.offer_queries,
+    }
+}
+
+pub closed spec fn state_promote_offer(
+    state: EngineStateCore,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+) -> EngineStateCore {
+    EngineStateCore {
+        admitted: state.admitted,
+        asserted: state.asserted,
+        valid: state.valid,
+        validated: state.validated.push(EngineValidatedOfferCore { owner, addr }),
+        to_admit: state.to_admit,
+        to_project: state.to_project,
+        need_queries: state.need_queries,
+        offer_queries: state.offer_queries.push(addr),
+    }
+}
+
+pub closed spec fn state_emit_raw_fact(
+    state: EngineStateCore,
+    id: EngineIdCore,
+) -> EngineStateCore {
+    state_enqueue_admit(state, id)
+}
+
+pub closed spec fn transition_precondition(
+    state: EngineStateCore,
+    transition: EngineTransitionCore,
+) -> bool {
+    match transition {
+        EngineTransitionCore::PromoteOffer(owner, addr) => {
+            contains_id(state.valid, owner)
+                && asserted_offer_for(state.asserted, owner, addr)
+                && !validated_offer_for(state.validated, owner, addr)
+        }
+        _ => true,
+    }
+}
+
+pub closed spec fn apply_transition(
+    state: EngineStateCore,
+    transition: EngineTransitionCore,
+) -> EngineStateCore {
+    match transition {
+        EngineTransitionCore::EnqueueAdmit(id) => state_enqueue_admit(state, id),
+        EngineTransitionCore::AdmitCanonicalFact(id) => state_admit_canonical_fact(state, id),
+        EngineTransitionCore::IndexAssertedEdge(edge) => state_index_asserted_edge(state, edge),
+        EngineTransitionCore::QueryResultEnqueue(id) => state_query_result_enqueue(state, id),
+        EngineTransitionCore::ProjectValid(id) => state_project_valid(state, id),
+        EngineTransitionCore::PromoteOffer(owner, addr) => state_promote_offer(state, owner, addr),
+        EngineTransitionCore::EmitRawFact(id) => state_emit_raw_fact(state, id),
+    }
+}
+
+pub closed spec fn transition_trace_preconditions(
+    state: EngineStateCore,
+    transitions: Seq<EngineTransitionCore>,
+) -> bool
+    decreases transitions.len(),
+{
+    if transitions.len() == 0 {
+        true
+    } else {
+        let transition = transitions[0];
+        transition_precondition(state, transition)
+            && transition_trace_preconditions(
+                apply_transition(state, transition),
+                transitions.subrange(1, transitions.len() as int),
+            )
+    }
+}
+
+pub closed spec fn apply_transition_trace(
+    state: EngineStateCore,
+    transitions: Seq<EngineTransitionCore>,
+) -> EngineStateCore
+    decreases transitions.len(),
+{
+    if transitions.len() == 0 {
+        state
+    } else {
+        let transition = transitions[0];
+        apply_transition_trace(
+            apply_transition(state, transition),
+            transitions.subrange(1, transitions.len() as int),
+        )
+    }
+}
+
+pub proof fn empty_engine_state_satisfies_invariant()
+    ensures
+        engine_invariant(empty_engine_state()),
+{
+}
+
+pub proof fn enqueue_admit_preserves_invariant(state: EngineStateCore, id: EngineIdCore)
+    requires
+        engine_invariant(state),
+    ensures
+        engine_invariant(state_enqueue_admit(state, id)),
+{
+}
+
+pub proof fn admit_canonical_fact_preserves_invariant(state: EngineStateCore, id: EngineIdCore)
+    requires
+        engine_invariant(state),
+    ensures
+        engine_invariant(state_admit_canonical_fact(state, id)),
+{
+}
+
+pub proof fn index_asserted_edge_preserves_invariant(state: EngineStateCore, edge: EngineEdgeCore)
+    requires
+        engine_invariant(state),
+    ensures
+        engine_invariant(state_index_asserted_edge(state, edge)),
+{
+    assert forall |i: int| 0 <= i < state.validated.len() implies
+        contains_id(state_index_asserted_edge(state, edge).valid, #[trigger] state_index_asserted_edge(state, edge).validated[i].owner)
+            && asserted_offer_for(
+                state_index_asserted_edge(state, edge).asserted,
+                state_index_asserted_edge(state, edge).validated[i].owner,
+                state_index_asserted_edge(state, edge).validated[i].addr,
+            )
+    by {
+        assert(contains_id(state.valid, state.validated[i].owner));
+        assert(asserted_offer_for(state.asserted, state.validated[i].owner, state.validated[i].addr));
+        asserted_offer_push_preserves_existing(
+            state.asserted,
+            state.validated[i].owner,
+            state.validated[i].addr,
+            edge,
+        );
+    }
+}
+
+pub proof fn query_result_enqueue_preserves_invariant(state: EngineStateCore, id: EngineIdCore)
+    requires
+        engine_invariant(state),
+    ensures
+        engine_invariant(state_query_result_enqueue(state, id)),
+{
+}
+
+pub proof fn project_valid_preserves_invariant(state: EngineStateCore, id: EngineIdCore)
+    requires
+        engine_invariant(state),
+    ensures
+        engine_invariant(state_project_valid(state, id)),
+{
+    assert forall |i: int| 0 <= i < state.validated.len() implies
+        contains_id(state_project_valid(state, id).valid, #[trigger] state_project_valid(state, id).validated[i].owner)
+            && asserted_offer_for(
+                state_project_valid(state, id).asserted,
+                state_project_valid(state, id).validated[i].owner,
+                state_project_valid(state, id).validated[i].addr,
+            )
+    by {
+        assert(contains_id(state.valid, state.validated[i].owner));
+        contains_id_push_preserves_existing(state.valid, state.validated[i].owner, id);
+        assert(asserted_offer_for(state.asserted, state.validated[i].owner, state.validated[i].addr));
+    }
+}
+
+pub proof fn promote_offer_preserves_invariant(
+    state: EngineStateCore,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+)
+    requires
+        engine_invariant(state),
+        contains_id(state.valid, owner),
+        asserted_offer_for(state.asserted, owner, addr),
+        !validated_offer_for(state.validated, owner, addr),
+    ensures
+        engine_invariant(state_promote_offer(state, owner, addr)),
+{
+}
+
+pub proof fn emitted_raw_fact_reenters_admission_queue(
+    state: EngineStateCore,
+    id: EngineIdCore,
+)
+    requires
+        engine_invariant(state),
+    ensures
+        engine_invariant(state_emit_raw_fact(state, id)),
+{
+}
+
+pub proof fn engine_single_transition_preserves_invariant(
+    state: EngineStateCore,
+    transition: EngineTransitionCore,
+)
+    requires
+        engine_invariant(state),
+        transition_precondition(state, transition),
+    ensures
+        engine_invariant(apply_transition(state, transition)),
+{
+    match transition {
+        EngineTransitionCore::EnqueueAdmit(id) => {
+            enqueue_admit_preserves_invariant(state, id);
+        }
+        EngineTransitionCore::AdmitCanonicalFact(id) => {
+            admit_canonical_fact_preserves_invariant(state, id);
+        }
+        EngineTransitionCore::IndexAssertedEdge(edge) => {
+            index_asserted_edge_preserves_invariant(state, edge);
+        }
+        EngineTransitionCore::QueryResultEnqueue(id) => {
+            query_result_enqueue_preserves_invariant(state, id);
+        }
+        EngineTransitionCore::ProjectValid(id) => {
+            project_valid_preserves_invariant(state, id);
+        }
+        EngineTransitionCore::PromoteOffer(owner, addr) => {
+            promote_offer_preserves_invariant(state, owner, addr);
+        }
+        EngineTransitionCore::EmitRawFact(id) => {
+            emitted_raw_fact_reenters_admission_queue(state, id);
+        }
+    }
+}
+
+pub proof fn engine_transition_trace_preserves_invariant(
+    state: EngineStateCore,
+    transitions: Seq<EngineTransitionCore>,
+)
+    requires
+        engine_invariant(state),
+        transition_trace_preconditions(state, transitions),
+    ensures
+        engine_invariant(apply_transition_trace(state, transitions)),
+    decreases transitions.len(),
+{
+    if transitions.len() > 0 {
+        let transition = transitions[0];
+        let tail = transitions.subrange(1, transitions.len() as int);
+        engine_single_transition_preserves_invariant(state, transition);
+        engine_transition_trace_preserves_invariant(apply_transition(state, transition), tail);
+    }
+}
+
+pub proof fn engine_transition_preserves_validated_context_provenance(
+    state: EngineStateCore,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+)
+    requires
+        engine_invariant(state),
+        contains_id(state.valid, owner),
+        asserted_offer_for(state.asserted, owner, addr),
+        !validated_offer_for(state.validated, owner, addr),
+    ensures
+        engine_invariant(state_promote_offer(state, owner, addr)),
+        validated_offer_provenance(state_promote_offer(state, owner, addr)),
+{
+    promote_offer_preserves_invariant(state, owner, addr);
+    assert(state_promote_offer(state, owner, addr).validated
+        == state.validated.push(EngineValidatedOfferCore { owner, addr }));
+    validated_offer_push_adds_offer(state.validated, owner, addr);
+    let i = state.validated.len() as int;
+    assert(0 <= i < state_promote_offer(state, owner, addr).validated.len());
+    assert(state_promote_offer(state, owner, addr).validated[i]
+        == EngineValidatedOfferCore { owner, addr });
+    assert(validated_offer_for(state_promote_offer(state, owner, addr).validated, owner, addr));
+}
+
+pub proof fn engine_promotes_only_valid_owner_offers(
+    state: EngineStateCore,
+    owner: EngineIdCore,
+    addr: EngineAddrCore,
+)
+    requires
+        engine_invariant(state),
+        contains_id(state.valid, owner),
+        asserted_offer_for(state.asserted, owner, addr),
+        !validated_offer_for(state.validated, owner, addr),
+    ensures
+        contains_id(state_promote_offer(state, owner, addr).valid, owner),
+        asserted_offer_for(state_promote_offer(state, owner, addr).asserted, owner, addr),
+        validated_offer_for(state_promote_offer(state, owner, addr).validated, owner, addr),
+        engine_invariant(state_promote_offer(state, owner, addr)),
+{
+    promote_offer_preserves_invariant(state, owner, addr);
+    assert(state_promote_offer(state, owner, addr).validated
+        == state.validated.push(EngineValidatedOfferCore { owner, addr }));
+    validated_offer_push_adds_offer(state.validated, owner, addr);
+    let i = state.validated.len() as int;
+    assert(0 <= i < state_promote_offer(state, owner, addr).validated.len());
+    assert(state_promote_offer(state, owner, addr).validated[i]
+        == EngineValidatedOfferCore { owner, addr });
+    assert(validated_offer_for(state_promote_offer(state, owner, addr).validated, owner, addr));
+}
+
+pub proof fn engine_context_offers_have_valid_owners(
+    state: EngineStateCore,
+    i: int,
+)
+    requires
+        engine_invariant(state),
+        0 <= i < state.validated.len(),
+    ensures
+        contains_id(state.valid, state.validated[i].owner),
+        asserted_offer_for(state.asserted, state.validated[i].owner, state.validated[i].addr),
+{
+}
+
+} // verus!
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct EdgeAddr {

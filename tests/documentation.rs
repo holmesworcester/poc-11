@@ -170,7 +170,7 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Current link proof kernels live beside the running implementation in `src/facts/link/project_unproven.rs`",
         "That file has not completed its unsuffixed migration",
         "local projector kernels are proved, while real core/replay graph composition remains open",
-        "Verus model proves accepted layout shape",
+        "Verus model proves the proof-facing canonical byte sequence",
         "exact proof-facing id-vector construction",
         "Source-file invariant checklists should state user-significant or threat-model-significant properties first",
         "Avoid checklists that are only call traces",
@@ -471,14 +471,15 @@ fn proof_target_files_have_verus_invariant_checklists() {
     let engine = normalize_whitespace(&source_text(&root.join("src/core/engine_unproven.rs")));
     for required in [
         "Owned invariant: validated-context provenance and ongoing engine safety",
-        "Safety: every in-memory fact is paired with the id derived from its",
+        "Safety: every runtime in-memory fact is paired with the id derived from",
         "bytes before the engine hands it to a projector",
         "Safety: a projector is called only after every asserted need has a",
         "matching validated offer",
         "it receives only validated offers",
-        "Safety: every validated offer in the running engine state is owned by a",
-        "Safety: every admit/query/project/wake step preserves these invariants",
-        "Safety: raw bytes returned in `ProjectOutcome.emitted` do not inherit",
+        "Safety: in the proof-facing transition model, every validated offer is",
+        "Safety: every proof-facing admit/query/project/promote/emit transition",
+        "Safety: in the proof-facing transition model, raw bytes returned in",
+        "Safety: the concrete runtime `EngineState` HashMap/HashSet/VecDeque",
         "reject any update whose owner is not the",
         "projected fact",
         "Imported theorem checklist:",
@@ -486,7 +487,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "`src/core/item_unproven.rs::fact_id_content_address`",
         "`core::offer`: asserted-to-validated promotion preserves edge address",
         "`src/core/offer_unproven.rs::validate_preserves_offer_address`",
-        "`engine_transition_preserves_validated_context_provenance`",
+        "`src/core/engine_unproven.rs::engine_transition_preserves_validated_context_provenance`",
         "Proof strategy:",
     ] {
         assert!(
@@ -549,8 +550,11 @@ fn proof_target_files_have_verus_invariant_checklists() {
     ));
     for required in [
         "Owned invariant: link-family semantics and its `Projector` implementation",
-        "Safety: canonical link identity",
+        "Safety: canonical link layout model",
         "canonical_link_identity",
+        "Safety: runtime codec identity",
+        "`LinkProjector::decode` byte-vector code implements the proof-facing",
+        "Verus parser/encoder bridge is still needed",
         "Safety: project-owned construction",
         "Verified below in this file",
         "Safety: well-formed parent naming",
@@ -589,12 +593,13 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "`src/core/offer_unproven.rs::asserted_edge_address_shape`",
         "`core::typestate`: `Context::has_offer` is exact validated-offer lookup",
         "`src/core/typestate_unproven.rs::context_lookup_exact`",
-        "`core::engine`: abstract context/promotion gates relate context offers",
-        "`engine_transition_preserves_validated_context_provenance`",
-        "planned theorem `engine_drain_prefix_sound`",
-        "planned theorem `replay_reports_engine_validity`",
+        "`core::engine`: proof-facing context/promotion gates relate context",
+        "`src/core/engine_unproven.rs::engine_transition_preserves_validated_context_provenance`",
+        "`src/core/engine_unproven.rs::engine_transition_trace_preserves_invariant`",
+        "`runtime_engine_refines_transition_trace`",
+        "`replay_reports_engine_validity`",
         "admit_establishes_id_body",
-        "`engine_transition_preserves_validated_context_provenance`",
+        "`src/core/engine_unproven.rs::engine_transition_preserves_validated_context_provenance`",
         "Proof strategy:",
         "Prove the local statement-to-owner lemma",
         "Prove the local same-root parent-chain step by induction",
@@ -762,7 +767,15 @@ fn engine_turn_play_proof_status_is_honest() {
 
     let engine = source_text(&root.join("src/core/engine_unproven.rs"));
     for required in [
-        "Introduce a proof model and state predicate",
+        "pub struct EngineStateCore",
+        "pub closed spec fn engine_invariant",
+        "pub closed spec fn state_promote_offer",
+        "pub enum EngineTransitionCore",
+        "pub proof fn engine_single_transition_preserves_invariant",
+        "pub proof fn engine_transition_trace_preserves_invariant",
+        "pub proof fn engine_transition_preserves_validated_context_provenance",
+        "pub proof fn engine_promotes_only_valid_owner_offers",
+        "pub proof fn engine_context_offers_have_valid_owners",
         "fact_id(&bytes) != id",
         "P::encode(&item) != bytes",
         "if P::update_owner(update) != id",
@@ -787,8 +800,6 @@ fn engine_turn_play_proof_status_is_honest() {
         "pub proof fn engine_admit_local_establishes_id_body",
         "pub proof fn engine_admit_loaded_establishes_id_body",
         "pub proof fn engine_lookup_is_discovery_only",
-        "pub proof fn engine_promotes_only_valid_owner_offers",
-        "pub proof fn engine_context_offers_have_valid_owners",
         "EngineStepCore",
         "EngineDrainPrefixCore",
         "EngineAdmissionCore",
@@ -820,14 +831,25 @@ fn engine_turn_play_proof_status_is_honest() {
     let play = source_text(&root.join("src/core/play_unproven.rs"));
     for required in [
         "verus!",
-        "pub fn replay_report_core",
+        "pub fn replay_surface_core",
         "replay_report_surface_contract",
-        "replay_report_core(true, true, false)",
-        "replay_report_core(true, true, true)",
+        "This depends on the future `core::turn` drain-prefix theorem",
     ] {
         assert!(
             play.contains(required),
             "play file is missing verified-kernel/runtime detail {required:?}"
+        );
+    }
+    for forbidden in [
+        "turn_core(true)",
+        "replay_report_core(true",
+        "replay_report_core(",
+        "replay_report_spec(",
+        "reports_engine_validity: drain_completed",
+    ] {
+        assert!(
+            !turn.contains(forbidden) && !play.contains(forbidden),
+            "turn/play must not use boolean-summary proof-status pattern {forbidden:?}"
         );
     }
 }
@@ -841,6 +863,7 @@ fn link_project_verified_kernel_is_running_code() {
     for required in [
         "verus!",
         "canonical_link_identity",
+        "canonical_link_bytes_round_trip",
         "link_codec_layout_core",
         "codec_layout_rejects_bad_tag",
         "codec_layout_rejects_bad_flags",
@@ -903,6 +926,10 @@ fn link_project_verified_kernel_is_running_code() {
     for forbidden in [
         "end_to_end_validated_link_offer_statement_to_owner",
         "end_to_end_valid_link_has_same_root_chain",
+        "decode_encode_round_trip",
+        "encode_decode_round_trip",
+        "id_from_canonical_bytes",
+        "link_chain_composition_core(link, true, parent_state.complete)",
     ] {
         assert!(
             !project.contains(forbidden),
@@ -923,11 +950,14 @@ fn link_project_status_records_review_findings() {
     let normalized = normalize_whitespace(&project);
 
     for required in [
-        "- [x] Safety: canonical link identity",
-        "accepted link bytes have the canonical",
-        "`tag | has_prev | prev[32]? | has_root | root[32]? | content` layout",
-        "malformed tags/flags/truncation are rejected",
+        "- [x] Safety: canonical link layout model",
+        "`tag | has_prev | prev[32]? | has_root | root[32]? | content` shape",
+        "the proof-facing byte sequence preserves the prev/root/content segments",
+        "- [ ] Safety: runtime codec identity",
+        "`LinkProjector::decode` byte-vector code implements the proof-facing",
+        "Verus parser/encoder bridge is still needed",
         "link_codec_layout_core",
+        "canonical_link_bytes_round_trip",
         "codec_layout_rejects_truncation",
         "- [ ] Safety: end-to-end statement-to-owner",
         "validated-store provenance theorem is still owned by core/replay",
@@ -944,7 +974,7 @@ fn link_project_status_records_review_findings() {
         "replay/graph invariant",
         "Completion plan for unchecked items:",
         "Replace the caller-supplied `parent_chain_to_anchor: bool`",
-        "engine_drain_prefix_sound",
+        "runtime_engine_refines_transition_trace",
         "replay_reports_engine_validity",
         "admit_establishes_id_body",
         "Rename this file to `project.rs` only after those end-to-end invariants are",

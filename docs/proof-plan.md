@@ -73,6 +73,10 @@ Core proofs are about all possible fact families routed through the engine:
 - If fact A validates using fact B's offer, then B is valid; that dependency
   relationship is transitively valid over any projected chain.
 - Admit, query, project, and wake turns preserve the ongoing engine invariant.
+- The current core proof has a Verus transition-trace model proving validated
+  offer provenance and per-owner/per-address promotion uniqueness for any allowed
+  modeled transition prefix. The remaining core proof is to show the concrete
+  runtime `EngineState` queues/maps refine that model.
 - Route dispatch is sound: decoded family tags select the right family projector,
   and malformed or unknown facts do not become valid.
 
@@ -83,10 +87,13 @@ composition remains open. Only the link family defines what roots, parents, and
 ancestry mean:
 
 - Link bytes should decode canonically into the link semantic shape. The current
-  Verus model proves accepted layout shape, semantic flag/root relations,
-  malformed tag/flag/truncation rejection, and the canonical-id contract; runtime
-  byte round-trip tests connect the full content vector path to those helpers.
-- `link_id(link) == fact_id(encode(link))`.
+  Verus model proves the proof-facing canonical byte sequence, accepted layout
+  shape, semantic flag/root relations, and malformed tag/flag/truncation
+  rejection. The actual runtime `Vec<u8>` encoder/parser bridge remains open and
+  is covered today by runtime byte round-trip tests.
+- `link_id(link) == fact_id(encode(link))` is the runtime definition today; the
+  Verus proof still needs to connect actual runtime encoding bytes to the
+  proof-facing canonical byte sequence.
 - Extraction emits exactly the self-offer for `valid_link(self_id, root_id)` and,
   for a child, exactly the parent need for `valid_link(prev, root_id)`.
 - Malformed `prev`/`root` combinations emit no edges and cannot validate.

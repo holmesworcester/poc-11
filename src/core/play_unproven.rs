@@ -18,9 +18,9 @@
 //!       Verified below in this file by `replay_report_surface_contract`.
 //! - [ ] Liveness: wake schedules work from newly available facts through
 //!       matching needers.
-//! - [x] Safety: successful replay/wake results report the engine validity map
+//! - [ ] Safety: successful replay/wake results report the engine validity map
 //!       after the work queue drains; bounded drain exhaustion is an error.
-//!       Verified below in this file by `replay_report_core`.
+//!       This depends on the future `core::turn` drain-prefix theorem.
 //! - [ ] Safety: soundness of each drain prefix belongs to `core::engine` and
 //!       `core::turn`.
 //! - [ ] Safety: replay discovers the full dependency closure needed for
@@ -30,8 +30,9 @@
 //!       results through the engine. Owner: `src/core/turn_unproven.rs`, planned
 //!       theorem `turn_preserves_engine_invariant`.
 //! - [ ] `core::engine`: validity maps and validated offers are sound for every
-//!       drain prefix. Owner: `src/core/engine_unproven.rs`, planned theorem
-//!       `engine_drain_prefix_sound`.
+//!       concrete drain prefix by refining the proof-facing transition trace.
+//!       Owner: `src/core/engine_unproven.rs`, planned theorem
+//!       `runtime_engine_refines_transition_trace`.
 //! - [x] `core::index`: storage lookups return only untrusted discovery data.
 //!       Proven in `src/core/index_unproven.rs::index_lookup_discovery_only`.
 //! Proof strategy:
@@ -58,68 +59,32 @@ verus! {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReplayReportCore {
     pub seeds_schedule_admission_only: bool,
-    pub drain_completed: bool,
-    pub pending_work_empty: bool,
-    pub reports_engine_validity: bool,
     pub rewrites_persisted_storage: bool,
 }
 
-pub closed spec fn replay_report_spec(
-    drain_completed: bool,
-    pending_work_empty: bool,
-    requested_fact_present: bool,
-) -> ReplayReportCore {
+pub closed spec fn replay_surface_spec() -> ReplayReportCore {
     ReplayReportCore {
         seeds_schedule_admission_only: true,
-        drain_completed,
-        pending_work_empty,
-        reports_engine_validity: drain_completed && pending_work_empty && requested_fact_present,
         rewrites_persisted_storage: false,
     }
 }
 
-pub fn replay_report_core(
-    drain_completed: bool,
-    pending_work_empty: bool,
-    requested_fact_present: bool,
-) -> (report: ReplayReportCore)
+pub fn replay_surface_core() -> (report: ReplayReportCore)
     ensures
-        report == replay_report_spec(drain_completed, pending_work_empty, requested_fact_present),
+        report == replay_surface_spec(),
         report.seeds_schedule_admission_only,
-        report.reports_engine_validity ==> report.drain_completed,
-        report.reports_engine_validity ==> report.pending_work_empty,
-        report.reports_engine_validity ==> requested_fact_present,
         !report.rewrites_persisted_storage,
 {
     ReplayReportCore {
         seeds_schedule_admission_only: true,
-        drain_completed,
-        pending_work_empty,
-        reports_engine_validity: drain_completed && pending_work_empty && requested_fact_present,
         rewrites_persisted_storage: false,
     }
 }
 
-pub proof fn replay_report_surface_contract(
-    drain_completed: bool,
-    pending_work_empty: bool,
-    requested_fact_present: bool,
-)
+pub proof fn replay_report_surface_contract()
     ensures
-        replay_report_spec(
-            drain_completed,
-            pending_work_empty,
-            requested_fact_present,
-        ).seeds_schedule_admission_only,
-        replay_report_spec(drain_completed, pending_work_empty, requested_fact_present)
-            .reports_engine_validity ==> drain_completed,
-        replay_report_spec(drain_completed, pending_work_empty, requested_fact_present)
-            .reports_engine_validity ==> pending_work_empty,
-        !replay_report_spec(
-            drain_completed,
-            pending_work_empty,
-            requested_fact_present,
-        ).rewrites_persisted_storage,
+        replay_surface_spec().seeds_schedule_admission_only,
+        !replay_surface_spec().rewrites_persisted_storage,
 {
 }
 
@@ -172,8 +137,9 @@ where
         if !self.engine.mem.contains(&id) {
             return Ok(None);
         }
-        let report = replay_report_core(true, true, true);
-        debug_assert!(report.reports_engine_validity);
+        let report = replay_surface_core();
+        debug_assert!(report.seeds_schedule_admission_only);
+        debug_assert!(!report.rewrites_persisted_storage);
         Ok(Some(self.validity_for(id)?))
     }
 
@@ -189,10 +155,8 @@ where
                 self.max_steps
             ));
         }
-        let report = replay_report_core(true, true, false);
+        let report = replay_surface_core();
         debug_assert!(report.seeds_schedule_admission_only);
-        debug_assert!(report.drain_completed);
-        debug_assert!(report.pending_work_empty);
         debug_assert!(!report.rewrites_persisted_storage);
         Ok(steps)
     }
@@ -226,8 +190,9 @@ where
     r.drain()?;
     for seed in seeds {
         r.validity_for(*seed)?;
-        let report = replay_report_core(true, true, true);
-        debug_assert!(report.reports_engine_validity);
+        let report = replay_surface_core();
+        debug_assert!(report.seeds_schedule_admission_only);
+        debug_assert!(!report.rewrites_persisted_storage);
     }
     Ok(r.engine.validity)
 }
@@ -245,7 +210,8 @@ where
     r.engine.enqueue_admit(arrived);
     r.drain()?;
     r.validity_for(arrived)?;
-    let report = replay_report_core(true, true, true);
-    debug_assert!(report.reports_engine_validity);
+    let report = replay_surface_core();
+    debug_assert!(report.seeds_schedule_admission_only);
+    debug_assert!(!report.rewrites_persisted_storage);
     Ok(r.engine.validity)
 }

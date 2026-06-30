@@ -51,44 +51,39 @@ pub struct TurnCore {
     pub helper_results_enter_engine_only: bool,
     pub helper_errors_create_validity: bool,
     pub queue_order_is_authority: bool,
-    pub preserves_engine_invariant: bool,
 }
 
-pub closed spec fn turn_spec(engine_step_preserves: bool) -> TurnCore {
+pub closed spec fn turn_spec() -> TurnCore {
     TurnCore {
         one_observable_step: true,
         helper_results_enter_engine_only: true,
         helper_errors_create_validity: false,
         queue_order_is_authority: false,
-        preserves_engine_invariant: engine_step_preserves,
     }
 }
 
-pub fn turn_core(engine_step_preserves: bool) -> (turn: TurnCore)
+pub fn turn_core() -> (turn: TurnCore)
     ensures
-        turn == turn_spec(engine_step_preserves),
+        turn == turn_spec(),
         turn.one_observable_step,
         turn.helper_results_enter_engine_only,
         !turn.helper_errors_create_validity,
         !turn.queue_order_is_authority,
-        turn.preserves_engine_invariant == engine_step_preserves,
 {
     TurnCore {
         one_observable_step: true,
         helper_results_enter_engine_only: true,
         helper_errors_create_validity: false,
         queue_order_is_authority: false,
-        preserves_engine_invariant: engine_step_preserves,
     }
 }
 
-pub proof fn turn_surface_contract(engine_step_preserves: bool)
+pub proof fn turn_surface_contract()
     ensures
-        turn_spec(engine_step_preserves).one_observable_step,
-        turn_spec(engine_step_preserves).helper_results_enter_engine_only,
-        !turn_spec(engine_step_preserves).helper_errors_create_validity,
-        !turn_spec(engine_step_preserves).queue_order_is_authority,
-        turn_spec(engine_step_preserves).preserves_engine_invariant == engine_step_preserves,
+        turn_spec().one_observable_step,
+        turn_spec().helper_results_enter_engine_only,
+        !turn_spec().helper_errors_create_validity,
+        !turn_spec().queue_order_is_authority,
 {
 }
 
@@ -191,9 +186,8 @@ where
         TurnOutcome::Projected { .. } => true,
         TurnOutcome::Idle => false,
     };
-    let turn_gate = turn_core(true);
+    let turn_gate = turn_core();
     debug_assert!(turn_gate.one_observable_step);
-    debug_assert!(turn_gate.preserves_engine_invariant);
     Ok(made_progress)
 }
 
