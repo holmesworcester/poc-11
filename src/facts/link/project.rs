@@ -101,6 +101,11 @@
 //!       Verified below by `root_link_chain_to_anchor`,
 //!       `child_extends_link_chain`, and
 //!       `replay_preserves_supplied_link_chain_to_anchor`.
+//! - [x] Safety: proof-facing transitive link validity over recorded core
+//!       dependencies: for any supplied same-root link chain whose child-parent
+//!       dependencies are recorded by core, every link id in the chain is valid
+//!       and each child depends on a validated same-root parent offer. Verified
+//!       below by `core_recorded_link_chain_has_only_valid_links`.
 //! Imported theorem checklist:
 //! - [x] `core::item`: fact ids are content addresses for canonical bytes. Proven
 //!       in `src/core/item_unproven.rs::fact_id_content_address`.
@@ -116,6 +121,9 @@
 //! - [x] `core::engine`: the proof-facing engine model exposes statement
 //!       provenance for a validated offer. Proven in
 //!       `src/core/engine_unproven.rs::engine_validated_offer_for_has_valid_owner`.
+//! - [x] `core::engine`: the proof-facing engine model exposes dependency
+//!       provenance for recorded consumer/provider edges. Proven in
+//!       `src/core/engine_unproven.rs::engine_dependency_edge_has_valid_provider`.
 //! - [x] `core::play`: proof-facing replay traces preserve engine validity.
 //!       Proven in `src/core/play_unproven.rs::replay_reports_engine_validity`.
 //! Local theorem checklist:
@@ -148,6 +156,8 @@
 //! - [x] Link/core supplied-chain preservation over the proof-facing replay
 //!       model. Proven below by
 //!       `replay_preserves_supplied_link_chain_to_anchor`.
+//! - [x] Link/core transitive validity over recorded dependencies. Proven below
+//!       by `core_recorded_link_chain_has_only_valid_links`.
 //! Proof strategy:
 //! - Prove the executable canonical byte builder preserves prev/root/content
 //!   segments and prove rejection cases for tag/flag/truncation.
@@ -174,6 +184,9 @@
 //!   `prev=None, root=None` gives `valid_link(self,self)`; child step extends an
 //!   existing sequence only when the child names the previous head and preserves
 //!   the same root/domain id.
+//! - Prove the link/core recorded-dependency theorem by combining the link chain
+//!   predicate, the link statement-to-owner theorem, and core's recorded
+//!   dependency-provider theorem.
 use std::collections::BTreeMap;
 
 use crate::core::admit::Admitted;
@@ -871,6 +884,21 @@ pub closed spec fn chain_contains_validated_link_statements(
                 state.validated,
                 engine_id_for_link_id(#[trigger] chain[i].self_id),
                 link_statement_addr_core(chain[i].self_id, root),
+            )
+}
+
+pub closed spec fn chain_dependencies_recorded_in_core(
+    state: crate::core::engine::EngineStateCore,
+    chain: Seq<LinkCore>,
+    root: IdCore,
+) -> bool {
+    forall |i: int|
+        1 <= i < chain.len() ==>
+            crate::core::engine::dependency_edge_for(
+                state.dependencies,
+                engine_id_for_link_id(#[trigger] chain[i].self_id),
+                engine_id_for_link_id(chain[i - 1].self_id),
+                link_statement_addr_core(chain[i - 1].self_id, root),
             )
 }
 
@@ -1644,6 +1672,72 @@ pub proof fn replay_preserves_supplied_link_chain_to_anchor(
         ),
 {
     crate::core::play::replay_reports_engine_validity(state, transitions);
+}
+
+pub proof fn core_recorded_link_chain_has_only_valid_links(
+    state: crate::core::engine::EngineStateCore,
+    chain: Seq<LinkCore>,
+    root: IdCore,
+)
+    requires
+        crate::core::engine::engine_invariant(state),
+        link_chain_to_anchor(chain, root),
+        chain_contains_validated_link_statements(state, chain, root),
+        chain_dependencies_recorded_in_core(state, chain, root),
+    ensures
+        forall |i: int| 0 <= i < chain.len() ==>
+            crate::core::engine::contains_id(
+                state.valid,
+                engine_id_for_link_id(#[trigger] chain[i].self_id),
+            ),
+        forall |i: int| 1 <= i < chain.len() ==>
+            crate::core::engine::contains_id(
+                state.valid,
+                engine_id_for_link_id(#[trigger] chain[i - 1].self_id),
+            )
+                && crate::core::engine::validated_offer_for(
+                    state.validated,
+                    engine_id_for_link_id(chain[i - 1].self_id),
+                    link_statement_addr_core(chain[i - 1].self_id, root),
+                ),
+{
+    assert forall |i: int| 0 <= i < chain.len() implies
+        crate::core::engine::contains_id(
+            state.valid,
+            engine_id_for_link_id(#[trigger] chain[i].self_id),
+        )
+    by {
+        assert(crate::core::engine::validated_offer_for(
+            state.validated,
+            engine_id_for_link_id(chain[i].self_id),
+            link_statement_addr_core(chain[i].self_id, root),
+        ));
+        validated_link_offer_statement_to_owner_from_engine(state, chain[i].self_id, root);
+    }
+    assert forall |i: int| 1 <= i < chain.len() implies
+        crate::core::engine::contains_id(
+            state.valid,
+            engine_id_for_link_id(#[trigger] chain[i - 1].self_id),
+        )
+            && crate::core::engine::validated_offer_for(
+                state.validated,
+                engine_id_for_link_id(chain[i - 1].self_id),
+                link_statement_addr_core(chain[i - 1].self_id, root),
+            )
+    by {
+        assert(crate::core::engine::dependency_edge_for(
+            state.dependencies,
+            engine_id_for_link_id(chain[i].self_id),
+            engine_id_for_link_id(chain[i - 1].self_id),
+            link_statement_addr_core(chain[i - 1].self_id, root),
+        ));
+        crate::core::engine::engine_dependency_edge_has_valid_provider(
+            state,
+            engine_id_for_link_id(chain[i].self_id),
+            engine_id_for_link_id(chain[i - 1].self_id),
+            link_statement_addr_core(chain[i - 1].self_id, root),
+        );
+    }
 }
 
 // 28. Extraction Lemmas.

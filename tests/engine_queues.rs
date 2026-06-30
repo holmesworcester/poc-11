@@ -3,7 +3,7 @@ use linktoy::core::admit::Admitted;
 use linktoy::core::effects::{EffectRequest, EffectResult};
 use linktoy::core::engine::{EdgeAddr, EngineState, Storage};
 use linktoy::core::item::{fact_id, FactId};
-use linktoy::core::offer::{Key, Offer, Role};
+use linktoy::core::offer::{Key, Offer, Role, Scope};
 use linktoy::core::projector::{EmittedFact, ProjectOutcome, Projector};
 use linktoy::core::turn::{self, TurnOutcome};
 use linktoy::core::typestate::{Asserted, Context, Validity};
@@ -65,6 +65,26 @@ fn assert_projected_link_report(
     assert_eq!(report.ids, ids);
 }
 
+fn assert_recorded_dependency(
+    engine: &EngineState<LinkProjector>,
+    consumer: FactId,
+    provider: FactId,
+    root: FactId,
+) {
+    let addr = EdgeAddr {
+        role: LINK,
+        scope: Scope::Local,
+        key: valid_link_key(provider, root),
+    };
+    assert!(
+        engine
+            .dependencies
+            .iter()
+            .any(|dep| dep.consumer == consumer && dep.provider == provider && dep.addr == addr),
+        "missing recorded dependency consumer={consumer:?} provider={provider:?}"
+    );
+}
+
 #[test]
 fn demand_for_head_pulls_stored_parent_chain_into_memory() {
     let (_dir, db) = temp_db();
@@ -91,6 +111,8 @@ fn demand_for_head_pulls_stored_parent_chain_into_memory() {
     assert_eq!(engine.pending_query_len(), 0);
     assert_validated_offer_provenance(&engine);
     assert_projected_link_report(&engine, head_id, root_id, &[root_id, mid_id, head_id]);
+    assert_recorded_dependency(&engine, mid_id, root_id, root_id);
+    assert_recorded_dependency(&engine, head_id, mid_id, root_id);
 }
 
 #[test]

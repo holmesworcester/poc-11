@@ -75,9 +75,11 @@ Core proofs are about all possible fact families routed through the engine:
   relationship is transitively valid over any projected chain.
 - Admit, query, project, and wake turns preserve the ongoing engine invariant.
 - The current core proof has a Verus transition-trace model proving validated
-  offer provenance and per-owner/per-address promotion uniqueness for any allowed
-  modeled transition prefix. The remaining core proof is to show the concrete
-  runtime `EngineState` queues/maps refine that model.
+  offer provenance, recorded dependency provenance, and per-owner/per-address
+  promotion uniqueness for any allowed modeled transition prefix. Runtime
+  `EngineState` records dependency edges when a valid projection consumes
+  validated context. The remaining core proof is to show the concrete runtime
+  queues/maps refine the full proof-facing model.
 - Route dispatch is sound: decoded family tags select the right family projector,
   and malformed or unknown facts do not become valid.
 
@@ -113,8 +115,10 @@ and ancestry mean:
 - Current link ancestry is same-root preserving over a concrete proof-facing
   sequence: a root starts its own chain, a valid child names the previous head
   and preserves the root/domain id, and the replay trace theorem preserves the
-  engine invariant needed by that supplied chain. The link file does not prove
-  that concrete replay can derive such a chain from engine state alone.
+  engine invariant needed by that supplied chain. The link file also proves that
+  a supplied same-root chain with recorded core child-parent dependencies has
+  only valid link ids and validated same-root parent offers. The link file does
+  not prove that concrete replay can derive such a chain from engine state alone.
 
 ## Invariant Checklist Style
 

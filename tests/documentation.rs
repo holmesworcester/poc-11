@@ -768,14 +768,22 @@ fn engine_turn_play_proof_status_is_honest() {
     let engine = source_text(&root.join("src/core/engine_unproven.rs"));
     for required in [
         "pub struct EngineStateCore",
+        "pub struct EngineDependencyCore",
         "pub closed spec fn engine_invariant",
+        "pub closed spec fn dependency_provenance",
+        "pub closed spec fn dependency_edge_for",
         "pub closed spec fn state_promote_offer",
         "pub enum EngineTransitionCore",
+        "RecordDependency",
         "pub proof fn engine_single_transition_preserves_invariant",
         "pub proof fn engine_transition_trace_preserves_invariant",
         "pub proof fn engine_transition_preserves_validated_context_provenance",
         "pub proof fn engine_promotes_only_valid_owner_offers",
         "pub proof fn engine_context_offers_have_valid_owners",
+        "pub proof fn record_dependency_preserves_invariant",
+        "pub proof fn engine_dependency_edge_has_valid_provider",
+        "pub dependencies: Vec<RecordedDependency>",
+        "self.record_dependencies(id, &edges)",
         "fact_id(&bytes) != id",
         "P::encode(&item) != bytes",
         "if P::update_owner(update) != id",
@@ -878,9 +886,11 @@ fn link_project_verified_kernel_is_running_code() {
         "valid_projection_statement_equals_extracted_offer",
         "valid_child_requires_validated_same_root_parent",
         "link_chain_to_anchor",
+        "chain_dependencies_recorded_in_core",
         "root_link_chain_to_anchor",
         "child_extends_link_chain",
         "replay_preserves_supplied_link_chain_to_anchor",
+        "core_recorded_link_chain_has_only_valid_links",
         "validated_link_offer_statement_to_owner_from_engine",
         "projection_update_owner_is_self",
         "valid_projection_statement_owned_by_projected_link",
@@ -992,6 +1002,8 @@ fn link_project_proof_audit_is_structural_not_prose_status() {
         "root_link_chain_to_anchor",
         "child_extends_link_chain",
         "replay_preserves_supplied_link_chain_to_anchor",
+        "chain_dependencies_recorded_in_core",
+        "core_recorded_link_chain_has_only_valid_links",
     ] {
         assert!(
             rust_symbol_exists(&project, required_symbol),
@@ -1066,6 +1078,10 @@ fn link_project_imported_theorems_point_to_existing_symbols() {
         (
             "src/core/engine_unproven.rs",
             "engine_validated_offer_for_has_valid_owner",
+        ),
+        (
+            "src/core/engine_unproven.rs",
+            "engine_dependency_edge_has_valid_provider",
         ),
         (
             "src/core/play_unproven.rs",
