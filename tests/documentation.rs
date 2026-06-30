@@ -304,6 +304,84 @@ fn proof_projector_style_guide_records_narrative_structure() {
 }
 
 #[test]
+fn link_project_file_follows_proof_projector_narrative_sections() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let project = source_text(&root.join("src/facts/link/project_unproven.rs"));
+    let normalized = normalize_whitespace(&project);
+
+    for required in [
+        "POLICY. A link is valid iff",
+        "1. CODEC. Its bytes decode canonically to exactly one `Link`",
+        "2. SHAPE. It is either a root, a child, or malformed",
+        "3. EXTRACT. Roots assert `valid_link(self,self)`",
+        "4. CONTEXT. A child may validate only from exact validated parent/root",
+        "5. PROJECT. A valid projection promotes only its own statement and emits no",
+        "raw facts",
+        "6. STATE. Projection updates only this link id's read-model entry",
+        "7. COMPOSE. The local child step composes with core/replay provenance",
+        "Invariant checklist (Verus):",
+        "Imported theorem checklist:",
+        "Local theorem checklist:",
+        "Proof strategy:",
+        "Completion plan for unchecked items:",
+        "2. Runtime Surface.",
+        "3. Proof Vocabulary.",
+        "3a. Shape Predicates And Statement Helpers.",
+        "4. Construction.",
+        "4. Construction Proof Model.",
+        "4. Construction Kernel.",
+        "4a. Construction Lemma.",
+        "5. Canonical Codec.",
+        "5. Canonical Codec Model.",
+        "5. Codec Kernels.",
+        "5a. Codec Lemmas.",
+        "6. Extraction.",
+        "6. Extraction Model.",
+        "6. Extraction Kernel.",
+        "6a. Extraction Lemmas.",
+        "7. Projection Validity.",
+        "7. Projection Validity Model.",
+        "7. Projection Validity Kernel.",
+        "7a. Projection Lemmas.",
+        "8. Output And Read Model.",
+        "8c. Projected Report Model.",
+        "8g. Projected Report Kernel.",
+        "8l. Projected Report Lemmas.",
+        "9. Composition Model.",
+        "9. Composition Kernel.",
+        "9a. Composition Lemma.",
+        "10. Runtime Bridge Helpers.",
+        "Projector trait wiring.",
+        "Each method delegates to the",
+        "sectioned helpers above",
+    ] {
+        assert!(
+            normalized.contains(required),
+            "link project file is missing proof-projector narrative section {required:?}"
+        );
+    }
+
+    let runtime_surface = project
+        .find("// 2. Runtime Surface.")
+        .expect("runtime surface section");
+    let proof_vocabulary = project
+        .find("// 3. Proof Vocabulary.")
+        .expect("proof vocabulary section");
+    let construction = project
+        .find("// 4. Construction.")
+        .expect("construction section");
+    let bridge = project
+        .find("// 10. Runtime Bridge Helpers.")
+        .expect("runtime bridge section");
+    assert!(
+        runtime_surface < proof_vocabulary
+            && proof_vocabulary < construction
+            && construction < bridge,
+        "link project sections should read policy, runtime surface, proof vocabulary, behavior, bridge"
+    );
+}
+
+#[test]
 fn proof_target_files_have_verus_invariant_checklists() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let files = [

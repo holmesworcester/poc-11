@@ -8,6 +8,21 @@
 //! `valid_link(parent_id, root_id)`. `project` makes a child valid only when that
 //! same-root parent statement is in validated context; a root is valid by itself.
 //!
+//! POLICY. A link is valid iff:
+//!   1. CODEC. Its bytes decode canonically to exactly one `Link`, and its id is
+//!      derived from those canonical bytes.
+//!   2. SHAPE. It is either a root, a child, or malformed.
+//!   3. EXTRACT. Roots assert `valid_link(self,self)`; children assert
+//!      `valid_link(self,root)` and need `valid_link(parent,root)`; malformed
+//!      links assert nothing.
+//!   4. CONTEXT. A child may validate only from exact validated parent/root
+//!      context.
+//!   5. PROJECT. A valid projection promotes only its own statement and emits no
+//!      raw facts.
+//!   6. STATE. Projection updates only this link id's read-model entry.
+//!   7. COMPOSE. The local child step composes with core/replay provenance into
+//!      a same-root chain theorem.
+//!
 //! Fact-family contract (do not weaken):
 //! - Scope: the only home for link semantics.
 //! - Owned here: `Link`, `LinkState`, `LinkProjector`, link codec, link
@@ -176,6 +191,56 @@ use crate::core::projector::{ProjectOutcome, Projector};
 use crate::core::typestate::{Asserted, Context, Validity};
 use vstd::prelude::*;
 
+// 2. Runtime Surface.
+//
+// These are the public runtime nouns the rest of the file explains and proves:
+// `Link` is the semantic fact, `ProjectedLink` is the family-owned read model,
+// and `LinkProjector` is the only runtime path that can validate/update links.
+
+/// Wire tag distinguishing a link fact from other frames on the network.
+pub const TAG_LINK: u8 = 0x01;
+/// The single match namespace.
+pub const LINK: Role = Role("link");
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Link {
+    pub content: Vec<u8>,
+    pub prev: Option<FactId>,
+    pub root: Option<FactId>,
+}
+
+/// The projector's private read-model: id -> projected chain entry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProjectedLink {
+    pub complete: bool,
+    pub root: FactId,
+    pub depth: u64,
+    pub length: u64,
+    /// root..head order for complete projected entries; singleton self for
+    /// incomplete entries.
+    pub ids: Vec<FactId>,
+}
+
+#[derive(Default)]
+pub struct LinkState {
+    pub seen: BTreeMap<FactId, Validity>,
+    pub projected: BTreeMap<FactId, ProjectedLink>,
+}
+
+pub struct LinkUpdate {
+    pub id: FactId,
+    pub validity: Validity,
+    pub projected: ProjectedLink,
+}
+
+pub struct LinkProjector;
+
+// 3. Proof Vocabulary.
+//
+// These proof-facing nouns mirror the runtime surface with small, explicit
+// shapes that Verus can reason about directly. The later sections prove the
+// runtime functions by delegating through these kernels.
+
 verus! {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -293,6 +358,12 @@ pub struct LinkChainCompositionCore {
     pub chain_to_anchor: bool,
 }
 
+// 3a. Shape Predicates And Statement Helpers.
+//
+// These helpers define the three semantic branches used everywhere below:
+// root, child, and malformed. Later extraction/projection/report sections all
+// reduce to these branch predicates.
+
 pub closed spec fn id_eq_spec(left: IdCore, right: IdCore) -> bool {
     left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
 }
@@ -362,6 +433,11 @@ pub closed spec fn statement_is_self_claimed_root(
     })
 }
 
+// 7. Projection Validity Model.
+//
+// A root is valid by itself. A child is valid only when the caller supplies the
+// exact validated same-root parent context. Malformed shapes are invalid.
+
 pub closed spec fn projection_spec(
     link: LinkCore,
     parent_validated_same_root: bool,
@@ -401,6 +477,12 @@ pub closed spec fn projection_spec(
     }
 }
 
+// 6. Extraction Model.
+//
+// Extraction is context-free. It names the one self statement a well-formed
+// link may later promote and, for children, the exact parent/root statement it
+// needs from validated context.
+
 pub closed spec fn extraction_spec(link: LinkCore) -> LinkExtractionCore {
     match (link.prev, link.root) {
         (MaybeIdCore::None, MaybeIdCore::None) => LinkExtractionCore {
@@ -427,12 +509,22 @@ pub closed spec fn extraction_spec(link: LinkCore) -> LinkExtractionCore {
     }
 }
 
+// 8a. Report Fallback Model.
+//
+// Incomplete reports are read-model observations only; they do not create
+// validity evidence. The fallback root keeps display/report shape deterministic.
+
 pub closed spec fn fallback_root_spec(link: LinkCore) -> IdCore {
     match (link.root, link.prev) {
         (MaybeIdCore::Some(root), _) => root,
         _ => link.self_id,
     }
 }
+
+// 4. Construction Proof Model.
+//
+// Construction can copy only caller-supplied link parameters into the typed
+// fact. It cannot assign ids, edges, or validity.
 
 pub closed spec fn link_from_params_spec(prev: MaybeIdCore, root: MaybeIdCore) -> LinkConstructionCore {
     LinkConstructionCore {
@@ -443,6 +535,11 @@ pub closed spec fn link_from_params_spec(prev: MaybeIdCore, root: MaybeIdCore) -
         assigns_validity: false,
     }
 }
+
+// 8b. Update Application Model.
+//
+// Updates are owner-scoped and insert/ignore. Projection of one fact cannot
+// overwrite another fact's projected state.
 
 pub closed spec fn link_update_apply_spec(
     owner: IdCore,
@@ -456,6 +553,12 @@ pub closed spec fn link_update_apply_spec(
         insert_projected: !projected_present,
     }
 }
+
+// 5. Canonical Codec Model.
+//
+// The byte layout is `tag | has_prev | prev[32]? | has_root | root[32]? |
+// content`. These helpers model the accepted layout, rejection cases, and
+// semantic flag shape used by runtime encode/decode.
 
 pub closed spec fn codec_flag_spec(id: MaybeIdCore) -> u8 {
     match id {
@@ -526,6 +629,12 @@ pub closed spec fn child_projected_ids_spec(parent_ids: Seq<IdCore>, self_id: Id
     parent_ids.push(self_id)
 }
 
+// 9. Composition Model.
+//
+// This is the local induction step only: roots start a chain and children extend
+// an already-known same-root parent chain. Core/replay must still prove the
+// graph-wide provenance and closure premises.
+
 pub closed spec fn link_chain_composition_spec(
     link: LinkCore,
     parent_validated_same_root: bool,
@@ -543,6 +652,11 @@ pub closed spec fn link_chain_composition_spec(
         chain_to_anchor: root_anchor || child_chain,
     }
 }
+
+// 8c. Projected Report Model.
+//
+// Complete child reports can be constructed only from complete same-root parent
+// reports. All other cases produce a singleton incomplete observation.
 
 pub closed spec fn projected_report_spec(
     link: LinkCore,
@@ -601,6 +715,8 @@ pub closed spec fn projected_report_spec(
     }
 }
 
+// 8d. Report Helper Kernel.
+
 pub fn fallback_root_core(link: LinkCore) -> (root: IdCore)
     ensures
         root == fallback_root_spec(link),
@@ -610,6 +726,8 @@ pub fn fallback_root_core(link: LinkCore) -> (root: IdCore)
         _ => link.self_id,
     }
 }
+
+// 4. Construction Kernel.
 
 pub fn link_from_params_core(prev: MaybeIdCore, root: MaybeIdCore) -> (construction: LinkConstructionCore)
     ensures
@@ -628,6 +746,8 @@ pub fn link_from_params_core(prev: MaybeIdCore, root: MaybeIdCore) -> (construct
         assigns_validity: false,
     }
 }
+
+// 6. Extraction Kernel.
 
 pub fn extract_link_core(link: LinkCore) -> (extraction: LinkExtractionCore)
     ensures
@@ -666,6 +786,8 @@ pub fn extract_link_core(link: LinkCore) -> (extraction: LinkExtractionCore)
     }
 }
 
+// 8e. Update Application Kernel.
+
 pub fn link_update_apply_core(
     owner: IdCore,
     seen_present: bool,
@@ -685,6 +807,8 @@ pub fn link_update_apply_core(
         insert_projected: !projected_present,
     }
 }
+
+// 5. Codec Kernels.
 
 pub fn codec_flag_core(id: MaybeIdCore) -> (flag: u8)
     ensures
@@ -765,6 +889,8 @@ pub fn link_codec_layout_core(
     }
 }
 
+// 8f. Projected Id Vector Kernels.
+
 #[allow(clippy::vec_init_then_push)]
 pub fn singleton_projected_ids_core(self_id: IdCore) -> (out: ProjectedIdsCore)
     ensures
@@ -788,6 +914,8 @@ pub fn child_projected_ids_core(parent_ids: Vec<IdCore>, self_id: IdCore) -> (ou
     ids.push(self_id);
     ProjectedIdsCore { ids }
 }
+
+// 9. Composition Kernel.
 
 pub fn link_chain_composition_core(
     link: LinkCore,
@@ -818,6 +946,8 @@ pub fn link_chain_composition_core(
         chain_to_anchor: root_anchor || child_chain,
     }
 }
+
+// 8g. Projected Report Kernel.
 
 #[allow(clippy::too_many_arguments, clippy::unnecessary_cast)]
 pub fn projected_report_core(
@@ -912,6 +1042,8 @@ pub fn projected_report_core(
     }
 }
 
+// 7. Projection Validity Kernel.
+
 pub fn project_link_core(
     link: LinkCore,
     parent_validated_same_root: bool,
@@ -966,12 +1098,19 @@ pub fn project_link_core(
     }
 }
 
+// 8h. Emitted-Fact Kernel.
+//
+// Link projection currently emits no raw facts; authority comes only from
+// promoted offers for the projected owner.
+
 pub fn link_emitted_fact_count_core() -> (count: usize)
     ensures
         count == 0,
 {
     0
 }
+
+// 7a. Projection Lemmas.
 
 pub proof fn root_projection_emits_self_root(link: LinkCore)
     requires
@@ -982,11 +1121,15 @@ pub proof fn root_projection_emits_self_root(link: LinkCore)
 {
 }
 
+// 8i. Output Ownership Lemmas.
+
 pub proof fn projection_update_owner_is_self(link: LinkCore, parent_validated_same_root: bool)
     ensures
         projection_spec(link, parent_validated_same_root).update_owner == link.self_id,
 {
 }
+
+// 4a. Construction Lemma.
 
 pub proof fn link_from_params_constructs_only_link_fields(prev: MaybeIdCore, root: MaybeIdCore)
     ensures
@@ -997,6 +1140,8 @@ pub proof fn link_from_params_constructs_only_link_fields(prev: MaybeIdCore, roo
         !link_from_params_spec(prev, root).assigns_validity,
 {
 }
+
+// 8j. Update Application Lemma.
 
 pub proof fn apply_update_is_insert_ignore_by_link_id(
     owner: IdCore,
@@ -1010,6 +1155,8 @@ pub proof fn apply_update_is_insert_ignore_by_link_id(
         link_update_apply_spec(owner, seen_present, projected_present).insert_projected == !projected_present,
 {
 }
+
+// 5a. Codec Lemmas.
 
 pub proof fn canonical_link_identity(prev: MaybeIdCore, root: MaybeIdCore)
     ensures
@@ -1063,6 +1210,8 @@ pub proof fn codec_layout_rejects_truncation(
 {
 }
 
+// 8k. Projected Id Vector Lemmas.
+
 pub proof fn singleton_projected_ids_are_exact(self_id: IdCore)
     ensures
         singleton_projected_ids_spec(self_id).len() == 1,
@@ -1078,6 +1227,8 @@ pub proof fn child_projected_ids_are_parent_plus_self(parent_ids: Seq<IdCore>, s
 {
 }
 
+// 9a. Composition Lemma.
+
 pub proof fn valid_link_composes_with_parent_chain(
     link: LinkCore,
     parent_validated_same_root: bool,
@@ -1091,6 +1242,8 @@ pub proof fn valid_link_composes_with_parent_chain(
         is_child(link) ==> parent_validated_same_root,
 {
 }
+
+// 6a. Extraction Lemmas.
 
 pub proof fn child_extraction_offer_and_need_same_root(
     self_id: IdCore,
@@ -1115,6 +1268,8 @@ pub proof fn child_extraction_offer_and_need_same_root(
         }),
 {
 }
+
+// 7b. Projection Statement Lemmas.
 
 pub proof fn valid_projection_statement_owned_by_projected_link(
     link: LinkCore,
@@ -1151,6 +1306,8 @@ pub proof fn valid_projection_statement_to_owner_and_root(
 {
 }
 
+// 7c. Malformed Shape Lemmas.
+
 pub proof fn malformed_projection_is_invalid(link: LinkCore, parent_validated_same_root: bool)
     requires
         is_malformed(link),
@@ -1168,6 +1325,8 @@ pub proof fn malformed_extraction_is_empty(link: LinkCore)
         extraction_spec(link).need == MaybeStatementCore::None,
 {
 }
+
+// 8l. Projected Report Lemmas.
 
 pub proof fn root_projected_report_is_complete_self(link: LinkCore)
     requires
@@ -1365,110 +1524,11 @@ pub proof fn invalid_child_emits_no_statement(
 
 } // verus!
 
-fn chunk_u64(id: &FactId, offset: usize) -> u64 {
-    u64::from_le_bytes([
-        id[offset],
-        id[offset + 1],
-        id[offset + 2],
-        id[offset + 3],
-        id[offset + 4],
-        id[offset + 5],
-        id[offset + 6],
-        id[offset + 7],
-    ])
-}
-
-pub fn fact_id_to_core(id: FactId) -> IdCore {
-    IdCore {
-        w0: chunk_u64(&id, 0),
-        w1: chunk_u64(&id, 8),
-        w2: chunk_u64(&id, 16),
-        w3: chunk_u64(&id, 24),
-    }
-}
-
-pub fn core_to_fact_id(id: IdCore) -> FactId {
-    let mut out = [0; 32];
-    out[0..8].copy_from_slice(&id.w0.to_le_bytes());
-    out[8..16].copy_from_slice(&id.w1.to_le_bytes());
-    out[16..24].copy_from_slice(&id.w2.to_le_bytes());
-    out[24..32].copy_from_slice(&id.w3.to_le_bytes());
-    out
-}
-
-pub fn link_core_for(self_id: FactId, prev: Option<FactId>, root: Option<FactId>) -> LinkCore {
-    LinkCore {
-        self_id: fact_id_to_core(self_id),
-        prev: maybe_fact_id_to_core(prev),
-        root: maybe_fact_id_to_core(root),
-    }
-}
-
-pub fn maybe_fact_id_to_core(id: Option<FactId>) -> MaybeIdCore {
-    match id {
-        Some(id) => MaybeIdCore::Some(fact_id_to_core(id)),
-        None => MaybeIdCore::None,
-    }
-}
-
-pub fn maybe_core_to_fact_id(id: MaybeIdCore) -> Option<FactId> {
-    match id {
-        MaybeIdCore::Some(id) => Some(core_to_fact_id(id)),
-        MaybeIdCore::None => None,
-    }
-}
-
-pub fn validity_from_core(validity: ValidityCore) -> crate::core::typestate::Validity {
-    match validity {
-        ValidityCore::Valid => crate::core::typestate::Validity::Valid,
-        ValidityCore::Invalid => crate::core::typestate::Validity::Invalid,
-    }
-}
-
-pub fn validity_to_core(validity: crate::core::typestate::Validity) -> ValidityCore {
-    match validity {
-        crate::core::typestate::Validity::Valid => ValidityCore::Valid,
-        crate::core::typestate::Validity::Invalid => ValidityCore::Invalid,
-    }
-}
-
-/// Wire tag distinguishing a link fact from other frames on the network.
-pub const TAG_LINK: u8 = 0x01;
-/// The single match namespace.
-pub const LINK: Role = Role("link");
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Link {
-    pub content: Vec<u8>,
-    pub prev: Option<FactId>,
-    pub root: Option<FactId>,
-}
-
-/// The projector's private read-model: id → validity.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProjectedLink {
-    pub complete: bool,
-    pub root: FactId,
-    pub depth: u64,
-    pub length: u64,
-    /// root..head order for complete projected entries; singleton self for
-    /// incomplete entries.
-    pub ids: Vec<FactId>,
-}
-
-#[derive(Default)]
-pub struct LinkState {
-    pub seen: BTreeMap<FactId, Validity>,
-    pub projected: BTreeMap<FactId, ProjectedLink>,
-}
-
-pub struct LinkUpdate {
-    pub id: FactId,
-    pub validity: Validity,
-    pub projected: ProjectedLink,
-}
-
-pub struct LinkProjector;
+// 4. Construction.
+//
+// Primary runtime function: `link_from_params`.
+// Proof handlers: `link_from_params_spec`, `link_from_params_core`, and
+// `link_from_params_constructs_only_link_fields`.
 
 /// Deterministic constructor from command parameters to the typed link fact.
 pub fn link_from_params(at: u64, prev: Option<FactId>, root: Option<FactId>, label: &str) -> Link {
@@ -1486,9 +1546,24 @@ pub fn link_from_params(at: u64, prev: Option<FactId>, root: Option<FactId>, lab
     }
 }
 
+// 5. Canonical Codec.
+//
+// Primary runtime functions: `LinkProjector::encode`, `LinkProjector::decode`,
+// and `link_id`.
+// Proof handlers: `codec_flag_*`, `link_codec_identity_*`,
+// `link_codec_layout_*`, and the codec layout rejection lemmas.
+
 pub fn link_id(l: &Link) -> FactId {
     fact_id(&LinkProjector::encode(l))
 }
+
+// 6. Extraction.
+//
+// Primary runtime functions: `link_edges`, `link_semantic_root`, and
+// `valid_link_key`.
+// Proof handlers: `extraction_spec`, `extract_link_core`,
+// `child_extraction_offer_and_need_same_root`, and
+// `malformed_extraction_is_empty`.
 
 pub fn link_edges(l: &Link) -> Vec<Offer<Asserted>> {
     let extraction = extract_link_core(link_core_for(link_id(l), l.prev, l.root));
@@ -1530,6 +1605,13 @@ pub fn valid_link_key(link_id: FactId, root_id: FactId) -> Key {
     Key(fact_id(&bytes))
 }
 
+// 7. Projection Validity.
+//
+// Primary runtime functions: `LinkProjector::project`, `link_project_decision`,
+// and `link_project_validity`.
+// Proof handlers: `projection_spec`, `project_link_core`, and the root/child/
+// malformed projection lemmas.
+
 pub fn link_project_decision(
     id: FactId,
     l: &Link,
@@ -1545,6 +1627,15 @@ pub fn link_project_validity(l: &Link, parent_validated_same_root: bool) -> Vali
     let projection = link_project_decision(link_id(l), l, parent_validated_same_root);
     validity_from_core(projection.validity)
 }
+
+// 8. Output And Read Model.
+//
+// Primary runtime functions: `projected_link_state`,
+// `incomplete_projected_link`, `LinkProjector::update_owner`, and
+// `LinkProjector::apply_update`.
+// Proof handlers: `projected_report_*`, `link_update_apply_*`,
+// `singleton_projected_ids_*`, `child_projected_ids_*`, and
+// `link_emitted_fact_count_core`.
 
 fn projected_root_or_fallback(id: FactId, l: &Link) -> FactId {
     link_semantic_root(l).or(l.root).unwrap_or(id)
@@ -1640,6 +1731,12 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
         _ => incomplete_projected_link(id, l),
     }
 }
+
+// Projector trait wiring.
+//
+// The trait methods are the runtime entry points. Each method delegates to the
+// sectioned helpers above so the implementation reads in the same order as the
+// policy: codec, extraction, projection, and owner-scoped state update.
 
 impl Projector for LinkProjector {
     type Item = Link;
@@ -1760,6 +1857,79 @@ impl Projector for LinkProjector {
         if decision.insert_projected {
             st.projected.insert(projected_key, update.projected);
         }
+    }
+}
+
+// 10. Runtime Bridge Helpers.
+//
+// Runtime code uses `[u8; 32]` fact ids and core typestates. The proof kernels
+// use small proof-facing ids and enums. These conversions keep that boundary
+// explicit and local to this file.
+
+fn chunk_u64(id: &FactId, offset: usize) -> u64 {
+    u64::from_le_bytes([
+        id[offset],
+        id[offset + 1],
+        id[offset + 2],
+        id[offset + 3],
+        id[offset + 4],
+        id[offset + 5],
+        id[offset + 6],
+        id[offset + 7],
+    ])
+}
+
+pub fn fact_id_to_core(id: FactId) -> IdCore {
+    IdCore {
+        w0: chunk_u64(&id, 0),
+        w1: chunk_u64(&id, 8),
+        w2: chunk_u64(&id, 16),
+        w3: chunk_u64(&id, 24),
+    }
+}
+
+pub fn core_to_fact_id(id: IdCore) -> FactId {
+    let mut out = [0; 32];
+    out[0..8].copy_from_slice(&id.w0.to_le_bytes());
+    out[8..16].copy_from_slice(&id.w1.to_le_bytes());
+    out[16..24].copy_from_slice(&id.w2.to_le_bytes());
+    out[24..32].copy_from_slice(&id.w3.to_le_bytes());
+    out
+}
+
+pub fn link_core_for(self_id: FactId, prev: Option<FactId>, root: Option<FactId>) -> LinkCore {
+    LinkCore {
+        self_id: fact_id_to_core(self_id),
+        prev: maybe_fact_id_to_core(prev),
+        root: maybe_fact_id_to_core(root),
+    }
+}
+
+pub fn maybe_fact_id_to_core(id: Option<FactId>) -> MaybeIdCore {
+    match id {
+        Some(id) => MaybeIdCore::Some(fact_id_to_core(id)),
+        None => MaybeIdCore::None,
+    }
+}
+
+pub fn maybe_core_to_fact_id(id: MaybeIdCore) -> Option<FactId> {
+    match id {
+        MaybeIdCore::Some(id) => Some(core_to_fact_id(id)),
+        MaybeIdCore::None => None,
+    }
+}
+
+pub fn validity_from_core(validity: ValidityCore) -> crate::core::typestate::Validity {
+    match validity {
+        ValidityCore::Valid => crate::core::typestate::Validity::Valid,
+        ValidityCore::Invalid => crate::core::typestate::Validity::Invalid,
+    }
+}
+
+pub fn validity_to_core(validity: crate::core::typestate::Validity) -> ValidityCore {
+    match validity {
+        crate::core::typestate::Validity::Valid => ValidityCore::Valid,
+        crate::core::typestate::Validity::Invalid => ValidityCore::Invalid,
     }
 }
 
