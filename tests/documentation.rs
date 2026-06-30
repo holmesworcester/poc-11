@@ -172,6 +172,80 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
 }
 
 #[test]
+fn proof_projector_style_guide_records_narrative_structure() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let guide = source_text(&root.join("docs/proof-projector-style.md"));
+    let normalized = normalize_whitespace(&guide);
+
+    for required in [
+        "Write projector proof files as a story",
+        "Bytes establish identity",
+        "Shape determines which semantic path applies",
+        "Extraction declares exactly what the fact may later claim and need",
+        "Validated context supplies authority",
+        "Projection promotes only the statement justified by that authority",
+        "Projector state records only owned read-model consequences",
+        "Composition imports core/replay provenance",
+        "A numbered top-of-file policy",
+        "The opening proof checklist, kept near the top of the file",
+        "The imported proof checklist, kept with explicit owner file and theorem names",
+        "The proof strategy section, kept as the local argument for this file",
+        "The checklist sections are part of the narrative",
+        "Do not replace them with section headings or prose-only policy",
+        "Invariant checklist (Verus):",
+        "Imported theorem checklist:",
+        "Local theorem checklist:",
+        "Proof strategy:",
+        "Completion plan for unchecked items:",
+        "Do not omit the opening proof checklist, imported proof checklist, or proof strategy section",
+        "Runtime types near the top",
+        "Proof vocabulary after runtime types",
+        "each primary runtime function is followed by its proof handlers",
+        "Do not group all Verus specs first and all runtime code last",
+        "POLICY. A link is valid iff",
+        "CODEC. Its bytes decode canonically",
+        "SHAPE. It is either a root, a child, or malformed",
+        "EXTRACT. Roots assert `valid_link(self,self)`",
+        "CONTEXT. A child may validate only from exact validated parent/root",
+        "PROJECT. A valid projection promotes only its own statement and emits",
+        "no raw facts",
+        "STATE. Projection updates only this link id's read-model entry",
+        "COMPOSE. The local child step composes with core/replay provenance",
+        "Primary Functions And Handlers",
+        "Avoid this shape",
+        "All specs All executable kernels All proof lemmas All runtime functions",
+        "Branch Paths",
+        "Root path",
+        "Child path",
+        "Malformed path",
+        "Complete report path",
+        "Incomplete report path",
+        "A link fact is authority for at most one statement",
+        "The codec binds self_id to canonical bytes",
+        "Core/replay proofs are responsible",
+        "fact declares a domain id",
+        "projector requires validated context for that dependency",
+        "projector emits validated statements only inside that same domain",
+        "New or reorganized proof projector work should include realistic tests",
+        "Canonical codec round-trips accepted bytes and ids",
+        "Updates are insert/ignore by owner id",
+        "Complete reports derive only from complete same-root parent reports",
+        "Commit the completed work on that same worktree branch before handoff or review",
+    ] {
+        assert!(
+            normalized.contains(required),
+            "proof projector style guide is missing required narrative detail {required:?}"
+        );
+    }
+
+    let plan = source_text(&root.join("docs/proof-plan.md"));
+    assert!(
+        plan.contains("docs/proof-projector-style.md"),
+        "proof plan should point fact-family projector authors at the style guide"
+    );
+}
+
+#[test]
 fn proof_target_files_have_verus_invariant_checklists() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let files = [

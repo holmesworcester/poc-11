@@ -137,6 +137,10 @@ Each checklist should be followed by:
 - `Proof strategy`: the local argument needed in this file, without reproving
   imported theorem checklist items.
 
+For fact-family projector files, use `docs/proof-projector-style.md` to keep
+the logic narrative and proof narrative aligned: policy first, primary runtime
+functions next, and each function's proof handlers nearby.
+
 ## Invariant Responsibility
 
 Each invariant has one proof owner. Source files use `Owned invariant:` to name
