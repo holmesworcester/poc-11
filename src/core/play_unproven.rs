@@ -20,12 +20,16 @@
 //!       after the work queue drains; bounded drain exhaustion is an error.
 //! - [ ] Safety: soundness of each drain prefix belongs to `core::engine` and
 //!       `core::turn`.
-//! Imported theorems:
-//! - `core::turn`: draining preserves the engine invariant and applies helper
-//!   results through the engine.
-//! - `core::engine`: validity maps and validated offers are sound for every drain
-//!   prefix.
-//! - `core::index`: storage lookups return only untrusted discovery data.
+//! Imported theorem checklist:
+//! - [ ] `core::turn`: draining preserves the engine invariant and applies helper
+//!       results through the engine. Owner: `src/core/turn_unproven.rs`, planned
+//!       theorem `turn_preserves_engine_invariant`.
+//! - [ ] `core::engine`: validity maps and validated offers are sound for every
+//!       drain prefix. Owner: `src/core/engine_unproven.rs`, planned theorem
+//!       `engine_drain_prefix_sound`.
+//! - [ ] `core::index`: storage lookups return only untrusted discovery data.
+//!       Owner: `src/core/index_unproven.rs`, planned theorem
+//!       `index_lookup_discovery_only`.
 //! Proof strategy:
 //! - Prove `replay` and `wake` are thin API wrappers: they enqueue seeds/arrivals,
 //!   call drain, and report the resulting validity map.

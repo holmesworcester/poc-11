@@ -16,11 +16,15 @@
 //! No liveness invariant is owned here: socket accept/connect progress, peer
 //! availability, and retry fairness are operational assumptions/tests unless
 //! modeled as fair inputs to a deterministic core turn.
-//! Imported theorems:
-//! - `core::projector`: accepted frames have fact-family meaning only after
-//!   canonical decode.
-//! - `core::admit`: accepted inbound items create only asserted state.
-//! - `core::play`: reads derive validity by replay/projection, not by transport.
+//! Imported theorem checklist:
+//! - [ ] `core::projector`: accepted frames have fact-family meaning only after
+//!       canonical decode. Owner: `src/core/projector_unproven.rs`, planned
+//!       theorem `projector_decode_canonical`.
+//! - [ ] `core::admit`: accepted inbound items create only asserted state. Owner:
+//!       `src/core/admit_unproven.rs`, planned theorem `admit_asserted_only`.
+//! - [ ] `core::play`: reads derive validity by replay/projection, not by
+//!       transport. Owner: `src/core/play_unproven.rs`, planned theorem
+//!       `replay_reports_engine_validity`.
 //! Proof strategy:
 //! - Prove ingress calls core admission only on frames decoded by `P::decode` and
 //!   drops decode failures.

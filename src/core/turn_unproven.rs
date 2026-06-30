@@ -16,11 +16,16 @@
 //! - [ ] Liveness: under an explicit fair-input model for helper/storage results
 //!       and transport arrivals, pending admission/query/project/wake work is
 //!       eventually selected, completed, or reported as failed.
-//! Imported theorems:
-//! - `core::effects`: helper payloads carry no validated state.
-//! - `core::engine`: each engine mutation preserves validated-context provenance
-//!   and ongoing safety.
-//! - `core::index`: helper calls satisfy the abstract storage lookup contract.
+//! Imported theorem checklist:
+//! - [ ] `core::effects`: helper payloads carry no validated state. Owner:
+//!       `src/core/effects_unproven.rs`, planned theorem
+//!       `effect_payloads_carry_no_validated_state`.
+//! - [ ] `core::engine`: each engine mutation preserves validated-context
+//!       provenance and ongoing safety. Owner: `src/core/engine_unproven.rs`,
+//!       planned theorem `engine_step_preserves_invariant`.
+//! - [ ] `core::index`: helper calls satisfy the abstract storage lookup
+//!       contract. Owner: `src/core/index_unproven.rs`, planned theorem
+//!       `index_lookup_contract`.
 //! Proof strategy:
 //! - Prove `turn` is deterministic case analysis over queue priority and returns
 //!   at most one request, one projection result, or idle.

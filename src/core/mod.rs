@@ -9,8 +9,9 @@
 //!       own.
 //! - [ ] Safety: this module only declares implementation modules and re-exports
 //!       public compatibility names.
-//! Imported theorems:
-//! - None. This module owns no runtime behavior.
+//! Imported theorem checklist:
+//! - [x] No imported theorem required. This module owns no runtime behavior;
+//!       source-contract coverage lives in `tests/documentation.rs`.
 //! Proof strategy:
 //! - Prove by source inspection/contract test that this file contains only module
 //!   declarations and re-exports.

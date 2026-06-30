@@ -34,15 +34,19 @@
 //!       and projection before becoming valid.
 //! - [ ] Safety: every admit/query/project/wake step preserves these invariants,
 //!       so every prefix of a drain is sound.
-//! Imported theorems:
-//! - `core::item`: fact ids identify canonical bytes.
-//! - `core::offer`: asserted-to-validated promotion preserves edge address and
-//!   metadata.
-//! - `core::typestate`: `Context` contains only validated offers and exact match
-//!   lookup has no storage/body access.
-//! - `core::projector`: the selected fact family supplies canonical codec,
-//!   extraction, durability, projection contracts, and emitted bytes as raw
-//!   `EmittedFact` payloads.
+//! Imported theorem checklist:
+//! - [ ] `core::item`: fact ids identify canonical bytes. Owner:
+//!       `src/core/item_unproven.rs`, planned theorem `fact_id_content_address`.
+//! - [ ] `core::offer`: asserted-to-validated promotion preserves edge address
+//!       and metadata. Owner: `src/core/offer_unproven.rs`, planned theorem
+//!       `validate_preserves_offer_address`.
+//! - [ ] `core::typestate`: `Context` contains only validated offers and exact
+//!       match lookup has no storage/body access. Owner:
+//!       `src/core/typestate_unproven.rs`, planned theorem `context_lookup_exact`.
+//! - [ ] `core::projector`: the selected fact family supplies canonical codec,
+//!       extraction, durability, projection contracts, and emitted bytes as raw
+//!       `EmittedFact` payloads. Owner: `src/core/projector_unproven.rs`,
+//!       planned theorem `projector_interface_contract`.
 //! Proof strategy:
 //! - Define a state predicate over memory facts, asserted edges, validity,
 //!   validated offers, promoted offer keys, and queues.

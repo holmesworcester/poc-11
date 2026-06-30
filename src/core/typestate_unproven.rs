@@ -10,9 +10,13 @@
 //! - [ ] Safety: unvalidated persisted edges cannot be placed in `Context`.
 //! - [ ] Safety: `has_offer` answers only whether an exact validated match
 //!       address is present; it does not inspect fact bodies or storage.
-//! Imported theorems:
-//! - `core::offer`: only validated offers have type `Offer<Validated>`.
-//! - `core::engine`: every validated offer placed into context has a valid owner.
+//! Imported theorem checklist:
+//! - [ ] `core::offer`: only validated offers have type `Offer<Validated>`.
+//!       Owner: `src/core/offer_unproven.rs`, planned theorem
+//!       `validated_offer_typestate_only`.
+//! - [ ] `core::engine`: every validated offer placed into context has a valid
+//!       owner. Owner: `src/core/engine_unproven.rs`, planned theorem
+//!       `engine_context_offers_have_valid_owners`.
 //! Proof strategy:
 //! - Prove `Context` has no public constructor that accepts asserted offers.
 //! - Prove `Context::from` preserves exactly the validated offer vector supplied

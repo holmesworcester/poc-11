@@ -6,8 +6,10 @@
 //! - [ ] Safety: a fact id is the content address of canonical fact bytes.
 //! - [ ] Safety: crypto assumption: two different canonical byte strings do not
 //!       have the same fact id, and hashing the same bytes is deterministic.
-//! Imported theorems:
-//! - None. This file is the root assumption for content-addressed identity.
+//! Imported theorem checklist:
+//! - [x] No imported theorem required. This file is the root assumption for
+//!       content-addressed identity; the local planned proof target is
+//!       `src/core/item_unproven.rs::fact_id_content_address`.
 //! Proof strategy:
 //! - Model `FactId` as a 32-byte value and `fact_id(bytes)` as an uninterpreted,
 //!   deterministic, collision-resistant function over canonical byte strings.

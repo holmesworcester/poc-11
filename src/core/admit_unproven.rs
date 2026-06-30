@@ -14,12 +14,15 @@
 //!       output; extraction exactness is proved by the fact-family projector.
 //! - [ ] Safety: fact bytes are requested to be written to durable storage only
 //!       when the fact-family durability predicate says this item is durable.
-//! Imported theorems:
-//! - `core::item`: fact ids are content addresses of canonical bytes.
-//! - `core::projector`: encoding, extraction, and durability are content-pure for
-//!   the selected fact family.
-//! - `core::index`: storage writes preserve asserted facts/edges as discovery
-//!   data and do not create validated state.
+//! Imported theorem checklist:
+//! - [ ] `core::item`: fact ids are content addresses of canonical bytes. Owner:
+//!       `src/core/item_unproven.rs`, planned theorem `fact_id_content_address`.
+//! - [ ] `core::projector`: encoding, extraction, and durability are content-pure
+//!       for the selected fact family. Owner: `src/core/projector_unproven.rs`,
+//!       planned theorem `projector_interface_contract`.
+//! - [ ] `core::index`: storage writes preserve asserted facts/edges as discovery
+//!       data and do not create validated state. Owner:
+//!       `src/core/index_unproven.rs`, planned theorem `index_asserted_only`.
 //! Proof strategy:
 //! - Symbolically execute `admit`: compute bytes, compute id from bytes, compute
 //!   asserted edges from the item, request asserted-edge persistence, and request

@@ -8,9 +8,10 @@
 //! - [ ] Safety: effect results carry only untrusted bytes, ids, and addresses.
 //! - [ ] Safety: `Validity`, `Context`, and `Offer<Validated>` never cross the
 //!       helper boundary in an effect payload.
-//! Imported theorems:
-//! - `core::engine::EdgeAddr`: effect query addresses have the same address
-//!   representation the engine uses.
+//! Imported theorem checklist:
+//! - [ ] `core::engine::EdgeAddr`: effect query addresses have the same address
+//!       representation the engine uses. Owner: `src/core/engine_unproven.rs`,
+//!       planned theorem `edge_addr_matches_offer_address`.
 //! Proof strategy:
 //! - Prove by enum inspection that every request/result variant carries only
 //!   `FactId`, `EdgeAddr`, raw bytes, or lists of ids.

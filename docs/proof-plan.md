@@ -4,9 +4,11 @@ The project direction is proof-first: choose code shapes that let behavior move
 from `_unproven` files into Verus-verified executable kernels. `_unproven` is a
 temporary or trusted boundary label, not a normal home for domain logic.
 
-There is no `_proven` suffix. In `src/core/` and `src/facts/`, an unsuffixed file
-means either its invariant-bearing behavior is covered by executable Verus proof
-or it is only a thin wrapper around such code.
+There is no `_proven` suffix. In `src/core/` and `src/facts/`, a file that owns
+invariant-bearing behavior keeps `_unproven` until every invariant owned by that
+file is covered by executable Verus proof. Do not split out a parallel proven
+copy for a subset of the behavior; put partial proofs beside the running code in
+the `_unproven` file until the whole file can be renamed.
 
 ## Current Labels
 
@@ -33,22 +35,25 @@ or it is only a thin wrapper around such code.
 
 ## Target Shape
 
-Move logic toward these proof-backed unsuffixed modules:
+Move logic toward these proof-backed unsuffixed modules. These names are final
+targets, not staging files:
 
 - `src/core/types.rs`: proof-friendly ids, edge addresses, validity, context, and
   validated-offer provenance types.
 - `src/core/turn.rs`: deterministic `State + Input -> State + Effects`
   transition for admission, query results, projection, and wakeups, replacing
   `turn_unproven.rs` once the transition invariant is proven.
-- `src/facts/link/project.rs`: verified link codec, canonical encode/decode,
-  deterministic typed construction from explicit parameters, extraction,
-  projection validity, emitted facts, and persistence decision.
+- `src/facts/link/project.rs`: appears only after all invariants currently owned
+  by `src/facts/link/project_unproven.rs` are verified: link codec, canonical
+  encode/decode, deterministic typed construction from explicit parameters,
+  extraction, projection validity, emitted facts, projector-owned state, and
+  persistence decision.
 - `src/helpers/*_unproven.rs`: narrow trusted adapters for crypto assumptions,
   SQLite, TCP sockets, filesystem, clocks, and similar external APIs.
 
 Compatibility modules may re-export unproven or proven modules while the tree is
 in transition. The file that contains invariant-bearing behavior keeps
-`_unproven` until that behavior has a Verus proof.
+`_unproven` until all owned checklist items have Verus proof.
 
 The `_unproven` naming rule is repository policy, not a semantic Verus theorem
 about runtime behavior. Enforce it with source-tree tests and review gates; use
@@ -69,8 +74,10 @@ Core proofs are about all possible fact families routed through the engine:
 - Route dispatch is sound: decoded family tags select the right family projector,
   and malformed or unknown facts do not become valid.
 
-Link proofs live in `src/facts/link/project.rs` because only the link family
-defines what roots, parents, and ancestry mean:
+Current link proofs live beside the running implementation in
+`src/facts/link/project_unproven.rs`. Once the whole checklist in that file is
+proven, the file can be renamed to `src/facts/link/project.rs`. Only the link
+family defines what roots, parents, and ancestry mean:
 
 - Link bytes decode canonically into the link semantic shape.
 - `link_id(link) == fact_id(encode(link))`.
@@ -111,10 +118,12 @@ progress has been modeled as an explicit fair input to a deterministic core turn
 
 Each checklist should be followed by:
 
-- `Imported theorems`: the external facts this proof depends on, named by owning
-  module.
+- `Imported theorem checklist`: a `[x]` / `[ ]` checklist of external facts this
+  proof depends on. `[x]` entries must name the file plus function/proof that
+  proves the theorem. `[ ]` entries must name the owner file and the planned
+  theorem/proof name.
 - `Proof strategy`: the local argument needed in this file, without reproving
-  imported theorems.
+  imported theorem checklist items.
 
 ## Invariant Responsibility
 
@@ -127,7 +136,7 @@ as if it were their own.
 | --- | --- |
 | `core::item` | Fact-id meaning and crypto assumptions for content-addressed canonical bytes. |
 | `core::projector` | Generic fact-family interface contract: canonical codec, content-pure extraction/durability, confined projection. |
-| `facts::link::project` | Link-family implementation of the projector contract, projector-owned read-model state, and current same-root parent-chain validity theorem. |
+| `facts::link::project_unproven` now, `facts::link::project` after completion | Link-family implementation of the projector contract, projector-owned read-model state, and current same-root parent-chain validity theorem. |
 | `core::offer` | Edge representation and the asserted-to-validated promotion shape. |
 | `core::typestate` | `Context` representation and exact validated-offer lookup shape. |
 | `core::admit` | New/local fact admission creates only asserted state; admission never creates validity. |

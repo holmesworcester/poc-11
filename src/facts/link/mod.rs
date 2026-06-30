@@ -15,20 +15,23 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: link family module shape.
-//! - [ ] Safety: all link-specific meaning lives in `project`.
+//! - [ ] Safety: all link-specific meaning lives in `project_unproven` until
+//!       every link invariant is proven and the file can be renamed `project`.
 //! - [ ] Safety: app/report modules cannot define link semantics or proof
 //!       evidence.
 //! - [ ] Safety: this module is re-export-only; it adds no behavior to prove.
-//! Imported theorems:
-//! - `facts::link::project`, `facts::link::api`, and `facts::link::cli` own their
-//!   local invariants.
+//! Imported theorem checklist:
+//! - [ ] `facts::link::project_unproven`, `facts::link::api`, and
+//!       `facts::link::cli` own their local invariants. Owners:
+//!       `src/facts/link/project_unproven.rs`,
+//!       `src/facts/link/api_unproven.rs`, and
+//!       `src/facts/link/cli_unproven.rs`.
 //! Proof strategy:
 //! - Prove by source inspection/contract test that this file contains only module
 //!   declarations and re-exports.
 //! - Prove no functions or data constructors are defined here.
 pub mod api_unproven;
 pub mod cli_unproven;
-pub mod project;
 pub mod project_unproven;
 
 pub use api_unproven::{chain_report, Report};

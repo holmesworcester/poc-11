@@ -75,12 +75,14 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "It stays separate from `turn` so the deterministic queue/effect step can be proven without proving OS progress",
         "concrete SQLite lives in `src/helpers/sqlite_unproven.rs`",
         "`src/core/turn.rs`: deterministic `State + Input -> State + Effects` transition",
-        "`src/facts/link/project.rs`: verified link codec, canonical encode/decode, deterministic typed construction from explicit parameters, extraction, projection validity",
+        "`src/facts/link/project.rs`: appears only after all invariants currently owned",
+        "Do not split out a parallel proven copy",
         "`src/helpers/*_unproven.rs`: narrow trusted adapters",
         "The `_unproven` naming rule is repository policy, not a semantic Verus theorem",
         "Enforce it with source-tree tests and review gates",
         "Core proofs are about all possible fact families routed through the engine",
-        "Link proofs live in `src/facts/link/project.rs` because only the link family defines what roots, parents, and ancestry mean",
+        "Current link proofs live beside the running implementation in `src/facts/link/project_unproven.rs`",
+        "the file can be renamed to `src/facts/link/project.rs`",
         "Source-file invariant checklists should state user-significant or threat-model-significant properties first",
         "Avoid checklists that are only call traces",
         "Every checklist item must be labeled `Safety:` or `Liveness:`",
@@ -88,12 +90,14 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "Use `Liveness:` only for progress claims",
         "Do not put OS/socket/filesystem progress in a Verus invariant",
         "Each checklist should be followed by",
-        "`Imported theorems`: the external facts this proof depends on",
+        "`Imported theorem checklist`: a `[x]` / `[ ]` checklist of external facts this",
+        "[x]` entries must name the file plus function/proof",
+        "[ ]` entries must name the owner file and the planned",
         "`Proof strategy`: the local argument needed in this file",
         "Each invariant has one proof owner",
         "`core::engine` | In-memory id/body relation, running readiness/promotion rule, validated-context provenance, promotion authority, emitted-fact re-entry, and ongoing queue-step safety.",
         "`core::turn` | Deterministic turn scheduling, effect-result application into the engine, and the future fair-input liveness model.",
-        "`facts::link::project` | Link-family implementation of the projector contract, projector-owned read-model state, and current same-root parent-chain validity theorem.",
+        "`facts::link::project_unproven` now, `facts::link::project` after completion",
         "In the current root/domain model, a root link (`prev=None, root=None`) is valid as `valid_link(self_id, self_id)`",
         "A child link is valid only when validated context contains `valid_link(parent_id, claimed_root_id)`",
         "Malformed `prev`/`root` combinations emit no edges and cannot validate",
@@ -150,7 +154,6 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "src/facts/link/api_unproven.rs",
         "src/facts/link/cli_unproven.rs",
         "src/facts/link/mod.rs",
-        "src/facts/link/project.rs",
         "src/facts/link/project_unproven.rs",
     ];
 
@@ -165,29 +168,58 @@ fn proof_target_files_have_verus_invariant_checklists() {
             "{file} must name the invariant owned by that file"
         );
         assert!(
-            text.contains("Imported theorems:"),
-            "{file} must list imported theorem dependencies"
+            text.contains("Imported theorem checklist:"),
+            "{file} must list imported theorem dependencies as a proven-status checklist"
         );
         assert!(
             text.contains("Proof strategy:"),
             "{file} must describe a local proof strategy"
         );
+        let mut in_invariant_checklist = false;
+        let mut in_imported_checklist = false;
+        let mut imported_items = 0usize;
         for (idx, line) in text.lines().enumerate() {
             let trimmed = line.trim_start();
-            if trimmed.starts_with("//! - [ ] ") {
+            if trimmed.contains("Invariant checklist (Verus):") {
+                in_invariant_checklist = true;
+                in_imported_checklist = false;
+                continue;
+            }
+            if trimmed.contains("Imported theorem checklist:") {
+                in_invariant_checklist = false;
+                in_imported_checklist = true;
+                continue;
+            }
+            if trimmed.contains("Proof strategy:") {
+                in_invariant_checklist = false;
+                in_imported_checklist = false;
+                continue;
+            }
+            if in_invariant_checklist && trimmed.starts_with("//! - [ ] ") {
                 assert!(
                     trimmed.contains("- [ ] Safety:") || trimmed.contains("- [ ] Liveness:"),
                     "{file}:{} checklist item must be labeled Safety or Liveness",
                     idx + 1
                 );
-            } else if trimmed.starts_with("//! - [x] ") {
+            } else if in_invariant_checklist && trimmed.starts_with("//! - [x] ") {
                 assert!(
                     trimmed.contains("- [x] Safety:") || trimmed.contains("- [x] Liveness:"),
                     "{file}:{} checklist item must be labeled Safety or Liveness",
                     idx + 1
                 );
+            } else if in_imported_checklist && trimmed.starts_with("//! - ") {
+                imported_items += 1;
+                assert!(
+                    trimmed.starts_with("//! - [ ] ") || trimmed.starts_with("//! - [x] "),
+                    "{file}:{} imported theorem item must be marked [ ] or [x]",
+                    idx + 1
+                );
             }
         }
+        assert!(
+            imported_items > 0,
+            "{file} must have at least one imported theorem checklist item"
+        );
     }
 
     let engine = normalize_whitespace(&source_text(&root.join("src/core/engine_unproven.rs")));
@@ -202,7 +234,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "Safety: raw bytes returned in `ProjectOutcome.emitted` do not inherit",
         "reject any update whose owner is not the",
         "projected fact",
-        "Imported theorems:",
+        "Imported theorem checklist:",
         "`core::item`: fact ids identify canonical bytes",
         "Proof strategy:",
     ] {
@@ -220,7 +252,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "Safety: the admitted token's id/body relation is derived from",
         "`core::item` content addressing",
         "extraction exactness is proved by the fact-family projector",
-        "Imported theorems:",
+        "Imported theorem checklist:",
         "Proof strategy:",
     ] {
         assert!(
@@ -255,7 +287,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "provenance, every valid child link has a valid same-root parent chain",
         "valid same-root parent chain to",
         "no theorem here claims anchor uniqueness",
-        "Imported theorems:",
+        "Imported theorem checklist:",
         "Proof strategy:",
         "Prove the statement-to-owner lemma",
         "Prove same-root parent-chain transitivity by induction",
@@ -288,8 +320,7 @@ fn proof_target_files_have_verus_invariant_checklists() {
 #[test]
 fn link_project_verified_kernel_is_running_code() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let proven = source_text(&root.join("src/facts/link/project.rs"));
-    let wrapper = source_text(&root.join("src/facts/link/project_unproven.rs"));
+    let project = source_text(&root.join("src/facts/link/project_unproven.rs"));
     let manifest = source_text(&root.join("Cargo.toml"));
 
     for required in [
@@ -303,8 +334,8 @@ fn link_project_verified_kernel_is_running_code() {
         "malformed_projection_is_invalid",
     ] {
         assert!(
-            proven.contains(required),
-            "verified link kernel is missing {required:?}"
+            project.contains(required),
+            "link project file is missing verified-kernel detail {required:?}"
         );
     }
 
@@ -313,13 +344,18 @@ fn link_project_verified_kernel_is_running_code() {
         "extract_link_core(",
         "link_core_for(id, l.prev, l.root)",
         "validity_from_core(projection.validity)",
-        "Verified in `facts::link::project`",
+        "Verified below in this file",
     ] {
         assert!(
-            wrapper.contains(required),
-            "runtime link projector does not delegate to verified kernel detail {required:?}"
+            project.contains(required),
+            "runtime link projector does not delegate to local verified-kernel detail {required:?}"
         );
     }
+
+    assert!(
+        !root.join("src/facts/link/project.rs").exists(),
+        "project.rs must not exist until every project_unproven.rs invariant is proven"
+    );
 
     assert!(
         manifest.contains("[package.metadata.verus]") && manifest.contains("verify = true"),

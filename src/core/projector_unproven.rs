@@ -16,10 +16,13 @@
 //! - [ ] Safety: projector state changes happen only by applying projector-output
 //!       updates through the engine, and the engine rejects updates not owned by
 //!       the admitted fact being projected.
-//! Imported theorems:
-//! - `core::typestate`: `Context` contains only validated offers.
-//! - `core::admit` and `core::engine`: projectors receive an `Admitted` token only
-//!   after the id/body relation has been established.
+//! Imported theorem checklist:
+//! - [ ] `core::typestate`: `Context` contains only validated offers. Owner:
+//!       `src/core/typestate_unproven.rs`, planned theorem `context_validated_only`.
+//! - [ ] `core::admit` and `core::engine`: projectors receive an `Admitted` token
+//!       only after the id/body relation has been established. Owners:
+//!       `src/core/admit_unproven.rs::admit_establishes_id_body` and
+//!       `src/core/engine_unproven.rs::engine_admit_loaded_establishes_id_body`.
 //! Proof strategy:
 //! - Verify this trait as a contract surface, then require each fact-family
 //!   implementation to prove codec canonicality, extraction exactness, durability

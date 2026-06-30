@@ -26,12 +26,17 @@
 //!       that head.
 //! - [ ] Safety: reporting code does not construct, admit, project, or create
 //!       validated context.
-//! Imported theorems:
-//! - `facts::link::project`: `LinkState.projected` is updated only by link
-//!   projection and records complete same-root chains.
-//! - `core::play`: replay soundness gives the validity result and projected state
-//!   for `complete`.
-//! - `core::index`: storage reads are untrusted observations.
+//! Imported theorem checklist:
+//! - [ ] `facts::link::project_unproven`: `LinkState.projected` is updated only
+//!       by link projection and records complete same-root chains. Owner:
+//!       `src/facts/link/project_unproven.rs`, planned theorem
+//!       `link_projected_state_complete_same_root_chain`.
+//! - [ ] `core::play`: replay soundness gives the validity result and projected
+//!       state for `complete`. Owner: `src/core/play_unproven.rs`, planned
+//!       theorem `replay_reports_engine_validity`.
+//! - [ ] `core::index`: storage reads are untrusted observations. Owner:
+//!       `src/core/index_unproven.rs`, planned theorem
+//!       `index_lookup_discovery_only`.
 //! Proof strategy:
 //! - Prove `chain_report` calls replay first, then reads the requested head's
 //!   report from `LinkState.projected`.

@@ -18,10 +18,13 @@
 //! - [ ] Safety: promotion preserves the asserted edge's address and metadata; it
 //!       adds no new authority payload.
 //! - [ ] Safety: the authority to call promotion belongs to `core::engine`.
-//! Imported theorems:
-//! - None for representation shape. `core::engine` owns the promotion-authority
-//!   theorem: it calls `Offer<Asserted>::validate` only for asserted offers owned
-//!   by a fact that just projected `Valid` with all asserted needs satisfied.
+//! Imported theorem checklist:
+//! - [x] No imported theorem required for representation shape; local planned
+//!       proof targets are `asserted_edge_address_shape` and
+//!       `validate_preserves_offer_address` in `src/core/offer_unproven.rs`.
+//! - [ ] `core::engine`: promotion authority for
+//!       `Offer<Asserted>::validate`. Owner: `src/core/engine_unproven.rs`,
+//!       planned theorem `engine_promotes_only_valid_owner_offers`.
 //! Proof strategy:
 //! - Prove `Offer<Asserted>` constructors set only the requested direction and
 //!   match address with fixed default scope/polarity/binding.

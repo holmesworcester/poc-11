@@ -1,5 +1,6 @@
 //! Link CLI formatting helpers. Parsing/formatting and command admission remain
-//! unproven; semantic link construction stays in `project`.
+//! unproven; semantic link construction stays in `project_unproven` until the
+//! full link invariant checklist is proven.
 //!
 //! Fact-family contract (do not weaken):
 //! - Scope: app adapter only: call deterministic link construction, call core
@@ -20,11 +21,16 @@
 //!       they do not affect future validity.
 //! - [ ] Safety: CLI code cannot construct `Validity`, `Context`, or
 //!       `Offer<Validated>`.
-//! Imported theorems:
-//! - `facts::link::project`: `link_from_params` owns link construction semantics.
-//! - `core::admit`: admission creates only asserted state.
-//! - `facts::link::api` and `core::play`: reports/replay are observations of
-//!   projected state.
+//! Imported theorem checklist:
+//! - [ ] `facts::link::project_unproven`: `link_from_params` owns link
+//!       construction semantics. Owner: `src/facts/link/project_unproven.rs`,
+//!       planned theorem `link_from_params_constructs_only_link_fields`.
+//! - [ ] `core::admit`: admission creates only asserted state. Owner:
+//!       `src/core/admit_unproven.rs`, planned theorem `admit_asserted_only`.
+//! - [ ] `facts::link::api` and `core::play`: reports/replay are observations of
+//!       projected state. Owners: `src/facts/link/api_unproven.rs::chain_report`
+//!       planned theorem `chain_report_observation_only` and
+//!       `src/core/play_unproven.rs::replay_reports_engine_validity`.
 //! Proof strategy:
 //! - Prove CLI functions delegate construction to `link_from_params`, admission
 //!   to `core::admit`, and report fields to `chain_report`/`replay`.

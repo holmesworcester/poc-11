@@ -12,9 +12,12 @@
 //!       creates `Validity`, `Context`, or `Offer<Validated>`.
 //! - [ ] Safety: window selection is only a replay seed choice; validity cannot
 //!       depend on recency, ordering, or inclusion in the window.
-//! Imported theorems:
-//! - `core::item`: callers can recheck loaded bytes against fact ids.
-//! - `core::offer`: asserted edge addresses and directions have fixed meaning.
+//! Imported theorem checklist:
+//! - [ ] `core::item`: callers can recheck loaded bytes against fact ids. Owner:
+//!       `src/core/item_unproven.rs`, planned theorem `fact_id_content_address`.
+//! - [ ] `core::offer`: asserted edge addresses and directions have fixed
+//!       meaning. Owner: `src/core/offer_unproven.rs`, planned theorem
+//!       `asserted_edge_address_shape`.
 //! Proof strategy:
 //! - Treat `Index` as an abstract storage contract, not as a proof of SQLite.
 //! - Specify postconditions for each trait method: fact loads return candidate

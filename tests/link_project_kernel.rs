@@ -1,6 +1,6 @@
 use linktoy::core::item::fact_id;
 use linktoy::core::typestate::Validity;
-use linktoy::facts::link::project::{
+use linktoy::facts::link::project_unproven::{
     core_to_fact_id, extract_link_core, fact_id_to_core, link_core_for, maybe_fact_id_to_core,
     project_link_core, LinkCore, MaybeStatementCore, ValidityCore,
 };
