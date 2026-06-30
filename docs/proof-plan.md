@@ -30,7 +30,10 @@ the `_unproven` file until the whole file can be renamed.
   derivable-chain transitive validity over decoded link facts, are covered by
   Verus kernels in the running file. The engine runtime has been simplified to
   Vec-backed state so the next proof step can target running transitions
-  directly, before any HashMap/view optimization.
+  directly, before any HashMap/view optimization. Runtime id queue scheduling
+  now calls a Verus-verified Vec-backed enqueue kernel; projection, promotion,
+  dependency recording, and effect-result transitions still need the same
+  treatment.
 - `src/facts/link/api_unproven.rs` contains storage-backed report helpers.
 - `src/facts/link/cli_unproven.rs` contains unproven app admission and formatting.
 - `src/helpers/*_unproven.rs` contains narrow trusted boundaries for crypto/hex,
@@ -81,8 +84,10 @@ Core proofs are about all possible fact families routed through the engine:
   promotion uniqueness for any allowed modeled transition prefix. Runtime
   `EngineState` records dependency edges when a valid projection consumes
   validated context and now uses Vec-backed stores/queues to match the proof
-  shape. The remaining core proof is to move the transition theorem onto those
-  running Vec-backed helpers directly.
+  shape. Runtime id queue scheduling is already backed by a directly called
+  Verus kernel. The remaining core proof is to move projection, promotion,
+  dependency recording, and effect-result transition theorems onto running
+  Vec-backed helpers directly.
 - Route dispatch is sound: decoded family tags select the right family projector,
   and malformed or unknown facts do not become valid.
 

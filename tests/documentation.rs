@@ -201,6 +201,8 @@ fn proof_plan_records_unproven_to_unsuffixed_migration_and_link_domain_theorem()
         "The engine runtime has been simplified to Vec-backed state",
         "running transitions directly",
         "before any HashMap/view optimization",
+        "Runtime id queue scheduling now calls a Verus-verified Vec-backed enqueue kernel",
+        "projection, promotion, dependency recording, and effect-result transitions still need the same treatment",
         "direct runtime proof showing concrete replay state supplies that decoded-link world",
         "The target composition theorem is",
         "core drain-prefix validated-context provenance",
@@ -500,6 +502,8 @@ fn proof_target_files_have_verus_invariant_checklists() {
         "Safety: every abstract admit/query/project/promote/emit transition",
         "Safety: abstract transition helper coverage: raw bytes returned in",
         "Safety: the concrete runtime `EngineState` Vec-backed implementation",
+        "Safety: runtime id queue scheduling uses Verus-verified bytewise fact-id",
+        "runtime_enqueue_id_core",
         "unproved HashMap/HashSet/VecDeque refinement layer",
         "reject any update whose owner is not the",
         "projected fact",
@@ -791,17 +795,32 @@ fn engine_turn_play_proof_status_is_honest() {
         "pub proof fn engine_context_offers_have_valid_owners",
         "pub proof fn record_dependency_preserves_invariant",
         "pub proof fn engine_dependency_edge_has_valid_provider",
+        "pub fn runtime_fact_id_eq_core",
+        "pub fn runtime_queue_contains_id",
+        "pub fn runtime_enqueue_id_core",
         "pub dependencies: Vec<RecordedDependency>",
         "self.record_dependencies(id, &edges)",
-        "fact_id(&bytes) != id",
+        "!runtime_fact_id_eq_core(fact_id(&bytes), id)",
         "P::encode(&item) != bytes",
-        "if P::update_owner(update) != id",
+        "if !runtime_fact_id_eq_core(P::update_owner(update), id)",
         "self.promoted_offers.push((id, addr))",
         "P::decode(&emitted.bytes)",
     ] {
         assert!(
             engine.contains(required),
             "engine file is missing verified-kernel/runtime detail {required:?}"
+        );
+    }
+
+    let play = source_text(&root.join("src/core/play_unproven.rs"));
+    for forbidden in [
+        "use std::collections::HashMap",
+        "Result<HashMap<FactId, Validity>, String>",
+        "fn validity_map",
+    ] {
+        assert!(
+            !play.contains(forbidden),
+            "core play should expose the Vec-backed validity index, not {forbidden:?}"
         );
     }
     for forbidden in [

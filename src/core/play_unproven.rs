@@ -22,7 +22,7 @@
 //!       trace reports only an engine state satisfying the validated-offer
 //!       invariant. Verified below by `replay_reports_engine_validity`.
 //! - [ ] Safety: concrete successful replay/wake results report the runtime
-//!       engine validity map after the work queue drains; bounded drain
+//!       engine validity index after the work queue drains; bounded drain
 //!       exhaustion is an error. This depends on the future `core::turn`
 //!       drain-prefix theorem.
 //! - [ ] Safety: concrete drain-prefix soundness belongs to `core::engine` and
@@ -40,15 +40,13 @@
 //!       Proven in `src/core/index_unproven.rs::index_lookup_discovery_only`.
 //! Proof strategy:
 //! - Prove `replay` and `wake` are thin API wrappers: they enqueue seeds/arrivals,
-//!   call drain, and report the resulting validity map.
+//!   call drain, and report the resulting Vec-backed validity index.
 //! - Prove they do not directly write durable storage or construct validated
 //!   state.
 //! - Prove bounded exhaustion returns an error instead of reporting partial work
 //!   as complete.
 
-use std::collections::HashMap;
-
-use super::engine::EngineState;
+use super::engine::{EngineState, ValidityIndex};
 use super::index::Index;
 use super::item::FactId;
 use super::projector::Projector;
@@ -162,12 +160,8 @@ where
         Ok(Some(self.validity_for(id)?))
     }
 
-    pub fn memo(&self) -> HashMap<FactId, Validity> {
-        self.validity_map()
-    }
-
-    fn validity_map(&self) -> HashMap<FactId, Validity> {
-        self.engine.validity.iter().collect()
+    pub fn memo(&self) -> &ValidityIndex {
+        &self.engine.validity
     }
 
     fn drain(&mut self) -> Result<usize, String> {
@@ -199,10 +193,7 @@ where
 /// One Pass-2 run from a bounded seed. The input set grows while the worklist
 /// resolves unmet needs through storage and wakes needers from validated offers.
 /// Returns the projected set (the observable).
-pub fn replay<P: Projector>(
-    idx: &dyn Index,
-    seeds: &[FactId],
-) -> Result<HashMap<FactId, Validity>, String>
+pub fn replay<P: Projector>(idx: &dyn Index, seeds: &[FactId]) -> Result<ValidityIndex, String>
 where
     P::Item: Clone,
 {
@@ -217,15 +208,12 @@ where
         debug_assert!(report.seeds_schedule_admission_only);
         debug_assert!(!report.rewrites_persisted_storage);
     }
-    Ok(r.validity_map())
+    Ok(r.engine.validity)
 }
 
 /// Live offer→need wake (§5 "re-demand wavefront"): validate the arrived fact,
 /// promote its offers if valid, then follow offer queries to stored/local needers.
-pub fn wake<P: Projector>(
-    idx: &dyn Index,
-    arrived: FactId,
-) -> Result<HashMap<FactId, Validity>, String>
+pub fn wake<P: Projector>(idx: &dyn Index, arrived: FactId) -> Result<ValidityIndex, String>
 where
     P::Item: Clone,
 {
@@ -236,5 +224,5 @@ where
     let report = replay_surface_core();
     debug_assert!(report.seeds_schedule_admission_only);
     debug_assert!(!report.rewrites_persisted_storage);
-    Ok(r.validity_map())
+    Ok(r.engine.validity)
 }

@@ -50,6 +50,11 @@
 //!       is sound. Verified below by `engine_single_transition_preserves_invariant`
 //!       and `engine_transition_trace_preserves_invariant`. This does not
 //!       complete the runtime transition proof.
+//! - [x] Safety: runtime id queue scheduling uses Verus-verified bytewise fact-id
+//!       equality and a Verus-verified Vec-backed unique-enqueue transition.
+//!       Runtime `enqueue_admit` and `enqueue_project` call this kernel directly.
+//!       Verified below by `runtime_fact_id_eq_core`,
+//!       `runtime_queue_contains_id`, and `runtime_enqueue_id_core`.
 //! - [ ] Safety: the concrete runtime `EngineState` Vec-backed implementation
 //!       is the proof target for the transition invariant, without an
 //!       unproved HashMap/HashSet/VecDeque refinement layer.
@@ -88,10 +93,11 @@
 //!   already valid and that the provider's offer was validated in the running
 //!   state.
 //! - Prove modeled drain safety by induction over transition steps; this is now
-//!   the `engine_transition_trace_preserves_invariant` theorem. The next step is
-//!   moving that theorem from the abstract `EngineStateCore` transition helpers
-//!   onto the Vec-backed runtime transition helpers directly. Prove completeness
-//!   or liveness separately from safety.
+//!   the `engine_transition_trace_preserves_invariant` theorem. Runtime id queue
+//!   enqueue has been moved onto a directly called Verus kernel. The remaining
+//!   work is moving projection, promotion, dependency recording, and effect
+//!   result transitions onto Vec-backed runtime transition helpers directly.
+//!   Prove completeness or liveness separately from safety.
 
 use super::admit::Admitted;
 use super::index::Index;
@@ -661,6 +667,20 @@ pub proof fn project_valid_preserves_invariant(state: EngineStateCore, id: Engin
             state.dependencies[i].addr,
         ));
     }
+    assert forall |i: int, j: int|
+        0 <= i < state_project_valid(state, id).validated.len()
+            && 0 <= j < state_project_valid(state, id).validated.len()
+            && i != j
+        implies
+            !(#[trigger] state_project_valid(state, id).validated[i] == #[trigger] state_project_valid(state, id).validated[j]
+                || state_project_valid(state, id).validated[i].owner
+                    == state_project_valid(state, id).validated[j].owner
+                    && state_project_valid(state, id).validated[i].addr
+                        == state_project_valid(state, id).validated[j].addr)
+    by {
+        assert(state_project_valid(state, id).validated == state.validated);
+        assert(promoted_offer_unique_per_owner_addr(state));
+    }
 }
 
 pub proof fn promote_offer_preserves_invariant(
@@ -937,6 +957,96 @@ pub proof fn engine_dependency_edge_has_valid_provider(
     assert(state.dependencies[i].addr == addr);
 }
 
+pub closed spec fn runtime_fact_id_eq(left: [u8; 32], right: [u8; 32]) -> bool {
+    left[0] == right[0] && left[1] == right[1] && left[2] == right[2] && left[3] == right[3]
+        && left[4] == right[4] && left[5] == right[5] && left[6] == right[6]
+        && left[7] == right[7] && left[8] == right[8] && left[9] == right[9]
+        && left[10] == right[10] && left[11] == right[11] && left[12] == right[12]
+        && left[13] == right[13] && left[14] == right[14] && left[15] == right[15]
+        && left[16] == right[16] && left[17] == right[17] && left[18] == right[18]
+        && left[19] == right[19] && left[20] == right[20] && left[21] == right[21]
+        && left[22] == right[22] && left[23] == right[23] && left[24] == right[24]
+        && left[25] == right[25] && left[26] == right[26] && left[27] == right[27]
+        && left[28] == right[28] && left[29] == right[29] && left[30] == right[30]
+        && left[31] == right[31]
+}
+
+pub fn runtime_fact_id_eq_core(left: [u8; 32], right: [u8; 32]) -> (equal: bool)
+    ensures
+        equal == runtime_fact_id_eq(left, right),
+{
+    left[0] == right[0] && left[1] == right[1] && left[2] == right[2] && left[3] == right[3]
+        && left[4] == right[4] && left[5] == right[5] && left[6] == right[6]
+        && left[7] == right[7] && left[8] == right[8] && left[9] == right[9]
+        && left[10] == right[10] && left[11] == right[11] && left[12] == right[12]
+        && left[13] == right[13] && left[14] == right[14] && left[15] == right[15]
+        && left[16] == right[16] && left[17] == right[17] && left[18] == right[18]
+        && left[19] == right[19] && left[20] == right[20] && left[21] == right[21]
+        && left[22] == right[22] && left[23] == right[23] && left[24] == right[24]
+        && left[25] == right[25] && left[26] == right[26] && left[27] == right[27]
+        && left[28] == right[28] && left[29] == right[29] && left[30] == right[30]
+        && left[31] == right[31]
+}
+
+pub closed spec fn runtime_id_seq_contains(ids: Seq<[u8; 32]>, id: [u8; 32]) -> bool {
+    exists |i: int| 0 <= i < ids.len() && runtime_fact_id_eq(ids[i], id)
+}
+
+pub proof fn runtime_fact_id_eq_reflexive(id: [u8; 32])
+    ensures
+        runtime_fact_id_eq(id, id),
+{
+}
+
+pub proof fn runtime_id_seq_push_contains(ids: Seq<[u8; 32]>, id: [u8; 32])
+    ensures
+        runtime_id_seq_contains(ids.push(id), id),
+{
+    let i = ids.len() as int;
+    runtime_fact_id_eq_reflexive(id);
+    assert(ids.push(id)[i] == id);
+    assert(runtime_fact_id_eq(ids.push(id)[i], id));
+}
+
+#[allow(clippy::ptr_arg)]
+pub fn runtime_queue_contains_id(queue: &Vec<[u8; 32]>, id: [u8; 32]) -> (found: bool)
+    ensures
+        found == runtime_id_seq_contains(queue@, id),
+{
+    let mut i: usize = 0;
+    while i < queue.len()
+        invariant
+            0 <= i <= queue.len(),
+            forall |j: int| 0 <= j < i ==> !runtime_fact_id_eq(queue@[j], id),
+        decreases queue.len() - i,
+    {
+        if runtime_fact_id_eq_core(queue[i], id) {
+            assert(runtime_fact_id_eq(queue@[i as int], id));
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+pub fn runtime_enqueue_id_core(queue: Vec<[u8; 32]>, id: [u8; 32]) -> (out: Vec<[u8; 32]>)
+    ensures
+        runtime_id_seq_contains(out@, id),
+        runtime_id_seq_contains(queue@, id) ==> out@ == queue@,
+        !runtime_id_seq_contains(queue@, id) ==> out@ == queue@.push(id),
+{
+    if runtime_queue_contains_id(&queue, id) {
+        queue
+    } else {
+        let mut out = queue;
+        out.push(id);
+        proof {
+            runtime_id_seq_push_contains(queue@, id);
+        }
+        out
+    }
+}
+
 } // verus!
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -998,7 +1108,9 @@ impl<P: Projector> Default for MemIndex<P> {
 
 impl<P: Projector> MemIndex<P> {
     pub fn contains(&self, id: &FactId) -> bool {
-        self.entries.iter().any(|entry| &entry.id == id)
+        self.entries
+            .iter()
+            .any(|entry| runtime_fact_id_eq_core(entry.id, *id))
     }
 
     pub fn len(&self) -> usize {
@@ -1012,14 +1124,14 @@ impl<P: Projector> MemIndex<P> {
     fn item(&self, id: &FactId) -> Option<&P::Item> {
         self.entries
             .iter()
-            .find(|entry| &entry.id == id)
+            .find(|entry| runtime_fact_id_eq_core(entry.id, *id))
             .map(|entry| &entry.item)
     }
 
     fn edges(&self, id: &FactId) -> Option<&[Offer<Asserted>]> {
         self.entries
             .iter()
-            .find(|entry| &entry.id == id)
+            .find(|entry| runtime_fact_id_eq_core(entry.id, *id))
             .map(|entry| entry.edges.as_slice())
     }
 
@@ -1038,7 +1150,7 @@ impl<P: Projector> MemIndex<P> {
                 .edges
                 .iter()
                 .any(|edge| edge.is_offer() && EdgeAddr::from_offer(edge) == addr)
-                && !ids.contains(&entry.id)
+                && !runtime_queue_contains_id(&ids, entry.id)
             {
                 ids.push(entry.id);
             }
@@ -1053,7 +1165,7 @@ impl<P: Projector> MemIndex<P> {
                 .edges
                 .iter()
                 .any(|edge| edge.is_need() && EdgeAddr::from_offer(edge) == addr)
-                && !ids.contains(&entry.id)
+                && !runtime_queue_contains_id(&ids, entry.id)
             {
                 ids.push(entry.id);
             }
@@ -1081,7 +1193,7 @@ pub struct ValidityEntry {
     pub validity: Validity,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ValidityIndex {
     entries: Vec<ValidityEntry>,
 }
@@ -1090,13 +1202,13 @@ impl ValidityIndex {
     pub fn get(&self, id: &FactId) -> Option<&Validity> {
         self.entries
             .iter()
-            .find(|entry| &entry.id == id)
+            .find(|entry| runtime_fact_id_eq_core(entry.id, *id))
             .map(|entry| &entry.validity)
     }
 
     pub fn insert(&mut self, id: FactId, validity: Validity) -> Option<Validity> {
         for entry in &mut self.entries {
-            if entry.id == id {
+            if runtime_fact_id_eq_core(entry.id, id) {
                 let old = entry.validity;
                 entry.validity = validity;
                 return Some(old);
@@ -1107,7 +1219,9 @@ impl ValidityIndex {
     }
 
     pub fn contains_key(&self, id: &FactId) -> bool {
-        self.entries.iter().any(|entry| &entry.id == id)
+        self.entries
+            .iter()
+            .any(|entry| runtime_fact_id_eq_core(entry.id, *id))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -1116,6 +1230,10 @@ impl ValidityIndex {
 
     pub fn iter(&self) -> impl Iterator<Item = (FactId, Validity)> + '_ {
         self.entries.iter().map(|entry| (entry.id, entry.validity))
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = FactId> + '_ {
+        self.entries.iter().map(|entry| entry.id)
     }
 }
 
@@ -1158,15 +1276,11 @@ where
     }
 
     pub fn enqueue_admit(&mut self, id: FactId) {
-        if !self.to_admit.contains(&id) {
-            self.to_admit.push(id);
-        }
+        self.to_admit = runtime_enqueue_id_core(std::mem::take(&mut self.to_admit), id);
     }
 
     pub fn enqueue_project(&mut self, id: FactId) {
-        if !self.to_project.contains(&id) {
-            self.to_project.push(id);
-        }
+        self.to_project = runtime_enqueue_id_core(std::mem::take(&mut self.to_project), id);
     }
 
     pub fn pending_admit_len(&self) -> usize {
@@ -1212,7 +1326,7 @@ where
         let Some(bytes) = bytes else {
             return Ok(false);
         };
-        if fact_id(&bytes) != id {
+        if !runtime_fact_id_eq_core(fact_id(&bytes), id) {
             return Err("storage returned bytes whose hash does not match id".to_string());
         }
         let item = P::decode(&bytes)?;
@@ -1276,7 +1390,7 @@ where
         let effective_validity = out.validity;
         let updates = out.updates;
         for update in &updates {
-            if P::update_owner(update) != id {
+            if !runtime_fact_id_eq_core(P::update_owner(update), id) {
                 return Err("projector returned state update for a different fact".to_string());
             }
         }
@@ -1290,7 +1404,9 @@ where
             self.record_dependencies(id, &edges);
             for offer in edges.iter().copied().filter(|edge| edge.is_offer()) {
                 let addr = EdgeAddr::from_offer(&offer);
-                if self.promoted_offers.contains(&(id, addr)) {
+                if self.promoted_offers.iter().any(|(owner, promoted_addr)| {
+                    runtime_fact_id_eq_core(*owner, id) && *promoted_addr == addr
+                }) {
                     continue;
                 }
                 self.promoted_offers.push((id, addr));
@@ -1424,7 +1540,9 @@ where
                 debug_assert!(self.validity.get(&vo.owner) == Some(&Validity::Valid));
                 debug_assert_eq!(EdgeAddr::from_offer(&vo.offer), addr);
                 if !self.dependencies.iter().any(|dep| {
-                    dep.consumer == consumer && dep.provider == vo.owner && dep.addr == addr
+                    runtime_fact_id_eq_core(dep.consumer, consumer)
+                        && runtime_fact_id_eq_core(dep.provider, vo.owner)
+                        && dep.addr == addr
                 }) {
                     self.dependencies.push(RecordedDependency {
                         consumer,
@@ -1446,9 +1564,10 @@ where
                 .filter(|vo| EdgeAddr::from_offer(&vo.offer) == addr)
             {
                 debug_assert!(self.validity.get(&vo.owner) == Some(&Validity::Valid));
-                debug_assert!(self
-                    .promoted_offers
-                    .contains(&(vo.owner, EdgeAddr::from_offer(&vo.offer))));
+                debug_assert!(self.promoted_offers.iter().any(|(owner, promoted_addr)| {
+                    runtime_fact_id_eq_core(*owner, vo.owner)
+                        && *promoted_addr == EdgeAddr::from_offer(&vo.offer)
+                }));
                 offers.push(vo.offer);
             }
         }
