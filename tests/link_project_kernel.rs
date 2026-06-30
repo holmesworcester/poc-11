@@ -129,10 +129,10 @@ fn verified_projected_id_helpers_build_exact_current_entries() {
     let child = fact_id_to_core(id(b"child-id"));
 
     let singleton = singleton_projected_ids_core(root);
-    assert_eq!(singleton.ids, vec![root]);
+    assert_eq!(singleton, vec![root]);
 
     let child_ids = child_projected_ids_core(vec![root, parent], child);
-    assert_eq!(child_ids.ids, vec![root, parent, child]);
+    assert_eq!(child_ids, vec![root, parent, child]);
 }
 
 #[test]

@@ -178,8 +178,6 @@ Canonical Codec
    - link_id
    Handlers:
    - codec_flag_spec/core
-   - link_codec_identity_spec/core
-   - canonical_link_identity
    - link_encode_bytes_core
    - link_decode_header_core
    - canonical byte/header acceptance lemmas

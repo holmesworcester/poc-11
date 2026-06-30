@@ -862,7 +862,7 @@ fn link_project_verified_kernel_is_running_code() {
 
     for required in [
         "verus!",
-        "canonical_link_identity",
+        "codec_flag_core",
         "canonical_link_bytes_round_trip",
         "link_encode_bytes_core",
         "link_decode_header_core",
@@ -908,7 +908,7 @@ fn link_project_verified_kernel_is_running_code() {
         "extract_link_core(",
         "link_from_params_core(",
         "link_update_apply_core(",
-        "link_codec_identity_core(",
+        "codec_flag_core(",
         "link_codec_layout_core(",
         "link_encode_bytes_core(",
         "link_decode_header_core(",
