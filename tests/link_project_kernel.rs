@@ -3,12 +3,13 @@ use linktoy::core::item::fact_id;
 use linktoy::core::projector::Projector;
 use linktoy::core::typestate::Validity;
 use linktoy::facts::link::project_unproven::{
-    core_to_fact_id, extract_link_core, fact_id_to_core, link_core_for,
-    link_emitted_fact_count_core, maybe_fact_id_to_core, project_link_core, projected_report_core,
-    LinkCore, MaybeStatementCore, ValidityCore,
+    child_projected_ids_core, core_to_fact_id, extract_link_core, fact_id_to_core,
+    link_codec_layout_core, link_core_for, link_emitted_fact_count_core, maybe_fact_id_to_core,
+    project_link_core, projected_report_core, singleton_projected_ids_core, LinkCore,
+    MaybeStatementCore, ValidityCore,
 };
 use linktoy::facts::link::{
-    link_edges, link_id, link_project_validity, valid_link_key, Link, LinkProjector,
+    link_edges, link_id, link_project_validity, valid_link_key, Link, LinkProjector, TAG_LINK,
 };
 
 fn id(label: &[u8]) -> [u8; 32] {
@@ -49,6 +50,35 @@ fn canonical_link_codec_round_trips_accepted_bytes_and_ids() {
         assert_eq!(LinkProjector::encode(&decoded), bytes);
         assert_eq!(link_id(&decoded), fact_id(&bytes));
     }
+}
+
+#[test]
+fn verified_codec_layout_accepts_canonical_headers_and_rejects_malformed_headers() {
+    let root_layout = link_codec_layout_core(TAG_LINK, 0, 0, 3);
+    assert!(root_layout.accepted);
+    assert_eq!(root_layout.content_offset, 3);
+
+    let child_layout = link_codec_layout_core(TAG_LINK, 1, 1, 67);
+    assert!(child_layout.accepted);
+    assert_eq!(child_layout.content_offset, 67);
+
+    assert!(!link_codec_layout_core(0xff, 0, 0, 3).accepted);
+    assert!(!link_codec_layout_core(TAG_LINK, 2, 0, 3).accepted);
+    assert!(!link_codec_layout_core(TAG_LINK, 0, 2, 3).accepted);
+    assert!(!link_codec_layout_core(TAG_LINK, 1, 1, 66).accepted);
+}
+
+#[test]
+fn verified_projected_id_helpers_build_exact_current_entries() {
+    let root = fact_id_to_core(id(b"root-id"));
+    let parent = fact_id_to_core(id(b"parent-id"));
+    let child = fact_id_to_core(id(b"child-id"));
+
+    let singleton = singleton_projected_ids_core(root);
+    assert_eq!(singleton.ids, vec![root]);
+
+    let child_ids = child_projected_ids_core(vec![root, parent], child);
+    assert_eq!(child_ids.ids, vec![root, parent, child]);
 }
 
 #[test]

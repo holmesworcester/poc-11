@@ -40,7 +40,7 @@ Full staged build plan: `~/.claude/plans/imperative-hugging-tome.md`.
 | path | role |
 |------|------|
 | `src/core/` | proof-targeted generic runtime/playback API; `effects_unproven` and `turn_unproven` stage the deterministic turn proof surface |
-| `src/facts/link/` | **link fact family**: `project_unproven` holds typed construction, codec, extract, project, and local Verus kernels; it stays `_unproven` until byte codec, exact projected chain-entry vectors, and core/replay composition are fully proved |
+| `src/facts/link/` | **link fact family**: `project_unproven` holds typed construction, codec, extract, project, and local Verus kernels; it stays `_unproven` until core/admit/replay composition proves the end-to-end validated-store invariants |
 | `src/helpers/` | narrow trusted helper/effect boundaries: crypto, hex, clock, SQLite, and TCP framing |
 | `src/cli_unproven.rs` | thin app layer wiring the link fact family into the core runtime |
 

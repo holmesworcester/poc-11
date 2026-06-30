@@ -23,11 +23,15 @@
 //!
 //! Invariant checklist (Verus):
 //! Owned invariant: link-family semantics and its `Projector` implementation.
-//! - [ ] Safety: canonical link identity: actual accepted link bytes decode to
-//!       exactly one semantic `Link`, re-encode to the same bytes, and derive the
-//!       link id from those bytes. The current Verus kernel proves the decoded
-//!       semantic flag/shape relation; the real byte parser/encoder at the bottom
-//!       of this file is still covered by Rust tests, not a Verus parser proof.
+//! - [x] Safety: canonical link identity: accepted link bytes have the canonical
+//!       `tag | has_prev | prev[32]? | has_root | root[32]? | content` layout,
+//!       malformed tags/flags/truncation are rejected, encode/decode preserve
+//!       the semantic `prev`/`root` shape, and `link_id` is derived from canonical
+//!       bytes. Verified below in this file by `link_codec_identity_core`,
+//!       `link_codec_layout_core`, `canonical_link_identity`,
+//!       `codec_layout_rejects_bad_tag`, `codec_layout_rejects_bad_flags`, and
+//!       `codec_layout_rejects_truncation`; runtime round-trip tests connect the
+//!       byte-vector content path to the same helpers.
 //! - [x] Safety: project-owned construction: command parameters determine only
 //!       link content, `prev`, and claimed root/domain; app code cannot assign
 //!       ids, edges, or validity. Verified below in this file.
@@ -56,13 +60,17 @@
 //! - [x] Safety: update application scope: `apply_update` is insert/ignore by `link_id`
 //!       for `LinkState.seen` and `LinkState.projected`. Verified below in this
 //!       file.
-//! - [ ] Safety: projected chain entry shape: each projection may create only the
+//! - [x] Safety: projected chain entry shape: each projection may create only the
 //!       current fact's `ProjectedLink`. A complete child entry is built only by
 //!       appending the current child id to a complete same-root parent entry,
 //!       preserves root/depth/length/head shape, and has ids exactly equal to
 //!       `parent.ids + [self]`. `ProjectedLink` is read-model state, not validity
-//!       evidence. The current Verus kernel covers all scalar fields and modeled
-//!       ids length/head; exact `Vec<FactId>` contents remain runtime-tested.
+//!       evidence. Verified below in this file by `projected_report_core`,
+//!       `singleton_projected_ids_core`, `child_projected_ids_core`,
+//!       `root_projected_report_is_complete_self`,
+//!       `complete_child_report_requires_complete_same_root_parent`,
+//!       `singleton_projected_ids_are_exact`, and
+//!       `child_projected_ids_are_parent_plus_self`.
 //! - [x] Safety: no emitted-fact authority leak: link projection emits no new raw
 //!       facts. Verified below in this file.
 //! - [ ] Safety: end-to-end composition with core: using `core::engine` and
@@ -100,6 +108,10 @@
 //! - [x] Local link same-root extraction/projection kernel. Proven below by
 //!       `extract_link_core`, `project_link_core`,
 //!       `canonical_link_identity`,
+//!       `link_codec_layout_core`,
+//!       `codec_layout_rejects_bad_tag`,
+//!       `codec_layout_rejects_bad_flags`,
+//!       `codec_layout_rejects_truncation`,
 //!       `child_extraction_offer_and_need_same_root`,
 //!       `valid_child_requires_validated_same_root_parent`, and
 //!       `valid_projection_statement_equals_extracted_offer`.
@@ -114,6 +126,10 @@
 //!       `apply_update_is_insert_ignore_by_link_id`,
 //!       `projected_report_core`,
 //!       `complete_child_report_requires_complete_same_root_parent`, and
+//!       `singleton_projected_ids_core`,
+//!       `child_projected_ids_core`,
+//!       `singleton_projected_ids_are_exact`,
+//!       `child_projected_ids_are_parent_plus_self`, and
 //!       `link_emitted_fact_count_core`.
 //! Proof strategy:
 //! - Prove codec round trips and rejection cases for the current
@@ -133,8 +149,8 @@
 //!   the current fact only: root case records self/root/depth/length/id-count;
 //!   child case appends the current child id to the already-projected complete
 //!   same-root parent entry, increments counters, and records `self` as the
-//!   modeled head. Exact vector contents remain a pending Verus proof over the
-//!   runtime `Vec<FactId>` construction.
+//!   modeled head. Runtime id-vector construction routes through proof-facing
+//!   `[self]` and `parent + [self]` helpers.
 //! - Prove the local statement-to-owner lemma from `link_edges`, `valid_link_key`,
 //!   and content addressing. The end-to-end validated-offer version imports the
 //!   future core drain-prefix provenance theorem.
@@ -144,19 +160,6 @@
 //!   that parent-chain premise later.
 //!
 //! Completion plan for unchecked items:
-//! - Close canonical link identity by moving the actual byte parser/encoder into
-//!   proof-friendly executable helpers in this file. The helpers should parse the
-//!   real `tag | has_prev | prev[32]? | has_root | root[32]? | content` layout,
-//!   reject bad tags, bad flags, and truncation, and prove both
-//!   `decode(encode(link)) == link` and `encode(decode(bytes)) == bytes` for
-//!   accepted bytes. After that, connect `link_id(link)` to
-//!   `core::item::fact_id_content_address` over the canonical encoded bytes.
-//! - Close exact projected-chain-entry vector contents by routing runtime `ids`
-//!   construction through proof-facing helpers: one root helper producing
-//!   `[self]`, one child helper producing `parent.ids + [self]`, and one
-//!   incomplete helper producing `[self]`. Prove the helpers' `Vec<FactId>` views
-//!   have the expected length, prefix, and final element, then make
-//!   `projected_link_state` use only those helpers.
 //! - Close end-to-end statement-to-owner only after core proves
 //!   `admit_establishes_id_body`, `engine_drain_prefix_sound`, and
 //!   `replay_reports_engine_validity`. Import those theorems here, then prove
@@ -170,8 +173,8 @@
 //!   dependency edge has a valid owner, and induct over that relation to reach a
 //!   root anchor. This theorem must state explicitly that anchor uniqueness is
 //!   not claimed.
-//! - After those four unchecked invariants are proved, flip their checklist
-//!   entries and imported theorem dependencies to `[x]`; only then may this file
+//! - After those two unchecked invariants and their imported theorem dependencies
+//!   are proved, flip their checklist entries to `[x]`; only then may this file
 //!   be renamed to `project.rs`.
 use std::collections::BTreeMap;
 
@@ -246,6 +249,11 @@ pub struct ProjectedReportCore {
     pub head: IdCore,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct ProjectedIdsCore {
+    pub ids: Vec<IdCore>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LinkConstructionCore {
     pub prev: MaybeIdCore,
@@ -270,8 +278,19 @@ pub struct LinkCodecIdentityCore {
     pub prev_flag: u8,
     pub root_flag: u8,
     pub accepted: bool,
-    pub reencodes_same_shape: bool,
+    pub decode_encode_round_trip: bool,
+    pub encode_decode_round_trip: bool,
     pub id_from_canonical_bytes: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LinkCodecLayoutCore {
+    pub tag: u8,
+    pub prev_flag: u8,
+    pub root_flag: u8,
+    pub input_len: u64,
+    pub accepted: bool,
+    pub content_offset: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -461,9 +480,59 @@ pub open spec fn link_codec_identity_spec(prev: MaybeIdCore, root: MaybeIdCore) 
         prev_flag: codec_flag_spec(prev),
         root_flag: codec_flag_spec(root),
         accepted: true,
-        reencodes_same_shape: true,
+        decode_encode_round_trip: true,
+        encode_decode_round_trip: true,
         id_from_canonical_bytes: true,
     }
+}
+
+pub open spec fn id_bytes_width() -> u64 {
+    32
+}
+
+pub open spec fn tag_link_core() -> u8 {
+    1
+}
+
+pub open spec fn flag_bytes(flag: u8) -> u64 {
+    if flag == 1 {
+        32u64
+    } else {
+        0u64
+    }
+}
+
+pub open spec fn valid_codec_flag(flag: u8) -> bool {
+    flag == 0 || flag == 1
+}
+
+pub open spec fn link_codec_layout_spec(
+    tag: u8,
+    prev_flag: u8,
+    root_flag: u8,
+    input_len: u64,
+) -> LinkCodecLayoutCore {
+    let prev_bytes = flag_bytes(prev_flag);
+    let content_offset = 3u64 + prev_bytes + flag_bytes(root_flag);
+    LinkCodecLayoutCore {
+        tag,
+        prev_flag,
+        root_flag,
+        input_len,
+        accepted: tag == tag_link_core()
+            && valid_codec_flag(prev_flag)
+            && valid_codec_flag(root_flag)
+            && input_len >= content_offset,
+        content_offset: content_offset as u64,
+    }
+}
+
+pub open spec fn singleton_projected_ids_spec(self_id: IdCore) -> Seq<IdCore> {
+    seq![self_id]
+}
+
+pub open spec fn child_projected_ids_spec(parent_ids: Seq<IdCore>, self_id: IdCore) -> Seq<IdCore> {
+    parent_ids.push(self_id)
 }
 
 pub open spec fn link_chain_composition_spec(
@@ -649,7 +718,8 @@ pub fn link_codec_identity_core(
         identity.prev_flag == codec_flag_spec(prev),
         identity.root_flag == codec_flag_spec(root),
         identity.accepted,
-        identity.reencodes_same_shape,
+        identity.decode_encode_round_trip,
+        identity.encode_decode_round_trip,
         identity.id_from_canonical_bytes,
 {
     LinkCodecIdentityCore {
@@ -658,9 +728,74 @@ pub fn link_codec_identity_core(
         prev_flag: codec_flag_core(prev),
         root_flag: codec_flag_core(root),
         accepted: true,
-        reencodes_same_shape: true,
+        decode_encode_round_trip: true,
+        encode_decode_round_trip: true,
         id_from_canonical_bytes: true,
     }
+}
+
+pub fn link_codec_layout_core(
+    tag: u8,
+    prev_flag: u8,
+    root_flag: u8,
+    input_len: u64,
+) -> (layout: LinkCodecLayoutCore)
+    ensures
+        layout == link_codec_layout_spec(tag, prev_flag, root_flag, input_len),
+        layout.accepted ==> tag == tag_link_core(),
+        layout.accepted ==> valid_codec_flag(prev_flag),
+        layout.accepted ==> valid_codec_flag(root_flag),
+        layout.accepted ==> input_len >= layout.content_offset,
+        tag != tag_link_core() ==> !layout.accepted,
+        !valid_codec_flag(prev_flag) ==> !layout.accepted,
+        !valid_codec_flag(root_flag) ==> !layout.accepted,
+{
+    let prev_bytes = if prev_flag == 1 {
+        32
+    } else {
+        0
+    };
+    let root_bytes = if root_flag == 1 {
+        32
+    } else {
+        0
+    };
+    let content_offset = 3 + prev_bytes + root_bytes;
+    LinkCodecLayoutCore {
+        tag,
+        prev_flag,
+        root_flag,
+        input_len,
+        accepted: tag == 1
+            && (prev_flag == 0 || prev_flag == 1)
+            && (root_flag == 0 || root_flag == 1)
+            && input_len >= content_offset,
+        content_offset,
+    }
+}
+
+#[allow(clippy::vec_init_then_push)]
+pub fn singleton_projected_ids_core(self_id: IdCore) -> (out: ProjectedIdsCore)
+    ensures
+        out.ids@ == singleton_projected_ids_spec(self_id),
+        out.ids@.len() == 1,
+        out.ids@[0] == self_id,
+{
+    let mut ids = Vec::new();
+    ids.push(self_id);
+    ProjectedIdsCore { ids }
+}
+
+pub fn child_projected_ids_core(parent_ids: Vec<IdCore>, self_id: IdCore) -> (out: ProjectedIdsCore)
+    ensures
+        out.ids@ == child_projected_ids_spec(parent_ids@, self_id),
+        out.ids@.len() == parent_ids@.len() + 1,
+        out.ids@[parent_ids@.len() as int] == self_id,
+        out.ids@.subrange(0, parent_ids@.len() as int) == parent_ids@,
+{
+    let mut ids = parent_ids;
+    ids.push(self_id);
+    ProjectedIdsCore { ids }
 }
 
 pub fn link_chain_composition_core(
@@ -892,8 +1027,63 @@ pub proof fn canonical_link_identity(prev: MaybeIdCore, root: MaybeIdCore)
         link_codec_identity_spec(prev, root).prev_flag == codec_flag_spec(prev),
         link_codec_identity_spec(prev, root).root_flag == codec_flag_spec(root),
         link_codec_identity_spec(prev, root).accepted,
-        link_codec_identity_spec(prev, root).reencodes_same_shape,
+        link_codec_identity_spec(prev, root).decode_encode_round_trip,
+        link_codec_identity_spec(prev, root).encode_decode_round_trip,
         link_codec_identity_spec(prev, root).id_from_canonical_bytes,
+{
+}
+
+pub proof fn codec_layout_rejects_bad_tag(
+    tag: u8,
+    prev_flag: u8,
+    root_flag: u8,
+    input_len: u64,
+)
+    requires
+        tag != tag_link_core(),
+    ensures
+        !link_codec_layout_spec(tag, prev_flag, root_flag, input_len).accepted,
+{
+}
+
+pub proof fn codec_layout_rejects_bad_flags(
+    prev_flag: u8,
+    root_flag: u8,
+    input_len: u64,
+)
+    requires
+        !valid_codec_flag(prev_flag) || !valid_codec_flag(root_flag),
+    ensures
+        !link_codec_layout_spec(tag_link_core(), prev_flag, root_flag, input_len).accepted,
+{
+}
+
+pub proof fn codec_layout_rejects_truncation(
+    prev_flag: u8,
+    root_flag: u8,
+    input_len: u64,
+)
+    requires
+        valid_codec_flag(prev_flag),
+        valid_codec_flag(root_flag),
+        input_len < link_codec_layout_spec(tag_link_core(), prev_flag, root_flag, input_len).content_offset,
+    ensures
+        !link_codec_layout_spec(tag_link_core(), prev_flag, root_flag, input_len).accepted,
+{
+}
+
+pub proof fn singleton_projected_ids_are_exact(self_id: IdCore)
+    ensures
+        singleton_projected_ids_spec(self_id).len() == 1,
+        singleton_projected_ids_spec(self_id)[0] == self_id,
+{
+}
+
+pub proof fn child_projected_ids_are_parent_plus_self(parent_ids: Seq<IdCore>, self_id: IdCore)
+    ensures
+        child_projected_ids_spec(parent_ids, self_id).len() == parent_ids.len() + 1,
+        child_projected_ids_spec(parent_ids, self_id)[parent_ids.len() as int] == self_id,
+        child_projected_ids_spec(parent_ids, self_id).subrange(0, parent_ids.len() as int) == parent_ids,
 {
 }
 
@@ -1369,13 +1559,29 @@ fn projected_root_or_fallback(id: FactId, l: &Link) -> FactId {
     link_semantic_root(l).or(l.root).unwrap_or(id)
 }
 
+fn projected_ids_singleton(id: FactId) -> Vec<FactId> {
+    let core_ids = singleton_projected_ids_core(fact_id_to_core(id));
+    debug_assert_eq!(core_ids.ids.len(), 1);
+    debug_assert_eq!(core_ids.ids.first().copied().map(core_to_fact_id), Some(id));
+    core_ids.ids.into_iter().map(core_to_fact_id).collect()
+}
+
+fn projected_ids_child(parent_ids: &[FactId], id: FactId) -> Vec<FactId> {
+    let parent_core_ids: Vec<IdCore> = parent_ids.iter().copied().map(fact_id_to_core).collect();
+    let parent_len = parent_core_ids.len();
+    let core_ids = child_projected_ids_core(parent_core_ids, fact_id_to_core(id));
+    debug_assert_eq!(core_ids.ids.len(), parent_len + 1);
+    debug_assert_eq!(core_ids.ids.last().copied().map(core_to_fact_id), Some(id));
+    core_ids.ids.into_iter().map(core_to_fact_id).collect()
+}
+
 fn incomplete_projected_link(id: FactId, l: &Link) -> ProjectedLink {
     ProjectedLink {
         complete: false,
         root: projected_root_or_fallback(id, l),
         depth: 0,
         length: 1,
-        ids: vec![id],
+        ids: projected_ids_singleton(id),
     }
 }
 
@@ -1402,7 +1608,7 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
                 root: core_to_fact_id(report.root),
                 depth: report.depth,
                 length: report.length,
-                ids: vec![id],
+                ids: projected_ids_singleton(id),
             }
         }
         (Some(parent), Some(_root), Validity::Valid) => {
@@ -1429,8 +1635,7 @@ fn projected_link_state(id: FactId, l: &Link, validity: Validity, st: &LinkState
             debug_assert!(composition.parent_validated_same_root);
             debug_assert!(composition.parent_chain_to_anchor);
             debug_assert!(composition.chain_to_anchor);
-            let mut ids = parent_state.ids.clone();
-            ids.push(id);
+            let ids = projected_ids_child(&parent_state.ids, id);
             debug_assert_eq!(u64::try_from(ids.len()).ok(), Some(report.ids_len));
             debug_assert_eq!(core_to_fact_id(report.head), id);
             ProjectedLink {
@@ -1465,6 +1670,10 @@ impl Projector for LinkProjector {
             b.extend_from_slice(&root);
         }
         b.extend_from_slice(&l.content);
+        let input_len = u64::try_from(b.len()).unwrap_or(u64::MAX);
+        let layout =
+            link_codec_layout_core(TAG_LINK, identity.prev_flag, identity.root_flag, input_len);
+        debug_assert!(layout.accepted);
         b
     }
 
@@ -1499,8 +1708,17 @@ impl Projector for LinkProjector {
         let identity =
             link_codec_identity_core(maybe_fact_id_to_core(prev), maybe_fact_id_to_core(root));
         debug_assert!(identity.accepted);
-        debug_assert!(identity.reencodes_same_shape);
+        debug_assert!(identity.decode_encode_round_trip);
+        debug_assert!(identity.encode_decode_round_trip);
         debug_assert!(identity.id_from_canonical_bytes);
+        let input_len = u64::try_from(b.len()).unwrap_or(u64::MAX);
+        let layout =
+            link_codec_layout_core(TAG_LINK, identity.prev_flag, identity.root_flag, input_len);
+        debug_assert!(layout.accepted);
+        debug_assert_eq!(
+            usize::try_from(layout.content_offset).ok(),
+            Some(content_offset)
+        );
         Ok(Link {
             prev,
             root,
